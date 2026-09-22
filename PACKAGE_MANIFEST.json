@@ -10,24 +10,24 @@
     "bytes": 41
   },
   {
-    "path": "AUDIT_V0.1.3.md",
-    "sha256": "b6838b59e292746ef7a3dc8b3391e94383e4699f7e484a911149bb45db14a067",
-    "bytes": 872
+    "path": "AUDIT_V0.1.4.md",
+    "sha256": "356e54d5e3200686af340b4e821772144e10396db303d65444c531fcc67c687f",
+    "bytes": 589
   },
   {
     "path": "CHANGELOG.md",
-    "sha256": "2fba1faa5b6c0c91b643d3f1965d531f19c549d70b28801e4c32ed346031fc10",
-    "bytes": 1110
+    "sha256": "92bcdde3381f2d0250d18c58003410f87a9c21e61588ead28a2ecf64e1512c87",
+    "bytes": 1408
   },
   {
     "path": "README.md",
-    "sha256": "193caf7beef926168b1b5ff0f9b5653078375737a582d36e13e7915bfeaa316a",
-    "bytes": 2820
+    "sha256": "b0c1984a481a12ab3e431a5e88beee12e99c1ded14a9762ed2f60c0b14bd7d89",
+    "bytes": 3696
   },
   {
     "path": "README_FIRST.txt",
-    "sha256": "96fa792d4941a37eabbf3263162851138819dec0024d717d4fc37af56b02a8e1",
-    "bytes": 719
+    "sha256": "e46b172b9c35e7c60be98a829da26700be942ad16324b69a8d2e28ed6c4d96cd",
+    "bytes": 794
   },
   {
     "path": "css/style.css",
@@ -36,7 +36,7 @@
   },
   {
     "path": "data/images.json",
-    "sha256": "f25e05b584b508ced447c9af74c9ed2fe68113a8ffe517d8efbacd5df23e7cf9",
+    "sha256": "a5524c2290e631d924287a851e9724c01d980b034fbea584da74c6c65f857b4d",
     "bytes": 723
   },
   {
@@ -66,8 +66,8 @@
   },
   {
     "path": "js/game.js",
-    "sha256": "cdb9e7d5d878e4d8c868d8d8dbe3c7f2369d9b9ef62cc6e6008cb111642f9ac6",
-    "bytes": 12933
+    "sha256": "b0f8279c75f759d75fa9b0d45470b435f036cd28d6e19d78afbb555056ed13a7",
+    "bytes": 12753
   },
   {
     "path": "js/history.js",
@@ -76,7 +76,7 @@
   },
   {
     "path": "package.json",
-    "sha256": "8a4ac3c52899c382cff532e8dc4414262e774cf86c13c17caab30a0e8618938d",
+    "sha256": "4c4276fdc1cee9e6364122ec88942e1ecbf1825e9026ecc0b3d619a1c411089b",
     "bytes": 468
   },
   {
@@ -86,12 +86,17 @@
   },
   {
     "path": "scripts/build-site.js",
-    "sha256": "ba78ac18a2a15c771a1287fabb2fc388922d742c68277bd4a1ef923173e666be",
-    "bytes": 776
+    "sha256": "167c8555247d46edf31db7e1ac5f7be0515f3e28103245138c0082035296df3c",
+    "bytes": 794
   },
   {
     "path": "scripts/generate-image-list.js",
     "sha256": "714ece035aa85aec60c7fe0c4b4fdb11437b79cde29947d12ee540c3b05b4a08",
     "bytes": 3302
+  },
+  {
+    "path": "version.json",
+    "sha256": "8981c95c41e2c369749d6617d8fd3e127c928c7dcbffd19a768ce0314b0d2d44",
+    "bytes": 25
   }
 ]

@@ -1,4 +1,4 @@
-AI OR HUMAN — V0.1.3
+AI OR HUMAN — V0.1.4
 
 NAJWAŻNIEJSZE:
 1. Wrzuć swoje zdjęcia do:
@@ -24,3 +24,5 @@ NAJWAŻNIEJSZE:
 
 Lokalny pełny test:
 npm run build
+
+V0.1.4: po każdej rundzie zawsze widoczny jest przycisk Zagraj ponownie.

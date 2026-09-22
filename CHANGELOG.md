@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## V0.1.4
+
+- `Zagraj ponownie` jest zawsze widoczny po rundzie.
+- Usunięto techniczny komunikat o wyczerpaniu puli z ekranu wyniku.
+- Po wykorzystaniu całej puli kolejna gra automatycznie rozpoczyna świeżą sesję obrazów.
+- Dodano `version.json` i log wersji w konsoli dla kontroli deployu.
+
 ## V0.1.3
 
 ### Swipe

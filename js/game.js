@@ -1,5 +1,6 @@
 import { getSeenImageIds, rememberImageId, resetSessionHistory } from "./history.js";
 
+const APP_VERSION = "0.1.4";
 const ROUND_SIZE = 20;
 const SWIPE_MIN_PX = 72;
 const SWIPE_RATIO = 0.22;
@@ -261,29 +262,19 @@ function answer(type, source = "button") {
 
 function finishRound() {
   const played = roundDeck.length;
-  const remaining = getAvailableImages().length;
 
   finalScore.textContent = `${score} / ${played}`;
-
-  if (remaining === 0) {
-    endMessage.textContent = "Na razie wykorzystałeś wszystkie dostępne obrazy.";
-    endMessage.classList.remove("is-hidden");
-    playAgainButton.classList.add("is-hidden");
-  } else {
-    endMessage.textContent = "";
-    endMessage.classList.add("is-hidden");
-    playAgainButton.classList.remove("is-hidden");
-  }
+  endMessage.textContent = "";
+  endMessage.classList.add("is-hidden");
+  playAgainButton.classList.remove("is-hidden");
 
   showOnly(endScreen);
 }
 
 function showPoolExhausted() {
-  finalScore.textContent = "—";
-  endMessage.textContent = "Na razie wykorzystałeś wszystkie dostępne obrazy.";
-  endMessage.classList.remove("is-hidden");
-  playAgainButton.classList.add("is-hidden");
-  showOnly(endScreen);
+  // Gdy w bieżącej sesji wykorzystano całą pulę, kolejna gra zaczyna świeżą sesję.
+  resetSessionHistory();
+  startRound();
 }
 
 function dragThreshold() {
@@ -437,7 +428,12 @@ function onTouchCancel() {
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));
 startButton.addEventListener("click", startRound);
-playAgainButton.addEventListener("click", startRound);
+playAgainButton.addEventListener("click", () => {
+  if (getAvailableImages().length === 0 && allImages.length > 0) {
+    resetSessionHistory();
+  }
+  startRound();
+});
 
 if ("PointerEvent" in window) {
   imageCard.addEventListener("pointerdown", onPointerDown);
@@ -454,6 +450,7 @@ if ("PointerEvent" in window) {
 
 async function bootstrap() {
   try {
+    console.info(`AI or Human v${APP_VERSION}`);
     // Każde pełne odświeżenie strony zaczyna nową sesję gry i nową historię obrazów.
     resetSessionHistory();
     roundDeck = [];

@@ -1,4 +1,4 @@
-# AI or Human — V0.1.3
+# AI or Human — V0.1.4
 
 Gra internetowa, w której gracz ocenia, czy obraz stworzył człowiek, czy AI.
 
@@ -109,3 +109,17 @@ Następnie:
 ```bash
 npm run audit
 ```
+
+
+## V0.1.4 — ekran końcowy
+
+- przycisk **Zagraj ponownie** jest zawsze dostępny po zakończeniu rundy,
+- ekran wyniku nie pokazuje technicznego komunikatu o wyczerpaniu puli,
+- jeśli podczas jednej sesji wykorzystano już wszystkie obrazy, **Zagraj ponownie** rozpoczyna świeżą sesję puli,
+- `version.json` oraz log w konsoli ułatwiają sprawdzenie, jaka wersja faktycznie jest wdrożona.
+
+## Ważne: katalog obrazów a GitHub Pages
+
+Przeglądarka nie może sama wylistować zawartości folderów serwowanych przez GitHub Pages. Dlatego podczas deployu workflow generuje `data/images.json` na podstawie `images/AI/` i `images/HUMAN/`.
+
+To nie oznacza, że wszystkie pliki graficzne są pobierane od razu. Przy dużej bazie byłoby to niepożądane. Strona ładuje od razu katalog ścieżek, a same obrazy pobiera na żądanie; dodatkowo preładuje następny obraz.

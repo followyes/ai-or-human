@@ -8,6 +8,7 @@ const dist = path.join(root, "dist");
 
 const entries = [
   "index.html",
+  "version.json",
   "css",
   "js",
   "images",
