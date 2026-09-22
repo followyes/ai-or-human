@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#eef2f3">
+  <title>AI or Human</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="screen screen-start" id="start-screen" aria-labelledby="game-title">
+      <div class="brand-block">
+        <p class="eyebrow">AI OR HUMAN</p>
+        <h1 id="game-title">Kto stworzył ten obraz?</h1>
+      </div>
+
+      <button class="primary-button" id="start-button" type="button">Rozpocznij</button>
+    </section>
+
+    <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite">
+      <header class="game-header">
+        <div>
+          <span class="meta-label">POSTĘP</span>
+          <strong id="round-counter">1 / 20</strong>
+        </div>
+        <div class="score-box">
+          <span class="meta-label">WYNIK</span>
+          <strong id="score">0</strong>
+        </div>
+      </header>
+
+      <section class="question-block" aria-labelledby="question-title">
+        <p class="eyebrow">AI OR HUMAN</p>
+        <h2 id="question-title">Kto stworzył ten obraz?</h2>
+      </section>
+
+      <div class="card-stage">
+        <article class="image-card" id="image-card">
+          <div class="choice-hint choice-hint-human" aria-hidden="true">CZŁOWIEK</div>
+          <div class="choice-hint choice-hint-ai" aria-hidden="true">AI</div>
+          <div class="feedback-badge" id="feedback-badge" aria-hidden="true"></div>
+
+          <div class="image-frame">
+            <img id="game-image" alt="Obraz do oceny" draggable="false">
+          </div>
+        </article>
+      </div>
+
+      <div class="controls" aria-label="Wybór odpowiedzi">
+        <button class="choice-button" id="human-button" type="button">CZŁOWIEK</button>
+        <button class="choice-button" id="ai-button" type="button">AI</button>
+      </div>
+
+      <p class="swipe-help">Przesuń w lewo: człowiek · w prawo: AI</p>
+    </section>
+
+    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title">
+      <p class="eyebrow">AI OR HUMAN</p>
+      <h2 id="end-title">Twój wynik</h2>
+
+      <div class="final-score">
+        <strong id="final-score">0 / 20</strong>
+      </div>
+
+      <div class="end-actions">
+        <button class="primary-button" id="play-again-button" type="button">Zagraj ponownie</button>
+      </div>
+    </section>
+
+    <section class="screen screen-error is-hidden" id="error-screen" role="alert">
+      <p class="eyebrow">AI OR HUMAN</p>
+      <h2>Nie udało się uruchomić gry.</h2>
+      <p id="error-message"></p>
+      <button class="primary-button error-retry" id="retry-button" type="button">Spróbuj ponownie</button>
+    </section>
+  </main>
+
+  <script type="module" src="./js/game.js"></script>
+</body>
+</html>
