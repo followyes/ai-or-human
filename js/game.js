@@ -100,9 +100,26 @@ function validateManifest(manifest) {
 }
 
 async function loadManifest() {
-  const response = await fetch("./data/images.json", { cache: "no-store" });
+  let response;
+
+  try {
+    response = await fetch("./data/images.json", { cache: "no-store" });
+  } catch (error) {
+    console.error("[AI OR HUMAN] Nie udało się pobrać manifestu obrazów.", error);
+    throw new Error("Gra jest chwilowo niedostępna. Spróbuj ponownie za chwilę.");
+  }
+
   if (!response.ok) {
-    throw new Error(`Nie udało się wczytać katalogu obrazów (${response.status}).`);
+    if (response.status === 404) {
+      console.error(
+        "[AI OR HUMAN] Brak dist/data/images.json. Na GitHub Pages V1 musi być publikowane przez workflow GitHub Actions. " +
+        "Sprawdź: repo zawiera .github/workflows/pages.yml, Settings > Pages > Source = GitHub Actions oraz ostatni workflow zakończył się PASS."
+      );
+    } else {
+      console.error(`[AI OR HUMAN] Manifest obrazów zwrócił HTTP ${response.status}.`);
+    }
+
+    throw new Error("Gra jest chwilowo niedostępna. Spróbuj ponownie za chwilę.");
   }
 
   const images = validateManifest(await response.json());

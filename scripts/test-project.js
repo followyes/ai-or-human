@@ -155,11 +155,14 @@ async function testSourceContracts() {
   assert.ok(!html.includes("final-percent"));
   assert.ok(!html.includes("reset-history"));
   assert.ok(!/[✓✕×]/u.test(html));
+  assert.ok(html.includes('rel="icon"'));
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
   assert.ok(css.includes("touch-action: pan-y"));
   assert.ok(css.includes("overflow-x: clip") || css.includes("overflow-x: hidden"));
   assert.ok(!game.includes("localStorage"));
   assert.ok(!game.includes("history.js"));
+  assert.ok(game.includes("Settings > Pages > Source = GitHub Actions"));
+  assert.ok(!game.includes("Nie udało się wczytać katalogu obrazów ("));
   assert.ok(swipe.includes("pointerdown"));
   assert.ok(swipe.includes("pointermove"));
   assert.ok(swipe.includes("lostpointercapture"));
@@ -167,6 +170,9 @@ async function testSourceContracts() {
   assert.ok(!swipe.includes("touchmove"));
   assert.ok(workflow.includes("npm run test"));
   assert.ok(workflow.includes("npm run build"));
+  assert.ok(workflow.includes("Verify generated Pages artifact"));
+  assert.ok(workflow.includes("dist/data/images.json"));
+  assert.ok(workflow.includes("cancel-in-progress: false"));
   assert.ok(workflow.includes("actions/upload-pages-artifact@v4"));
   assert.ok(workflow.includes("actions/deploy-pages@v4"));
 }
