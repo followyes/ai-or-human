@@ -173,8 +173,12 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("Verify generated Pages artifact"));
   assert.ok(workflow.includes("dist/data/images.json"));
   assert.ok(workflow.includes("cancel-in-progress: false"));
-  assert.ok(workflow.includes("actions/upload-pages-artifact@v4"));
+  assert.ok(workflow.includes("actions/checkout@v7"));
+  assert.ok(workflow.includes("actions/setup-node@v7"));
+  assert.ok(workflow.includes("actions/configure-pages@v6"));
+  assert.ok(workflow.includes("actions/upload-pages-artifact@v3"));
   assert.ok(workflow.includes("actions/deploy-pages@v4"));
+  assert.ok(workflow.includes("actions: read"));
 }
 
 await testRoundSelector();
