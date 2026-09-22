@@ -1,0 +1,72 @@
+[
+  {
+    "path": ".gitignore",
+    "sha256": "a9bd9f51d7f89eaafcc26b13b716ee5bec436e7b90237fd8f968e670311d18ed",
+    "bytes": 34
+  },
+  {
+    "path": "README.md",
+    "sha256": "a7b882f6eb286e7b5b9b8733cd8bf125e8e5817833e83f152f4bd12fd63dc697",
+    "bytes": 2565
+  },
+  {
+    "path": "README_FIRST.txt",
+    "sha256": "2b49a167cc6df9b67d47943d05bd4aadbeb00ef7e54bf49a01fd9799d8caf99e",
+    "bytes": 559
+  },
+  {
+    "path": "css/style.css",
+    "sha256": "8dc1da72b66a9623e7804fb74f19421d09d42a4697a0e3e0572e382dd051ac61",
+    "bytes": 8349
+  },
+  {
+    "path": "data/images.json",
+    "sha256": "2173686222697121d70941b2618a54947cfb1299f8c601d06cf4e7a8ad95371b",
+    "bytes": 723
+  },
+  {
+    "path": "images/AI/demo-ai-01.svg",
+    "sha256": "80eccab1b03824daaab26d0bcf2da790bf37a99351c01ea64fc1794d445e6ae6",
+    "bytes": 359
+  },
+  {
+    "path": "images/AI/demo-ai-02.svg",
+    "sha256": "f5dbd2751897c2f60764033d987da6755ae73a79066dc54826d531ce30ee1bd4",
+    "bytes": 343
+  },
+  {
+    "path": "images/HUMAN/demo-human-01.svg",
+    "sha256": "8adf633a7fe30157d1c07a254e3757735ecc2ed253863129335dd9ff148fa805",
+    "bytes": 363
+  },
+  {
+    "path": "images/HUMAN/demo-human-02.svg",
+    "sha256": "3651c9a053c5bb94d97962da28b58cabf96f794919a63b9f084779bf5a296cd3",
+    "bytes": 382
+  },
+  {
+    "path": "index.html",
+    "sha256": "49c43c91b35823029c6019c3df0570bddec84bbbdcbb1487ba2caae6e3a7b921",
+    "bytes": 3644
+  },
+  {
+    "path": "js/game.js",
+    "sha256": "16fc8785fc34bd5ec86510e4fd9dfab6806d5d521e8927aa5ba0e16efc83d4ec",
+    "bytes": 11144
+  },
+  {
+    "path": "js/storage.js",
+    "sha256": "4603ea5d28c096ea6f49f4f55e328d60d2b37c97ca199e27ab58958d60b7e0f3",
+    "bytes": 848
+  },
+  {
+    "path": "package.json",
+    "sha256": "2121413ec778748c72b85cade18e5471af70a46af882b12fd5e3a598cf99dc0a",
+    "bytes": 161
+  },
+  {
+    "path": "scripts/generate-image-list.js",
+    "sha256": "d495efaca0c43f4d4992c4691094998245b3d86e7eeea0aa012439ff8379b332",
+    "bytes": 3192
+  }
+]

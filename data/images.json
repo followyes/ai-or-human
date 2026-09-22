@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-09-22T00:00:00.000Z",
+  "imageCount": 4,
+  "images": [
+    {
+      "id": "80eccab1b03824daaab26d0bcf2da790bf37a99351c01ea64fc1794d445e6ae6",
+      "src": "./images/AI/demo-ai-01.svg",
+      "type": "ai"
+    },
+    {
+      "id": "f5dbd2751897c2f60764033d987da6755ae73a79066dc54826d531ce30ee1bd4",
+      "src": "./images/AI/demo-ai-02.svg",
+      "type": "ai"
+    },
+    {
+      "id": "8adf633a7fe30157d1c07a254e3757735ecc2ed253863129335dd9ff148fa805",
+      "src": "./images/HUMAN/demo-human-01.svg",
+      "type": "human"
+    },
+    {
+      "id": "3651c9a053c5bb94d97962da28b58cabf96f794919a63b9f084779bf5a296cd3",
+      "src": "./images/HUMAN/demo-human-02.svg",
+      "type": "human"
+    }
+  ]
+}
