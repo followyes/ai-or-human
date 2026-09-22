@@ -13,13 +13,9 @@
       <div class="brand-block">
         <p class="eyebrow">AI OR HUMAN</p>
         <h1 id="game-title">Kto stworzył ten obraz?</h1>
-        <p class="lead">
-          Oceń 20 obrazów. Wybierz, czy stworzył je człowiek, czy sztuczna inteligencja.
-        </p>
       </div>
 
       <button class="primary-button" id="start-button" type="button">Rozpocznij</button>
-      <p class="start-status" id="start-status" role="status"></p>
     </section>
 
     <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite">
@@ -48,19 +44,17 @@
 
           <div class="image-frame">
             <img id="game-image" alt="Obraz do oceny" draggable="false">
-            <div class="image-loader" id="image-loader">Ładowanie…</div>
+            <div class="image-loader" id="image-loader" hidden></div>
           </div>
         </article>
       </div>
 
       <div class="controls" aria-label="Wybór odpowiedzi">
         <button class="choice-button choice-human" id="human-button" type="button">
-          <span class="choice-icon" aria-hidden="true">×</span>
           <span>CZŁOWIEK</span>
         </button>
 
         <button class="choice-button choice-ai" id="ai-button" type="button">
-          <span class="choice-icon" aria-hidden="true">✓</span>
           <span>AI</span>
         </button>
       </div>

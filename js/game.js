@@ -17,7 +17,6 @@ const endScreen = document.querySelector("#end-screen");
 const errorScreen = document.querySelector("#error-screen");
 
 const startButton = document.querySelector("#start-button");
-const startStatus = document.querySelector("#start-status");
 const roundCounter = document.querySelector("#round-counter");
 const scoreDisplay = document.querySelector("#score");
 const gameImage = document.querySelector("#game-image");
@@ -108,16 +107,6 @@ async function loadManifest() {
   }
 }
 
-function updateStartStatus() {
-  const remaining = getAvailableImages().length;
-
-  if (remaining === 0 && allImages.length > 0) {
-    startStatus.textContent = "Wykorzystano już wszystkie dostępne obrazy.";
-    return;
-  }
-
-  startStatus.textContent = `${remaining} niewidzianych obrazów w puli.`;
-}
 
 function setControlsDisabled(disabled) {
   humanButton.disabled = disabled;
@@ -168,11 +157,12 @@ function loadCurrentCard() {
 
   gameImage.classList.remove("is-ready");
   gameImage.removeAttribute("src");
-  imageLoader.hidden = false;
-  imageLoader.textContent = "Ładowanie…";
+  imageLoader.hidden = true;
+  imageLoader.textContent = "";
 
   gameImage.onload = () => {
     imageLoader.hidden = true;
+    imageLoader.textContent = "";
     gameImage.classList.add("is-ready");
   };
 
@@ -369,7 +359,6 @@ playAgainButton.addEventListener("click", startRound);
 
 resetHistoryButton.addEventListener("click", () => {
   resetSeenImageIds();
-  updateStartStatus();
   startRound();
 });
 
@@ -385,12 +374,10 @@ if (isTouchFirstDevice()) {
 async function bootstrap() {
   try {
     startButton.disabled = true;
-    startStatus.textContent = "Wczytywanie puli obrazów…";
 
     await loadManifest();
 
     startButton.disabled = false;
-    updateStartStatus();
   } catch (error) {
     console.error(error);
     errorMessage.textContent = error instanceof Error ? error.message : String(error);

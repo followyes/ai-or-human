@@ -1,4 +1,4 @@
-# AI or Human — V0.1
+# AI or Human — V0.1.1
 
 Prosta gra internetowa: gracz ocenia, czy obraz stworzył człowiek, czy AI.
 
@@ -91,3 +91,13 @@ Przed użyciem prawdziwej bazy możesz je bezpiecznie usunąć i ponownie wykona
 ```bash
 npm run images
 ```
+
+
+## V0.1.1 — UI / mobile correction
+
+- usunięto czerwony i zielony z odpowiedzi oraz feedbacku,
+- usunięto symbole `×` i `✓` z przycisków,
+- oba wybory są wizualnie neutralne,
+- ekran startowy nie pokazuje opisu rundy ani liczby niewidzianych obrazów,
+- usunięto stale widoczny napis `Ładowanie…`; komunikat pojawia się tylko przy realnym błędzie obrazu,
+- poprawiono poziome rozszerzanie strony podczas swipe/odrzucania karty na urządzeniach mobilnych.

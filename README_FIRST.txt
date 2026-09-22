@@ -1,4 +1,4 @@
-AI OR HUMAN — V0.1
+AI OR HUMAN — V0.1.1
 
 1. Otwórz projekt w terminalu.
 2. Dodaj swoje obrazy:
@@ -18,3 +18,5 @@ WAŻNE:
 - Jedna runda = maksymalnie 20 niewidzianych obrazów.
 - Historia widzianych obrazów jest zapisywana w localStorage.
 - Mobile: swipe w lewo = CZŁOWIEK, swipe w prawo = AI.
+
+V0.1.1: neutralne przyciski bez kolorystycznych sugestii; poprawione mobile swipe i loader.
