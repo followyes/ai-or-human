@@ -16,7 +16,9 @@ const folders = [
 const supportedExtensions = new Set([
   ".jpg",
   ".jpeg",
+  ".jfif",
   ".png",
+  ".bmp",
   ".webp",
   ".avif",
   ".gif",
@@ -47,7 +49,12 @@ async function walk(directory) {
 
 function toWebPath(absolutePath) {
   const relative = path.relative(projectRoot, absolutePath);
-  return `./${relative.split(path.sep).join("/")}`;
+  const encoded = relative
+    .split(path.sep)
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `./${encoded}`;
 }
 
 async function hashFile(absolutePath) {

@@ -35,7 +35,7 @@
         <h2 id="question-title">Kto stworzył ten obraz?</h2>
       </section>
 
-      <div class="card-stage" id="card-stage">
+      <div class="card-stage">
         <article class="image-card" id="image-card">
           <div class="choice-hint choice-hint-human" aria-hidden="true">CZŁOWIEK</div>
           <div class="choice-hint choice-hint-ai" aria-hidden="true">AI</div>
@@ -50,41 +50,32 @@
       </div>
 
       <div class="controls" aria-label="Wybór odpowiedzi">
-        <button class="choice-button choice-human" id="human-button" type="button">
-          <span>CZŁOWIEK</span>
-        </button>
-
-        <button class="choice-button choice-ai" id="ai-button" type="button">
-          <span>AI</span>
-        </button>
+        <button class="choice-button" id="human-button" type="button">CZŁOWIEK</button>
+        <button class="choice-button" id="ai-button" type="button">AI</button>
       </div>
 
-      <p class="swipe-help" id="swipe-help">
-        Na telefonie możesz też przesunąć kartę: w lewo = człowiek, w prawo = AI.
+      <p class="swipe-help">
+        Przesuń w lewo: człowiek · w prawo: AI
       </p>
     </section>
 
     <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title">
-      <p class="eyebrow">KONIEC RUNDY</p>
+      <p class="eyebrow">AI OR HUMAN</p>
       <h2 id="end-title">Twój wynik</h2>
 
       <div class="final-score">
         <strong id="final-score">0 / 20</strong>
-        <span id="final-percent">0%</span>
       </div>
 
-      <p class="end-message" id="end-message"></p>
+      <p class="end-message is-hidden" id="end-message"></p>
 
       <div class="end-actions">
         <button class="primary-button" id="play-again-button" type="button">Zagraj ponownie</button>
-        <button class="secondary-button is-hidden" id="reset-history-button" type="button">
-          Resetuj historię obrazów
-        </button>
       </div>
     </section>
 
     <section class="screen screen-error is-hidden" id="error-screen" role="alert">
-      <p class="eyebrow">BŁĄD</p>
+      <p class="eyebrow">AI OR HUMAN</p>
       <h2>Nie udało się uruchomić gry.</h2>
       <p id="error-message"></p>
     </section>

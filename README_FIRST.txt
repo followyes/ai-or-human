@@ -1,22 +1,26 @@
-AI OR HUMAN — V0.1.1
+AI OR HUMAN — V0.1.3
 
-1. Otwórz projekt w terminalu.
-2. Dodaj swoje obrazy:
-   - images/AI/
-   - images/HUMAN/
-3. Uruchom:
-   npm run images
-4. Uruchom lokalny serwer, np.:
-   python -m http.server 8080
-5. Wejdź na:
-   http://localhost:8080
+NAJWAŻNIEJSZE:
+1. Wrzuć swoje zdjęcia do:
+   images/AI/
+   images/HUMAN/
 
-WAŻNE:
-- Nie trzeba robić npm install.
-- data/images.json jest generowany automatycznie.
-- Odpowiedź wynika z folderu, nie z nazwy pliku.
-- Jedna runda = maksymalnie 20 niewidzianych obrazów.
-- Historia widzianych obrazów jest zapisywana w localStorage.
-- Mobile: swipe w lewo = CZŁOWIEK, swipe w prawo = AI.
+2. Po wdrożeniu tej wersji ustaw w GitHub:
+   Settings -> Pages -> Source -> GitHub Actions
 
-V0.1.1: neutralne przyciski bez kolorystycznych sugestii; poprawione mobile swipe i loader.
+3. Od tej chwili GitHub sam generuje listę zdjęć przed każdym deployem.
+   Nie musisz ręcznie poprawiać data/images.json po wrzuceniu zdjęć przez stronę GitHuba.
+
+4. Historia zdjęć działa tylko podczas aktualnie otwartej strony:
+   - Zagraj ponownie -> wcześniejsze zdjęcia się nie powtarzają.
+   - F5 / odświeżenie -> nowa sesja, historia jest czyszczona.
+
+5. Mobile:
+   swipe w lewo = CZŁOWIEK
+   swipe w prawo = AI
+
+6. Desktop:
+   podstawowe sterowanie przyciskami.
+
+Lokalny pełny test:
+npm run build

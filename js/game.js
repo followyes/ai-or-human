@@ -1,8 +1,4 @@
-import {
-  getSeenImageIds,
-  rememberImageId,
-  resetSeenImageIds
-} from "./storage.js";
+import { getSeenImageIds, rememberImageId, resetSessionHistory } from "./history.js";
 
 const ROUND_SIZE = 20;
 const SWIPE_MIN_PX = 72;
@@ -10,6 +6,7 @@ const SWIPE_RATIO = 0.22;
 const SWIPE_MAX_ROTATION = 12;
 const FEEDBACK_DELAY_MS = 420;
 const THROW_DURATION_MS = 430;
+const IMAGE_ERROR_SKIP_MS = 700;
 
 const startScreen = document.querySelector("#start-screen");
 const gameScreen = document.querySelector("#game-screen");
@@ -26,9 +23,7 @@ const feedbackBadge = document.querySelector("#feedback-badge");
 const humanButton = document.querySelector("#human-button");
 const aiButton = document.querySelector("#ai-button");
 const playAgainButton = document.querySelector("#play-again-button");
-const resetHistoryButton = document.querySelector("#reset-history-button");
 const finalScore = document.querySelector("#final-score");
-const finalPercent = document.querySelector("#final-percent");
 const endMessage = document.querySelector("#end-message");
 const errorMessage = document.querySelector("#error-message");
 
@@ -37,11 +32,15 @@ let roundDeck = [];
 let currentIndex = 0;
 let score = 0;
 let answerLocked = false;
+let loadToken = 0;
 
 let activePointerId = null;
 let dragStartX = 0;
+let dragStartY = 0;
 let dragDeltaX = 0;
+let dragDeltaY = 0;
 let dragging = false;
+let dragAxisLocked = null;
 
 function showOnly(screen) {
   [startScreen, gameScreen, endScreen, errorScreen].forEach((element) => {
@@ -60,9 +59,6 @@ function fisherYates(items) {
   return result;
 }
 
-function isTouchFirstDevice() {
-  return window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
-}
 
 function getAvailableImages() {
   const seen = getSeenImageIds();
@@ -70,8 +66,7 @@ function getAvailableImages() {
 }
 
 function buildRoundDeck() {
-  const available = fisherYates(getAvailableImages());
-  return available.slice(0, Math.min(ROUND_SIZE, available.length));
+  return fisherYates(getAvailableImages()).slice(0, ROUND_SIZE);
 }
 
 async function loadManifest() {
@@ -107,7 +102,6 @@ async function loadManifest() {
   }
 }
 
-
 function setControlsDisabled(disabled) {
   humanButton.disabled = disabled;
   aiButton.disabled = disabled;
@@ -124,10 +118,8 @@ function resetCardVisualState() {
   imageCard.style.transform = "";
   imageCard.style.opacity = "";
 
-  const humanHint = imageCard.querySelector(".choice-hint-human");
-  const aiHint = imageCard.querySelector(".choice-hint-ai");
-  humanHint.style.opacity = "0";
-  aiHint.style.opacity = "0";
+  imageCard.querySelector(".choice-hint-human").style.opacity = "0";
+  imageCard.querySelector(".choice-hint-ai").style.opacity = "0";
 }
 
 function preloadNextImage() {
@@ -138,6 +130,24 @@ function preloadNextImage() {
   preload.src = nextItem.src;
 }
 
+function showFatalError(message) {
+  errorMessage.textContent = message;
+  showOnly(errorScreen);
+}
+
+function skipBrokenImage(token) {
+  if (token !== loadToken) return;
+
+  roundDeck.splice(currentIndex, 1);
+
+  if (roundDeck.length === 0) {
+    showFatalError("Nie udało się wczytać żadnego obrazu z bieżącej puli.");
+    return;
+  }
+
+  loadCurrentCard();
+}
+
 function loadCurrentCard() {
   const item = roundDeck[currentIndex];
 
@@ -146,11 +156,14 @@ function loadCurrentCard() {
     return;
   }
 
+  loadToken += 1;
+  const token = loadToken;
+
   resetCardVisualState();
   feedbackBadge.className = "feedback-badge";
   feedbackBadge.textContent = "";
-  answerLocked = false;
-  setControlsDisabled(false);
+  answerLocked = true;
+  setControlsDisabled(true);
 
   roundCounter.textContent = `${currentIndex + 1} / ${roundDeck.length}`;
   scoreDisplay.textContent = String(score);
@@ -161,14 +174,20 @@ function loadCurrentCard() {
   imageLoader.textContent = "";
 
   gameImage.onload = () => {
+    if (token !== loadToken) return;
+
     imageLoader.hidden = true;
-    imageLoader.textContent = "";
     gameImage.classList.add("is-ready");
+    answerLocked = false;
+    setControlsDisabled(false);
   };
 
   gameImage.onerror = () => {
+    if (token !== loadToken) return;
+
     imageLoader.hidden = false;
-    imageLoader.textContent = "Nie udało się wczytać tego obrazu.";
+    imageLoader.textContent = "Nie udało się wczytać obrazu. Pomijam go…";
+    window.setTimeout(() => skipBrokenImage(token), IMAGE_ERROR_SKIP_MS);
   };
 
   gameImage.src = item.src;
@@ -179,14 +198,18 @@ function startRound() {
   roundDeck = buildRoundDeck();
 
   if (roundDeck.length === 0) {
-    showEndOfPool();
+    showPoolExhausted();
     return;
   }
 
   currentIndex = 0;
   score = 0;
-  answerLocked = false;
+  answerLocked = true;
   scoreDisplay.textContent = "0";
+
+  endMessage.classList.add("is-hidden");
+  endMessage.textContent = "";
+  playAgainButton.classList.remove("is-hidden");
 
   showOnly(gameScreen);
   loadCurrentCard();
@@ -194,7 +217,7 @@ function startRound() {
 
 function showFeedback(correct) {
   feedbackBadge.textContent = correct ? "DOBRZE" : "ŹLE";
-  feedbackBadge.className = `feedback-badge is-visible ${correct ? "is-correct" : "is-wrong"}`;
+  feedbackBadge.className = "feedback-badge is-visible";
 }
 
 function throwCard(direction) {
@@ -222,7 +245,6 @@ function answer(type, source = "button") {
 
   const direction = type === "ai" ? "right" : "left";
 
-  // Jeśli odpowiedź przyszła z gestu, karta jest już przesunięta.
   if (source !== "swipe") {
     imageCard.style.transform = "";
   }
@@ -239,31 +261,28 @@ function answer(type, source = "button") {
 
 function finishRound() {
   const played = roundDeck.length;
-  const percent = played > 0 ? Math.round((score / played) * 100) : 0;
   const remaining = getAvailableImages().length;
 
   finalScore.textContent = `${score} / ${played}`;
-  finalPercent.textContent = `${percent}%`;
 
   if (remaining === 0) {
-    endMessage.textContent = "Widziałeś już wszystkie obrazy dostępne w puli.";
+    endMessage.textContent = "Na razie wykorzystałeś wszystkie dostępne obrazy.";
+    endMessage.classList.remove("is-hidden");
     playAgainButton.classList.add("is-hidden");
-    resetHistoryButton.classList.remove("is-hidden");
   } else {
-    endMessage.textContent = `${remaining} niewidzianych obrazów pozostało w puli.`;
+    endMessage.textContent = "";
+    endMessage.classList.add("is-hidden");
     playAgainButton.classList.remove("is-hidden");
-    resetHistoryButton.classList.add("is-hidden");
   }
 
   showOnly(endScreen);
 }
 
-function showEndOfPool() {
+function showPoolExhausted() {
   finalScore.textContent = "—";
-  finalPercent.textContent = "";
-  endMessage.textContent = "Widziałeś już wszystkie obrazy dostępne w puli.";
+  endMessage.textContent = "Na razie wykorzystałeś wszystkie dostępne obrazy.";
+  endMessage.classList.remove("is-hidden");
   playAgainButton.classList.add("is-hidden");
-  resetHistoryButton.classList.remove("is-hidden");
   showOnly(endScreen);
 }
 
@@ -293,10 +312,8 @@ function cancelDrag() {
   imageCard.classList.add("is-returning");
   imageCard.style.transform = "translate3d(0, 0, 0) rotate(0deg)";
 
-  const humanHint = imageCard.querySelector(".choice-hint-human");
-  const aiHint = imageCard.querySelector(".choice-hint-ai");
-  humanHint.style.opacity = "0";
-  aiHint.style.opacity = "0";
+  imageCard.querySelector(".choice-hint-human").style.opacity = "0";
+  imageCard.querySelector(".choice-hint-ai").style.opacity = "0";
 
   window.setTimeout(() => {
     imageCard.classList.remove("is-returning");
@@ -304,52 +321,117 @@ function cancelDrag() {
   }, 250);
 }
 
-function onPointerDown(event) {
-  if (!isTouchFirstDevice() || answerLocked) return;
-  if (event.pointerType === "mouse") return;
+function beginDrag(clientX, clientY, pointerId = null) {
+  if (answerLocked || dragging) return false;
 
-  activePointerId = event.pointerId;
-  dragStartX = event.clientX;
+  activePointerId = pointerId;
+  dragStartX = clientX;
+  dragStartY = clientY;
   dragDeltaX = 0;
+  dragDeltaY = 0;
+  dragAxisLocked = null;
   dragging = true;
-
-  imageCard.setPointerCapture?.(event.pointerId);
   imageCard.classList.add("is-dragging");
+  return true;
 }
 
-function onPointerMove(event) {
-  if (!dragging || event.pointerId !== activePointerId || answerLocked) return;
+function moveDrag(clientX, clientY) {
+  if (!dragging || answerLocked) return;
 
-  dragDeltaX = event.clientX - dragStartX;
+  dragDeltaX = clientX - dragStartX;
+  dragDeltaY = clientY - dragStartY;
+
+  if (!dragAxisLocked) {
+    if (Math.abs(dragDeltaX) < 6 && Math.abs(dragDeltaY) < 6) return;
+    dragAxisLocked = Math.abs(dragDeltaX) >= Math.abs(dragDeltaY) ? "horizontal" : "vertical";
+  }
+
+  if (dragAxisLocked !== "horizontal") return;
   updateDragVisual(dragDeltaX);
 }
 
-function onPointerUp(event) {
-  if (!dragging || event.pointerId !== activePointerId || answerLocked) return;
+function finishDrag() {
+  if (!dragging || answerLocked) return;
 
   dragging = false;
-  imageCard.releasePointerCapture?.(event.pointerId);
 
-  const threshold = dragThreshold();
-
-  if (Math.abs(dragDeltaX) < threshold) {
+  if (dragAxisLocked !== "horizontal" || Math.abs(dragDeltaX) < dragThreshold()) {
     cancelDrag();
   } else {
-    const type = dragDeltaX > 0 ? "ai" : "human";
-    answer(type, "swipe");
+    answer(dragDeltaX > 0 ? "ai" : "human", "swipe");
   }
 
   activePointerId = null;
   dragStartX = 0;
+  dragStartY = 0;
   dragDeltaX = 0;
+  dragDeltaY = 0;
+  dragAxisLocked = null;
+}
+
+function abortDrag() {
+  if (!dragging) return;
+
+  dragging = false;
+  activePointerId = null;
+  dragStartX = 0;
+  dragStartY = 0;
+  dragDeltaX = 0;
+  dragDeltaY = 0;
+  dragAxisLocked = null;
+  cancelDrag();
+}
+
+function onPointerDown(event) {
+  // Desktop zostaje przy przyciskach. Touch/pen korzystają ze swipe.
+  if (event.pointerType === "mouse" || event.isPrimary === false) return;
+
+  if (!beginDrag(event.clientX, event.clientY, event.pointerId)) return;
+  imageCard.setPointerCapture?.(event.pointerId);
+}
+
+function onPointerMove(event) {
+  if (!dragging || event.pointerId !== activePointerId) return;
+  moveDrag(event.clientX, event.clientY);
+}
+
+function onPointerUp(event) {
+  if (!dragging || event.pointerId !== activePointerId) return;
+  imageCard.releasePointerCapture?.(event.pointerId);
+  finishDrag();
 }
 
 function onPointerCancel(event) {
   if (!dragging || event.pointerId !== activePointerId) return;
+  abortDrag();
+}
 
-  dragging = false;
-  activePointerId = null;
-  cancelDrag();
+function onTouchStart(event) {
+  if (event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  beginDrag(touch.clientX, touch.clientY, "touch");
+}
+
+function onTouchMove(event) {
+  if (!dragging || activePointerId !== "touch" || event.touches.length !== 1) return;
+
+  const touch = event.touches[0];
+  moveDrag(touch.clientX, touch.clientY);
+
+  // Gdy gest jest już poziomy, nie pozwalamy przeglądarce przejąć go jako scroll/nawigację.
+  if (dragAxisLocked === "horizontal" && event.cancelable) {
+    event.preventDefault();
+  }
+}
+
+function onTouchEnd() {
+  if (!dragging || activePointerId !== "touch") return;
+  finishDrag();
+}
+
+function onTouchCancel() {
+  if (!dragging || activePointerId !== "touch") return;
+  abortDrag();
 }
 
 humanButton.addEventListener("click", () => answer("human"));
@@ -357,31 +439,36 @@ aiButton.addEventListener("click", () => answer("ai"));
 startButton.addEventListener("click", startRound);
 playAgainButton.addEventListener("click", startRound);
 
-resetHistoryButton.addEventListener("click", () => {
-  resetSeenImageIds();
-  startRound();
-});
-
-imageCard.addEventListener("pointerdown", onPointerDown);
-imageCard.addEventListener("pointermove", onPointerMove);
-imageCard.addEventListener("pointerup", onPointerUp);
-imageCard.addEventListener("pointercancel", onPointerCancel);
-
-if (isTouchFirstDevice()) {
-  imageCard.classList.add("is-draggable");
+if ("PointerEvent" in window) {
+  imageCard.addEventListener("pointerdown", onPointerDown);
+  imageCard.addEventListener("pointermove", onPointerMove);
+  imageCard.addEventListener("pointerup", onPointerUp);
+  imageCard.addEventListener("pointercancel", onPointerCancel);
+} else {
+  // Fallback dla starszych / nietypowych silników mobilnych.
+  imageCard.addEventListener("touchstart", onTouchStart, { passive: true });
+  imageCard.addEventListener("touchmove", onTouchMove, { passive: false });
+  imageCard.addEventListener("touchend", onTouchEnd, { passive: true });
+  imageCard.addEventListener("touchcancel", onTouchCancel, { passive: true });
 }
 
 async function bootstrap() {
   try {
+    // Każde pełne odświeżenie strony zaczyna nową sesję gry i nową historię obrazów.
+    resetSessionHistory();
+    roundDeck = [];
+    currentIndex = 0;
+    score = 0;
+    answerLocked = true;
+    scoreDisplay.textContent = "0";
+    showOnly(startScreen);
+
     startButton.disabled = true;
-
     await loadManifest();
-
     startButton.disabled = false;
   } catch (error) {
     console.error(error);
-    errorMessage.textContent = error instanceof Error ? error.message : String(error);
-    showOnly(errorScreen);
+    showFatalError(error instanceof Error ? error.message : String(error));
   }
 }
 

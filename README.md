@@ -1,103 +1,111 @@
-# AI or Human — V0.1.1
+# AI or Human — V0.1.3
 
-Prosta gra internetowa: gracz ocenia, czy obraz stworzył człowiek, czy AI.
+Gra internetowa, w której gracz ocenia, czy obraz stworzył człowiek, czy AI.
 
-## Założenia V0.1
+## Najważniejsze zasady
 
-- 20 obrazów na rundę.
+- Jedna runda ma maksymalnie 20 obrazów.
 - `images/AI/` = poprawna odpowiedź **AI**.
 - `images/HUMAN/` = poprawna odpowiedź **CZŁOWIEK**.
-- Brak ręcznego opisywania obrazów jako `true` / `false`.
-- `data/images.json` jest generowany automatycznie.
-- Wykorzystane obrazy są zapamiętywane w `localStorage`.
-- Ten sam obraz nie wraca w kolejnych rundach, dopóki historia nie zostanie zresetowana.
-- Mobile: przyciski + swipe.
-- Swipe w lewo = CZŁOWIEK.
-- Swipe w prawo = AI.
+- Typ obrazu wynika wyłącznie z folderu.
+- W jednej otwartej sesji strony obraz nie pojawia się ponownie, także po kliknięciu **Zagraj ponownie**.
+- Pełne odświeżenie strony (`F5` / reload) celowo rozpoczyna nową sesję i czyści historię pokazanych obrazów.
 - Desktop: podstawowe sterowanie przyciskami.
-- Obrazy używają `object-fit: contain`, więc gra nie kadruje istotnych fragmentów.
+- Mobile: przyciski + swipe.
+- Swipe w lewo = **CZŁOWIEK**.
+- Swipe w prawo = **AI**.
+- UI odpowiedzi jest neutralny: bez czerwonego/zielonego i bez ikon sugerujących wybór.
 
-## Dodawanie obrazów
+## Dodawanie obrazów — GitHub
 
-1. Wrzuć obrazy AI do:
+Od V0.1.3 nie musisz ręcznie aktualizować `data/images.json` po każdym dodaniu zdjęć do repozytorium.
 
-   `images/AI/`
+Workflow GitHub Actions:
 
-2. Wrzuć obrazy stworzone przez człowieka do:
+1. pobiera aktualne repo,
+2. skanuje `images/AI/` i `images/HUMAN/`,
+3. generuje świeży `data/images.json`,
+4. wykonuje audyt,
+5. buduje stronę,
+6. publikuje ją na GitHub Pages.
 
-   `images/HUMAN/`
+### Jednorazowa konfiguracja Pages
 
-3. W katalogu projektu uruchom:
-
-   ```bash
-   npm run images
-   ```
-
-4. Zacommituj obrazy oraz wygenerowany `data/images.json`.
-
-Nie ma zależności npm i nie trzeba uruchamiać `npm install`.
-
-## Dlaczego generator jest potrzebny?
-
-GitHub Pages nie udostępnia JavaScriptowi listy plików znajdujących się w katalogu. Dlatego skrypt Node.js skanuje oba foldery przed publikacją i tworzy gotowy manifest.
-
-Typ obrazu jest wyznaczany wyłącznie przez folder.
-
-## Identyfikatory obrazów
-
-Generator używa SHA-256 zawartości pliku jako ID.
-
-Dzięki temu:
-- nie trzeba pilnować specjalnych nazw plików,
-- zmiana nazwy pliku nie powoduje ponownego pokazania tego samego obrazu,
-- identyczne kopie pliku w jednym folderze są deduplikowane,
-- identyczny plik umieszczony jednocześnie w `AI` i `HUMAN` zatrzyma generator błędem.
-
-## Lokalne uruchomienie
-
-Nie otwieraj `index.html` bezpośrednio przez `file://`, ponieważ gra pobiera `data/images.json` przez `fetch()`.
-
-Możesz użyć dowolnego prostego serwera lokalnego, np.:
-
-```bash
-python -m http.server 8080
-```
-
-Następnie otwórz:
-
-`http://localhost:8080`
-
-## GitHub Pages
-
-Po wrzuceniu projektu do repozytorium:
+Po wrzuceniu V0.1.3:
 
 1. GitHub → **Settings**
 2. **Pages**
-3. Source: **Deploy from a branch**
-4. Branch: `main`
-5. Folder: `/ (root)`
-6. Save
+3. **Build and deployment**
+4. **Source → GitHub Actions**
 
-Strona będzie działała z relatywnych ścieżek, więc pasuje do adresu projektu w rodzaju:
+Od tego momentu zwykłe dodanie zdjęć do folderów i commit/push wystarczy.
 
-`https://followyes.github.io/ai-or-human/`
+## Dodawanie obrazów lokalnie
 
-## Pliki demonstracyjne
-
-V0.1 zawiera po dwa proste pliki SVG w obu folderach tylko po to, aby można było natychmiast sprawdzić działanie pętli gry.
-
-Przed użyciem prawdziwej bazy możesz je bezpiecznie usunąć i ponownie wykonać:
+Jeśli pracujesz lokalnie:
 
 ```bash
 npm run images
 ```
 
+albo pełny build:
 
-## V0.1.1 — UI / mobile correction
+```bash
+npm run build
+```
 
-- usunięto czerwony i zielony z odpowiedzi oraz feedbacku,
-- usunięto symbole `×` i `✓` z przycisków,
-- oba wybory są wizualnie neutralne,
-- ekran startowy nie pokazuje opisu rundy ani liczby niewidzianych obrazów,
-- usunięto stale widoczny napis `Ładowanie…`; komunikat pojawia się tylko przy realnym błędzie obrazu,
-- poprawiono poziome rozszerzanie strony podczas swipe/odrzucania karty na urządzeniach mobilnych.
+Nie trzeba wykonywać `npm install` — projekt nie ma zewnętrznych zależności npm.
+
+## Obsługiwane formaty
+
+Generator przyjmuje:
+
+- `.jpg`
+- `.jpeg`
+- `.jfif`
+- `.png`
+- `.bmp`
+- `.webp`
+- `.avif`
+- `.gif`
+- `.svg`
+
+Rozszerzenia mogą być zapisane wielkimi lub małymi literami.
+
+## Dlaczego wcześniej zdjęcia wrzucone do folderów nie pojawiały się w grze?
+
+GitHub Pages jest hostingiem statycznym. JavaScript uruchomiony w przeglądarce nie może poprosić serwera o listę plików z katalogu `images/AI/` lub `images/HUMAN/`.
+
+W V0.1.2 trzeba było po dodaniu zdjęć ręcznie wykonać:
+
+```bash
+npm run images
+```
+
+i zacommitować wygenerowany `data/images.json`.
+
+V0.1.3 przenosi ten krok do GitHub Actions, więc manifest jest generowany automatycznie przed każdym deployem.
+
+## Swipe
+
+V0.1.3 nie opiera swipe na wykrywaniu „czy urządzenie jest mobilne”. Karta korzysta z Pointer Events dla dotyku/pióra oraz ma fallback Touch Events.
+
+`touch-action: pan-y` pozwala stronie zachować pionowe przewijanie, a poziomy gest karty przejmuje gra.
+
+Dla użytkowników z systemowym `prefers-reduced-motion` ruch jest skrócony, ale podstawowa animacja karty pozostaje widoczna.
+
+## Lokalny start
+
+```bash
+python -m http.server 8080
+```
+
+Następnie:
+
+`http://localhost:8080`
+
+## Testy
+
+```bash
+npm run audit
+```
