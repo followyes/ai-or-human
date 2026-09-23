@@ -7,9 +7,9 @@ const DEFAULTS = Object.freeze({
   decisionWidthRatio: 0.20,
   maxDecisionDistance: 120,
   maxRotation: 12,
-  returnDuration: 220,
-  throwDuration: 500,
-  revealDuration: 150,
+  returnDuration: 260,
+  throwDuration: 700,
+  revealDuration: 200,
   reducedReturnDuration: 100,
   reducedThrowDuration: 180,
   reducedRevealDuration: 1
