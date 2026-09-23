@@ -240,7 +240,7 @@ async function testSwipeLifecycle() {
     const reducedCard = new FakeCard();
     const reducedController = new SwipeController(reducedCard, { onDecision: () => {} });
     assert.equal(await reducedController.throw("human"), true);
-    assert.equal(reducedCard.lastAnimationOptions.duration, 150);
+    assert.equal(reducedCard.lastAnimationOptions.duration, 180);
     assert.equal(reducedCard.style.opacity, "0");
     reducedController.prepareHidden();
     assert.equal(await reducedController.reveal(), true);
@@ -565,6 +565,7 @@ async function testSourceContracts() {
   const css = await fs.readFile(path.join(projectRoot, "css", "style.css"), "utf8");
   const game = await fs.readFile(path.join(projectRoot, "js", "game.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
+  const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
   const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
 
@@ -594,6 +595,29 @@ async function testSourceContracts() {
   assert.ok(html.indexOf('id="answer-feedback"') > html.indexOf("</article>"), "feedback must be outside moving card");
   assert.ok(css.includes("--correct:"));
   assert.ok(css.includes("--incorrect:"));
+
+  const feedbackDurationMatch = feedbackSource.match(/\bduration:\s*(\d+)/);
+  const feedbackReducedMatch = feedbackSource.match(/\breducedDuration:\s*(\d+)/);
+  const throwDurationMatch = swipe.match(/\bthrowDuration:\s*(\d+)/);
+  const returnDurationMatch = swipe.match(/\breturnDuration:\s*(\d+)/);
+  const revealDurationMatch = swipe.match(/\brevealDuration:\s*(\d+)/);
+
+  assert.ok(feedbackDurationMatch && feedbackReducedMatch, "feedback timing contract must be present");
+  assert.ok(throwDurationMatch && returnDurationMatch && revealDurationMatch, "card timing contract must be present");
+
+  const feedbackDuration = Number(feedbackDurationMatch[1]);
+  const feedbackReducedDuration = Number(feedbackReducedMatch[1]);
+  const throwDuration = Number(throwDurationMatch[1]);
+  const returnDuration = Number(returnDurationMatch[1]);
+  const revealDuration = Number(revealDurationMatch[1]);
+
+  assert.ok(feedbackDuration >= 600 && feedbackDuration <= 800, "feedback must be readable without making Session sluggish");
+  assert.ok(throwDuration >= 450 && throwDuration <= 600, "throw must be perceivable but responsive");
+  assert.ok(feedbackDuration > throwDuration, "feedback must outlive the outgoing card");
+  assert.ok(feedbackDuration - throwDuration >= 120 && feedbackDuration - throwDuration <= 260, "feedback-only beat must stay balanced");
+  assert.ok(returnDuration >= 180 && returnDuration <= 280, "short-swipe return timing must stay controlled");
+  assert.ok(revealDuration >= 120 && revealDuration <= 220, "next-card reveal must stay visible but quick");
+  assert.ok(feedbackReducedDuration >= 400, "reduced-motion feedback must remain readable");
   assert.ok(game.includes("swipe.prepareHidden()"));
   assert.ok(game.includes("await swipe.reveal()"));
   assert.ok(game.includes("selector.recordExposure(item.id, sessionNumber)"));

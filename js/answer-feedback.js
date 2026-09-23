@@ -1,6 +1,6 @@
 const DEFAULTS = Object.freeze({
-  duration: 430,
-  reducedDuration: 120
+  duration: 680,
+  reducedDuration: 560
 });
 
 function prefersReducedMotion() {
@@ -58,9 +58,9 @@ export class AnswerFeedbackController {
     if (reduced) {
       const animation = this.root.animate(
         [
-          { opacity: 0, transform: "translate3d(0,0,0) scale(.98)" },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.18 },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.72 },
+          { opacity: 0, transform: "translate3d(0,0,0) scale(.995)" },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.14 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
           { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
         ],
         { duration, easing: "ease-out", fill: "forwards" }
@@ -69,18 +69,20 @@ export class AnswerFeedbackController {
     } else {
       const frames = correct
         ? [
-            { opacity: 0, transform: "translate3d(0,0,0) scale(.90)" },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1.03)", offset: 0.22 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.72 },
-            { opacity: 0, transform: "translate3d(0,0,0) scale(1.02)" }
+            { opacity: 0, transform: "translate3d(0,0,0) scale(.92)" },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1.045)", offset: 0.14 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.34 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
+            { opacity: 0, transform: "translate3d(0,0,0) scale(1.015)" }
           ]
         : [
-            { opacity: 0, transform: "translate3d(0,0,0) scale(.96)" },
-            { opacity: 1, transform: "translate3d(-7px,0,0) scale(1)", offset: 0.16 },
-            { opacity: 1, transform: "translate3d(7px,0,0) scale(1)", offset: 0.28 },
-            { opacity: 1, transform: "translate3d(-4px,0,0) scale(1)", offset: 0.40 },
-            { opacity: 1, transform: "translate3d(4px,0,0) scale(1)", offset: 0.52 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.72 },
+            { opacity: 0, transform: "translate3d(0,0,0) scale(.97)" },
+            { opacity: 1, transform: "translate3d(-8px,0,0) scale(1)", offset: 0.12 },
+            { opacity: 1, transform: "translate3d(8px,0,0) scale(1)", offset: 0.22 },
+            { opacity: 1, transform: "translate3d(-5px,0,0) scale(1)", offset: 0.32 },
+            { opacity: 1, transform: "translate3d(5px,0,0) scale(1)", offset: 0.42 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.54 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
             { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
           ];
 
@@ -93,8 +95,9 @@ export class AnswerFeedbackController {
       const ring = this.ring?.animate(
         [
           { opacity: 0, transform: "translate(-50%, -50%) scale(.72)" },
-          { opacity: .9, transform: "translate(-50%, -50%) scale(.92)", offset: 0.18 },
-          { opacity: 0, transform: "translate(-50%, -50%) scale(1.35)" }
+          { opacity: .95, transform: "translate(-50%, -50%) scale(.90)", offset: 0.14 },
+          { opacity: .62, transform: "translate(-50%, -50%) scale(1.12)", offset: 0.56 },
+          { opacity: 0, transform: "translate(-50%, -50%) scale(1.38)" }
         ],
         { duration, easing: "cubic-bezier(.15,.7,.25,1)", fill: "forwards" }
       );

@@ -7,11 +7,11 @@ const DEFAULTS = Object.freeze({
   decisionWidthRatio: 0.20,
   maxDecisionDistance: 120,
   maxRotation: 12,
-  returnDuration: 180,
-  throwDuration: 360,
-  revealDuration: 120,
-  reducedReturnDuration: 90,
-  reducedThrowDuration: 150,
+  returnDuration: 220,
+  throwDuration: 500,
+  revealDuration: 150,
+  reducedReturnDuration: 100,
+  reducedThrowDuration: 180,
   reducedRevealDuration: 1
 });
 
@@ -251,7 +251,7 @@ export class SwipeController {
         { transform: startTransform, opacity: 1 },
         { transform: targetTransform, opacity: 0 }
       ],
-      { duration, easing: "cubic-bezier(.18,.82,.2,1)", fill: "forwards" }
+      { duration, easing: "cubic-bezier(.22,.64,.30,1)", fill: "forwards" }
     );
     this.animation = animation;
 

@@ -94,3 +94,15 @@ Jeżeli aplikacja ładuje się, ale konsola pokazuje `GET .../data/images.json 4
 
 - Pages workflow minimum aligned with Session minimum: 10 images.
 - Source-contract test now parses and verifies the workflow threshold semantically instead of relying on one exact whitespace string.
+
+
+## V1.3.2 — Animation Timing Polish
+
+Production timing was rebalanced:
+- answer feedback: 680 ms,
+- card throw: 500 ms,
+- short-swipe return: 220 ms,
+- next-card reveal: 150 ms.
+
+There is still no artificial pause before throw. Feedback and card motion start immediately in parallel.
+The result remains visible for 180 ms after the outgoing card finishes, then the next image is revealed.
