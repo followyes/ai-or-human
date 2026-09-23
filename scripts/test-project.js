@@ -620,7 +620,9 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("npm run build"));
   assert.ok(workflow.includes("Verify generated Pages artifact"));
   assert.ok(workflow.includes("dist/data/images.json"));
-  assert.ok(workflow.includes("m.images.length < 10"));
+  const workflowMinMatch = workflow.match(/m\.images\.length\s*<\s*(\d+)/);
+  assert.ok(workflowMinMatch, "Pages workflow must verify the generated manifest minimum");
+  assert.equal(Number(workflowMinMatch[1]), 10, "Pages workflow minimum must match the 10-image Session option");
   assert.ok(workflow.includes("cancel-in-progress: false"));
   assert.ok(workflow.includes("actions/checkout@v7"));
   assert.ok(workflow.includes("actions/setup-node@v7"));

@@ -88,3 +88,9 @@ Jeżeli aplikacja ładuje się, ale konsola pokazuje `GET .../data/images.json 4
 - incorrect = red + × + ŹLE,
 - feedback and throw animate in parallel,
 - reduced-motion keeps semantic feedback.
+
+
+## V1.3.1 deployment correction
+
+- Pages workflow minimum aligned with Session minimum: 10 images.
+- Source-contract test now parses and verifies the workflow threshold semantically instead of relying on one exact whitespace string.
