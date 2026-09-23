@@ -1,5 +1,5 @@
 const DEFAULTS = Object.freeze({
-  duration: 680,
+  duration: 800,
   reducedDuration: 560
 });
 
