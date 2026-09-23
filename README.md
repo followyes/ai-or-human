@@ -106,3 +106,14 @@ Production timing was rebalanced:
 
 There is still no artificial pause before throw. Feedback and card motion start immediately in parallel.
 The result remains visible for 180 ms after the outgoing card finishes, then the next image is revealed.
+
+
+## V1.3.3 — Slower Animation Tuning
+
+Current timings:
+- answer feedback: 950 ms,
+- card throw: 700 ms,
+- short-swipe return: 260 ms,
+- next-card reveal: 200 ms.
+
+CI no longer enforces narrow subjective timing ranges. It keeps only functional invariants such as positive durations and feedback outliving the outgoing card.

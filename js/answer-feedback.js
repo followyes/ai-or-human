@@ -1,6 +1,6 @@
 const DEFAULTS = Object.freeze({
-  duration: 800,
-  reducedDuration: 560
+  duration: 950,
+  reducedDuration: 700
 });
 
 function prefersReducedMotion() {

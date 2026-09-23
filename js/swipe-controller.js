@@ -10,8 +10,8 @@ const DEFAULTS = Object.freeze({
   returnDuration: 260,
   throwDuration: 700,
   revealDuration: 200,
-  reducedReturnDuration: 100,
-  reducedThrowDuration: 180,
+  reducedReturnDuration: 120,
+  reducedThrowDuration: 220,
   reducedRevealDuration: 1
 });
 
