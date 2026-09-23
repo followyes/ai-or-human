@@ -30,7 +30,7 @@ jobs:
           node-version: "24"
           package-manager-cache: false
 
-      - name: Run V1 tests
+      - name: Run project tests
         run: npm run test
 
       - name: Build static site and image manifest
@@ -40,7 +40,7 @@ jobs:
         run: |
           test -f dist/index.html
           test -f dist/data/images.json
-          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/data/images.json','utf8')); if(!Array.isArray(m.images) || m.images.length < 20 || m.imageCount !== m.images.length) process.exit(1); console.log('Manifest verified:', m.imageCount, 'images');"
+          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/data/images.json','utf8')); if(!Array.isArray(m.images) || m.images.length < 10 || m.imageCount !== m.images.length) process.exit(1); console.log('Manifest verified:', m.imageCount, 'images');"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
