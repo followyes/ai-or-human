@@ -16,6 +16,15 @@
         <h1 id="game-title">Kto stworzył ten obraz?</h1>
       </div>
 
+      <div class="session-size-picker" aria-labelledby="start-size-label">
+        <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
+        <div class="session-size-options" aria-label="Liczba obrazów">
+          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
+          <button class="session-size-button" type="button" data-session-size="20" aria-pressed="true">20</button>
+          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+        </div>
+      </div>
+
       <button class="primary-button" id="start-button" type="button">Rozpocznij</button>
     </section>
 
@@ -62,6 +71,15 @@
 
       <div class="final-score">
         <strong id="final-score">0 / 20</strong>
+      </div>
+
+      <div class="session-size-picker session-size-picker-end" aria-labelledby="end-size-label">
+        <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
+        <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
+          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
+          <button class="session-size-button" type="button" data-session-size="20" aria-pressed="true">20</button>
+          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+        </div>
       </div>
 
       <div class="end-actions">

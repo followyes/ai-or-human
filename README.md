@@ -13,19 +13,31 @@ Nazwy plików nie mają znaczenia. Możesz używać także podfolderów.
 
 Obsługiwane formaty: JPG/JPEG/JFIF, PNG, BMP, WebP, AVIF, GIF i SVG.
 
-## Zasady V1.1
+## Zasady V1.2
 
-- jedna runda = dokładnie 20 unikalnych obrazów,
+Aktualny tryb gry jest wewnętrznie traktowany jako **Sesja**, ale nazwa trybu nie jest jeszcze pokazywana w interfejsie. Gdy pojawią się kolejne tryby, obecna mechanika dostanie dedykowany przycisk `Sesja`.
+
+Przed rozpoczęciem gracz wybiera liczbę obrazów:
+
+- 10,
+- 20,
+- 50.
+
+Pozostałe zasady:
+
+- wybrana sesja zawiera dokładnie tyle unikalnych obrazów, ile wskazał gracz,
 - proporcja AI/HUMAN jest losowa,
-- brak powtórzeń w obrębie jednej rundy,
-- pomiędzy rundami powtórki są dozwolone, ale niedawno pokazane obrazy mają niższą wagę losowania,
-- pełne odświeżenie strony zaczyna nową sesję wag,
+- brak powtórzeń w obrębie jednej sesji,
+- pomiędzy sesjami powtórki są dozwolone, ale niedawno pokazane obrazy mają niższą wagę losowania,
+- pełne odświeżenie strony zaczyna nową historię wag,
 - mobile: swipe w lewo = CZŁOWIEK, swipe w prawo = AI,
 - desktop: przyciski,
 - po udanym swipe stara karta pozostaje ukryta do chwili pełnej gotowości następnego obrazu,
 - następny obraz jest ładowany i dekodowany przed reveal,
 - przyciski i swipe są odblokowywane dopiero po zakończeniu reveal,
 - ostatnia karta po throw przechodzi bezpośrednio do wyniku i nie wraca na środek.
+
+Jeżeli pula zawiera mniej obrazów niż dany wariant, ten wariant jest w UI wyłączony. Minimalna poprawna pula dla aplikacji to 10 obrazów.
 
 ## Build
 
@@ -36,11 +48,11 @@ npm run build
 
 `npm run build` skanuje `images/AI/**` i `images/HUMAN/**`, waliduje pulę i generuje produkcyjny `dist/data/images.json`.
 
-`data/images.json` **nie jest plikiem źródłowym w repozytorium** i nie powinien być utrzymywany ręcznie. Build wymaga co najmniej 20 unikalnych obrazów łącznie.
+`data/images.json` **nie jest plikiem źródłowym w repozytorium** i nie powinien być utrzymywany ręcznie. Build wymaga co najmniej 10 unikalnych obrazów łącznie.
 
 ## GitHub Pages — wymagany tryb wdrożenia
 
-V1.1 **nie może być publikowane przez `Deploy from a branch` z katalogu głównego repozytorium**. Źródłowy kod celowo nie zawiera `data/images.json`; plik powstaje dopiero podczas builda.
+Aplikacja **nie może być publikowana przez `Deploy from a branch` z katalogu głównego repozytorium**. Źródłowy kod celowo nie zawiera `data/images.json`; plik powstaje dopiero podczas builda.
 
 W repozytorium musi istnieć:
 
@@ -64,17 +76,4 @@ Stronę należy sprawdzać dopiero po zielonym `PASS` całego workflow w zakład
 
 ## 404 dla `data/images.json`
 
-Jeżeli aplikacja ładuje się, ale konsola pokazuje:
-
-```text
-GET .../data/images.json 404
-```
-
-to nie oznacza problemu z nazwami zdjęć. Oznacza, że GitHub Pages serwuje źródła repo zamiast zbudowanego artefaktu `dist/` albo build/deploy nie został wykonany.
-
-Sprawdź kolejno:
-
-1. czy `.github/workflows/pages.yml` naprawdę znajduje się na GitHubie,
-2. czy **Settings → Pages → Source** ma wartość **GitHub Actions**,
-3. czy najnowszy workflow w **Actions** zakończył się PASS,
-4. czy krok `Verify generated Pages artifact` raportuje poprawny manifest.
+Jeżeli aplikacja ładuje się, ale konsola pokazuje `GET .../data/images.json 404`, GitHub Pages serwuje źródła repo zamiast zbudowanego artefaktu `dist/` albo build/deploy nie został wykonany.

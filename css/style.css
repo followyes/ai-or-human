@@ -128,6 +128,61 @@ h2 {
   margin-top: 30px;
 }
 
+.session-size-picker {
+  width: min(100%, 340px);
+  margin: 28px auto 0;
+}
+
+.session-size-picker-end {
+  margin-top: 26px;
+}
+
+.session-size-picker .meta-label {
+  display: block;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.session-size-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.session-size-button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  transition: background 150ms ease, box-shadow 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+.session-size-button:hover:not(:disabled):not(.is-selected) {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.session-size-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.session-size-button.is-selected {
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgba(23, 31, 38, 0.10);
+}
+
+.session-size-button:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+
 .primary-button {
   min-height: 52px;
   border: 0;
@@ -404,6 +459,7 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .primary-button,
   .choice-button,
+  .session-size-button,
   #game-image,
   .feedback-badge {
     transition-duration: 0.001ms !important;

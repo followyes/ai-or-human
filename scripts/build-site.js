@@ -20,7 +20,7 @@ const CLASS_FOLDERS = Object.freeze([
   { diskName: "HUMAN", type: "human" }
 ]);
 
-const MIN_IMAGE_COUNT = 20;
+const MIN_IMAGE_COUNT = 10;
 
 async function walkImages(directory) {
   let entries;

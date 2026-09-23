@@ -1,8 +1,13 @@
 import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
-
-const ROUND_SIZE = 20;
+import {
+  DEFAULT_SESSION_SIZE,
+  MIN_SESSION_SIZE,
+  SESSION_SIZE_OPTIONS,
+  isSessionSizeAvailable as isConfiguredSessionSizeAvailable,
+  resolveSessionSize
+} from "./session-config.js";
 
 const startScreen = document.querySelector("#start-screen");
 const gameScreen = document.querySelector("#game-screen");
@@ -14,6 +19,7 @@ const retryButton = document.querySelector("#retry-button");
 const playAgainButton = document.querySelector("#play-again-button");
 const humanButton = document.querySelector("#human-button");
 const aiButton = document.querySelector("#ai-button");
+const sessionSizeButtons = [...document.querySelectorAll("[data-session-size]")];
 
 const roundCounter = document.querySelector("#round-counter");
 const scoreDisplay = document.querySelector("#score");
@@ -30,8 +36,11 @@ let selector = null;
 let preloader = null;
 let swipe = null;
 
-let roundNumber = 0;
-let roundDeck = [];
+let sessionNumber = 0;
+let sessionDeck = [];
+let selectedSessionSize = DEFAULT_SESSION_SIZE;
+let activeSessionSize = DEFAULT_SESSION_SIZE;
+let availableImageCount = 0;
 let currentIndex = 0;
 let score = 0;
 let state = "boot";
@@ -77,6 +86,49 @@ function hideImageContent() {
   gameImage.classList.remove("is-ready");
 }
 
+function getUsableImageCount() {
+  return Math.max(0, availableImageCount - (preloader?.invalidImageIds?.size ?? 0));
+}
+
+function isSessionSizeAvailable(size) {
+  return isConfiguredSessionSizeAvailable(size, getUsableImageCount());
+}
+
+function syncSessionSizeControls({ busy = false } = {}) {
+  for (const button of sessionSizeButtons) {
+    const size = Number(button.dataset.sessionSize);
+    const available = isSessionSizeAvailable(size);
+    const selected = size === selectedSessionSize;
+
+    button.disabled = busy || !available;
+    button.setAttribute("aria-pressed", String(selected));
+    button.classList.toggle("is-selected", selected);
+
+    if (!available && availableImageCount > 0) {
+      button.title = `Ta opcja wymaga co najmniej ${size} obrazów w puli.`;
+    } else {
+      button.removeAttribute("title");
+    }
+  }
+}
+
+function chooseSessionSize(size) {
+  if (!isSessionSizeAvailable(size)) return false;
+  selectedSessionSize = size;
+  syncSessionSizeControls();
+  return true;
+}
+
+function configureSessionSizeAvailability(imageCount) {
+  availableImageCount = imageCount;
+
+  if (!isSessionSizeAvailable(selectedSessionSize)) {
+    selectedSessionSize = resolveSessionSize(imageCount, selectedSessionSize) ?? MIN_SESSION_SIZE;
+  }
+
+  syncSessionSizeControls();
+}
+
 function showFatalError(message) {
   presentationRevision += 1;
   setState("error");
@@ -111,8 +163,8 @@ function validateManifest(manifest) {
     images.push(item);
   }
 
-  if (images.length < ROUND_SIZE) {
-    throw new Error(`Gra wymaga co najmniej ${ROUND_SIZE} unikalnych obrazów w puli.`);
+  if (images.length < MIN_SESSION_SIZE) {
+    throw new Error(`Gra wymaga co najmniej ${MIN_SESSION_SIZE} unikalnych obrazów w puli.`);
   }
 
   return images;
@@ -131,7 +183,7 @@ async function loadManifest() {
   if (!response.ok) {
     if (response.status === 404) {
       console.error(
-        "[AI OR HUMAN] Brak dist/data/images.json. Na GitHub Pages V1 musi być publikowane przez workflow GitHub Actions. " +
+        "[AI OR HUMAN] Brak dist/data/images.json. Na GitHub Pages aplikacja musi być publikowana przez workflow GitHub Actions. " +
         "Sprawdź: repo zawiera .github/workflows/pages.yml, Settings > Pages > Source = GitHub Actions oraz ostatni workflow zakończył się PASS."
       );
     } else {
@@ -143,13 +195,14 @@ async function loadManifest() {
 
   const images = validateManifest(await response.json());
   selector = new RoundSelector(images);
-  preloader = new RoundPreloader(selector, { roundSize: ROUND_SIZE });
+  preloader = new RoundPreloader(selector);
+  configureSessionSizeAvailability(images.length);
 }
 
 async function presentCurrentCard({ revealGameScreen = false } = {}) {
-  const item = roundDeck[currentIndex];
+  const item = sessionDeck[currentIndex];
   if (!item) {
-    finishRound();
+    finishSession();
     return false;
   }
 
@@ -159,13 +212,13 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
   hideImageContent();
   swipe.prepareHidden();
 
-  roundCounter.textContent = `${currentIndex + 1} / ${ROUND_SIZE}`;
+  roundCounter.textContent = `${currentIndex + 1} / ${activeSessionSize}`;
   scoreDisplay.textContent = String(score);
 
   try {
     await loadImageIntoElement(gameImage, item.src);
   } catch (error) {
-    console.error("[AI OR HUMAN] Obraz rundy nie jest już dostępny po preloadzie.", error);
+    console.error("[AI OR HUMAN] Obraz sesji nie jest już dostępny po preloadzie.", error);
     showFatalError("Przygotowany obraz przestał być dostępny. Odśwież stronę i spróbuj ponownie.");
     return false;
   }
@@ -186,23 +239,29 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
   const revealed = await swipe.reveal();
   if (!revealed || revision !== presentationRevision || state === "error") return false;
 
-  selector.recordExposure(item.id, roundNumber);
+  selector.recordExposure(item.id, sessionNumber);
   setState("playing");
   return true;
 }
 
-async function prepareAndStartRound(triggerButton, normalText) {
+async function prepareAndStartSession(triggerButton, normalText) {
   if (!preloader || state === "preparing") return;
+  if (!isSessionSizeAvailable(selectedSessionSize)) return;
 
   setState("preparing");
   setButtonBusy(triggerButton, true, normalText);
+  syncSessionSizeControls({ busy: true });
 
   try {
-    const nextRoundNumber = roundNumber + 1;
-    const preparedDeck = await preloader.prepare(nextRoundNumber);
+    const requestedSessionSize = selectedSessionSize;
+    const nextSessionNumber = sessionNumber + 1;
+    const preparedDeck = await preloader.prepare(nextSessionNumber, {
+      roundSize: requestedSessionSize
+    });
 
-    roundNumber = nextRoundNumber;
-    roundDeck = preparedDeck;
+    sessionNumber = nextSessionNumber;
+    sessionDeck = preparedDeck;
+    activeSessionSize = requestedSessionSize;
     currentIndex = 0;
     score = 0;
     scoreDisplay.textContent = "0";
@@ -213,6 +272,7 @@ async function prepareAndStartRound(triggerButton, normalText) {
     showFatalError(error instanceof Error ? error.message : String(error));
   } finally {
     setButtonBusy(triggerButton, false, normalText);
+    syncSessionSizeControls();
   }
 }
 
@@ -224,7 +284,7 @@ function showFeedback(correct) {
 async function answer(type) {
   if (state !== "playing") return;
 
-  const item = roundDeck[currentIndex];
+  const item = sessionDeck[currentIndex];
   if (!item) return;
 
   setState("answering");
@@ -244,24 +304,25 @@ async function answer(type) {
 
   currentIndex += 1;
 
-  if (currentIndex >= ROUND_SIZE) {
-    finishRound();
+  if (currentIndex >= activeSessionSize) {
+    finishSession();
     return;
   }
 
   await presentCurrentCard();
 }
 
-function finishRound() {
+function finishSession() {
   presentationRevision += 1;
   setState("result");
   clearCardOverlays();
   hideImageContent();
   // After the final throw the card intentionally stays hidden. Do not reset it
-  // before switching screens, otherwise the 20th image can flash back on screen.
-  finalScore.textContent = `${score} / ${ROUND_SIZE}`;
+  // before switching screens, otherwise the final image can flash back on screen.
+  finalScore.textContent = `${score} / ${activeSessionSize}`;
   playAgainButton.disabled = false;
   playAgainButton.textContent = "Zagraj ponownie";
+  syncSessionSizeControls();
   showOnly(endScreen);
 }
 
@@ -279,6 +340,7 @@ async function bootstrap() {
     setState("boot");
     showOnly(startScreen);
     startButton.disabled = true;
+    syncSessionSizeControls({ busy: true });
     await loadManifest();
     startButton.disabled = false;
     setState("ready");
@@ -288,8 +350,12 @@ async function bootstrap() {
   }
 }
 
-startButton.addEventListener("click", () => prepareAndStartRound(startButton, "Rozpocznij"));
-playAgainButton.addEventListener("click", () => prepareAndStartRound(playAgainButton, "Zagraj ponownie"));
+sessionSizeButtons.forEach((button) => {
+  button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));
+});
+
+startButton.addEventListener("click", () => prepareAndStartSession(startButton, "Rozpocznij"));
+playAgainButton.addEventListener("click", () => prepareAndStartSession(playAgainButton, "Zagraj ponownie"));
 retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));

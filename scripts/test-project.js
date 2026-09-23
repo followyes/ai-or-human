@@ -6,7 +6,14 @@ import { fileURLToPath } from "node:url";
 import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
-import { loadImageIntoElement } from "../js/image-preloader.js";
+import {
+  DEFAULT_SESSION_SIZE,
+  MIN_SESSION_SIZE,
+  SESSION_SIZE_OPTIONS,
+  isSessionSizeAvailable,
+  resolveSessionSize
+} from "../js/session-config.js";
+import { RoundPreloader, loadImageIntoElement } from "../js/image-preloader.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -283,6 +290,73 @@ async function copyRuntimeFixture(targetRoot) {
   }
 }
 
+function testSessionConfig() {
+  assert.deepEqual(SESSION_SIZE_OPTIONS, [10, 20, 50]);
+  assert.equal(MIN_SESSION_SIZE, 10);
+  assert.equal(DEFAULT_SESSION_SIZE, 20);
+  assert.equal(resolveSessionSize(9), null);
+  assert.equal(resolveSessionSize(10), 10);
+  assert.equal(resolveSessionSize(19), 10);
+  assert.equal(resolveSessionSize(20), 20);
+  assert.equal(resolveSessionSize(49), 20);
+  assert.equal(resolveSessionSize(50), 20);
+  assert.equal(resolveSessionSize(60, 50), 50);
+  assert.equal(isSessionSizeAvailable(10, 10), true);
+  assert.equal(isSessionSizeAvailable(20, 19), false);
+  assert.equal(isSessionSizeAvailable(50, 60), true);
+  assert.equal(isSessionSizeAvailable(30, 60), false);
+}
+
+async function testDynamicRoundPreloader() {
+  const previousWindow = globalThis.window;
+  const previousImage = globalThis.Image;
+
+  class FakePreloadImage {
+    constructor() {
+      this.complete = false;
+      this.naturalWidth = 0;
+      this.listeners = new Map();
+    }
+
+    addEventListener(type, listener) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(listener);
+    }
+
+    removeEventListener(type, listener) {
+      this.listeners.get(type)?.delete(listener);
+    }
+
+    set src(value) {
+      this._src = value;
+      this.complete = true;
+      this.naturalWidth = 100;
+      queueMicrotask(() => {
+        for (const listener of this.listeners.get("load") || []) listener();
+      });
+    }
+
+    async decode() {}
+  }
+
+  globalThis.window = { setTimeout, clearTimeout };
+  globalThis.Image = FakePreloadImage;
+
+  try {
+    const selector = new RoundSelector(makeImages(60, "ai"), { rng: createSeededRng(99) });
+    const preloader = new RoundPreloader(selector, { concurrency: 4, timeoutMs: 500 });
+
+    for (const [roundNumber, roundSize] of [[1, 10], [2, 20], [3, 50]]) {
+      const deck = await preloader.prepare(roundNumber, { roundSize });
+      assert.equal(deck.length, roundSize);
+      assert.equal(new Set(deck.map((item) => item.id)).size, roundSize);
+    }
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.Image = previousImage;
+  }
+}
+
 async function testRoundSelector() {
   const mixed = [
     ...makeImages(30, "ai"),
@@ -297,6 +371,14 @@ async function testRoundSelector() {
   const round = selector.select(20, { roundNumber: 1 });
   assert.equal(round.length, 20, "round must contain exactly 20 images");
   assert.equal(new Set(round.map((item) => item.id)).size, 20, "round IDs must be unique");
+
+  const ten = selector.select(10, { roundNumber: 1 });
+  assert.equal(ten.length, 10, "10-image session must contain exactly 10 images");
+  assert.equal(new Set(ten.map((item) => item.id)).size, 10);
+
+  const fifty = selector.select(50, { roundNumber: 1 });
+  assert.equal(fifty.length, 50, "50-image session must contain exactly 50 images");
+  assert.equal(new Set(fifty.map((item) => item.id)).size, 50);
 
   const allAiSelector = new RoundSelector(makeImages(25, "ai"), { rng: createSeededRng(11) });
   const allAiRound = allAiSelector.select(20, { roundNumber: 1 });
@@ -357,7 +439,7 @@ async function testBuildTooSmall() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-small-"));
   await copyRuntimeFixture(tempRoot);
 
-  for (let i = 0; i < 19; i += 1) {
+  for (let i = 0; i < 9; i += 1) {
     await writeSvg(path.join(tempRoot, "images", "AI", `${i}.svg`), `ONLY-${i}`);
   }
 
@@ -396,28 +478,37 @@ async function testSourceContracts() {
   const css = await fs.readFile(path.join(projectRoot, "css", "style.css"), "utf8");
   const game = await fs.readFile(path.join(projectRoot, "js", "game.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
+  const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
   const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
   assert.ok(!html.includes("reset-history"));
   assert.ok(!/[✓✕×]/u.test(html));
   assert.ok(html.includes('rel="icon"'));
+  assert.ok(html.includes('data-session-size="10"'));
+  assert.ok(html.includes('data-session-size="20"'));
+  assert.ok(html.includes('data-session-size="50"'));
+  assert.ok(!html.includes(">Sesja<"), "mode name must stay hidden until multiple modes exist");
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
   assert.ok(css.includes("touch-action: pan-y"));
   assert.ok(!css.includes("transition: opacity 120ms ease"), "image fade must not race the card handoff");
   assert.ok(css.includes("overflow-x: clip") || css.includes("overflow-x: hidden"));
   assert.ok(!game.includes("localStorage"));
   assert.ok(!game.includes("history.js"));
+  assert.ok(game.includes("SESSION_SIZE_OPTIONS"));
+  assert.ok(sessionConfig.includes("[10, 20, 50]"));
+  assert.ok(game.includes("activeSessionSize"));
+  assert.ok(game.includes("roundSize: requestedSessionSize"));
   assert.ok(!game.includes("FEEDBACK_HOLD_MS"), "swipe must not pause before throw");
   assert.ok(game.includes("swipe.prepareHidden()"));
   assert.ok(game.includes("await swipe.reveal()"));
-  assert.ok(game.includes("selector.recordExposure(item.id, roundNumber)"));
+  assert.ok(game.includes("selector.recordExposure(item.id, sessionNumber)"));
   assert.ok(
-    game.indexOf("await swipe.reveal()") < game.indexOf("selector.recordExposure(item.id, roundNumber)"),
+    game.indexOf("await swipe.reveal()") < game.indexOf("selector.recordExposure(item.id, sessionNumber)"),
     "exposure must be recorded only after reveal"
   );
   assert.ok(
-    game.indexOf("selector.recordExposure(item.id, roundNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, roundNumber)")),
+    game.indexOf("selector.recordExposure(item.id, sessionNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, sessionNumber)")),
     "input must unlock only after reveal/exposure"
   );
   assert.ok(game.includes("Settings > Pages > Source = GitHub Actions"));
@@ -434,6 +525,7 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("npm run build"));
   assert.ok(workflow.includes("Verify generated Pages artifact"));
   assert.ok(workflow.includes("dist/data/images.json"));
+  assert.ok(workflow.includes("m.images.length < 10"));
   assert.ok(workflow.includes("cancel-in-progress: false"));
   assert.ok(workflow.includes("actions/checkout@v7"));
   assert.ok(workflow.includes("actions/setup-node@v7"));
@@ -443,6 +535,8 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("actions: read"));
 }
 
+testSessionConfig();
+await testDynamicRoundPreloader();
 await testRoundSelector();
 await testBuildSuccess();
 await testBuildTooSmall();
@@ -452,11 +546,13 @@ await testImageReadinessContract();
 await testSourceContracts();
 
 console.log("TEST PASS");
-console.log("Round selection 20/20 unique: PASS");
+console.log("Session configuration 10/20/50: PASS");
+console.log("Dynamic preloader 10/20/50: PASS");
+console.log("Session selection 10/20/50 unique: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
-console.log("Build >=20 + unicode filenames: PASS");
-console.log("Build <20 controlled failure: PASS");
+console.log("Build >=10 + unicode filenames: PASS");
+console.log("Build <10 controlled failure: PASS");
 console.log("Cross-class binary duplicate detection: PASS");
 console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");

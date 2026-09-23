@@ -119,12 +119,16 @@ export class RoundPreloader {
     this.invalidImageIds = new Set();
   }
 
-  async prepare(roundNumber) {
+  async prepare(roundNumber, { roundSize = this.roundSize } = {}) {
+    if (!Number.isInteger(roundSize) || roundSize < 1) {
+      throw new RangeError("roundSize must be a positive integer");
+    }
+
     const prepared = [];
     const selectedIds = new Set();
 
-    while (prepared.length < this.roundSize) {
-      const needed = this.roundSize - prepared.length;
+    while (prepared.length < roundSize) {
+      const needed = roundSize - prepared.length;
       const excluded = new Set([...this.invalidImageIds, ...selectedIds]);
       let candidates;
 
@@ -135,7 +139,7 @@ export class RoundPreloader {
         });
       } catch {
         throw new Error(
-          `Nie udało się przygotować ${this.roundSize} poprawnych obrazów do rundy.`
+          `Nie udało się przygotować ${roundSize} poprawnych obrazów do sesji.`
         );
       }
 
