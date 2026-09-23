@@ -77,3 +77,14 @@ Stronę należy sprawdzać dopiero po zielonym `PASS` całego workflow w zakład
 ## 404 dla `data/images.json`
 
 Jeżeli aplikacja ładuje się, ale konsola pokazuje `GET .../data/images.json 404`, GitHub Pages serwuje źródła repo zamiast zbudowanego artefaktu `dist/` albo build/deploy nie został wykonany.
+
+
+## V1.3
+
+- real-touch swipe hardening (`touch-action: none`, immediate pointer capture),
+- pointer-cancel recovery,
+- independent green/red answer feedback layer,
+- correct = green + ✓ + DOBRZE,
+- incorrect = red + × + ŹLE,
+- feedback and throw animate in parallel,
+- reduced-motion keeps semantic feedback.

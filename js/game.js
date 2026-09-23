@@ -1,6 +1,7 @@
 import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
+import { AnswerFeedbackController } from "./answer-feedback.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -28,13 +29,14 @@ const errorMessage = document.querySelector("#error-message");
 
 const imageCard = document.querySelector("#image-card");
 const gameImage = document.querySelector("#game-image");
-const feedbackBadge = document.querySelector("#feedback-badge");
+const answerFeedbackElement = document.querySelector("#answer-feedback");
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
 let selector = null;
 let preloader = null;
 let swipe = null;
+let answerFeedback = null;
 
 let sessionNumber = 0;
 let sessionDeck = [];
@@ -77,8 +79,7 @@ function updateSwipeHints(progress) {
 }
 
 function clearCardOverlays() {
-  feedbackBadge.classList.remove("is-visible");
-  feedbackBadge.textContent = "";
+  answerFeedback?.clear();
   updateSwipeHints(0);
 }
 
@@ -276,11 +277,6 @@ async function prepareAndStartSession(triggerButton, normalText) {
   }
 }
 
-function showFeedback(correct) {
-  feedbackBadge.textContent = correct ? "DOBRZE" : "ŹLE";
-  feedbackBadge.classList.add("is-visible");
-}
-
 async function answer(type) {
   if (state !== "playing") return;
 
@@ -295,12 +291,13 @@ async function answer(type) {
     scoreDisplay.textContent = String(score);
   }
 
-  showFeedback(correct);
+  // Feedback remains fixed above the stage while the card leaves immediately.
+  // Both paths share one lifecycle; there is no artificial feedback hold timeout.
+  const feedbackPromise = answerFeedback.play(correct);
+  const throwPromise = swipe.throw(type);
 
-  // The feedback travels with the outgoing card. There is no artificial pause
-  // between releasing a swipe and the throw animation.
-  const thrown = await swipe.throw(type);
-  if (!thrown || state === "error") return;
+  const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
+  if (!feedbackShown || !thrown || state === "error") return;
 
   currentIndex += 1;
 
@@ -326,7 +323,8 @@ function finishSession() {
   showOnly(endScreen);
 }
 
-function initializeSwipe() {
+function initializeInteractions() {
+  answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
   swipe = new SwipeController(imageCard, {
     onDecision: (type) => answer(type),
     onProgress: updateSwipeHints
@@ -336,7 +334,7 @@ function initializeSwipe() {
 
 async function bootstrap() {
   try {
-    initializeSwipe();
+    initializeInteractions();
     setState("boot");
     showOnly(startScreen);
     startButton.disabled = true;

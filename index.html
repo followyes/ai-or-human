@@ -49,12 +49,19 @@
         <article class="image-card" id="image-card">
           <div class="choice-hint choice-hint-human" aria-hidden="true">CZŁOWIEK</div>
           <div class="choice-hint choice-hint-ai" aria-hidden="true">AI</div>
-          <div class="feedback-badge" id="feedback-badge" aria-hidden="true"></div>
 
           <div class="image-frame">
             <img id="game-image" alt="Obraz do oceny" draggable="false">
           </div>
         </article>
+
+        <div class="answer-feedback" id="answer-feedback" aria-live="assertive" aria-atomic="true" aria-hidden="true">
+          <div class="answer-feedback__ring" data-feedback-ring aria-hidden="true"></div>
+          <div class="answer-feedback__pill">
+            <span class="answer-feedback__icon" data-feedback-icon aria-hidden="true"></span>
+            <span class="answer-feedback__label" data-feedback-label></span>
+          </div>
+        </div>
       </div>
 
       <div class="controls" aria-label="Wybór odpowiedzi">

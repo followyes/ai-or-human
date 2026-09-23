@@ -40,6 +40,7 @@ export class SwipeController {
     this.handoffPending = false;
     this.animation = null;
     this.animationRevision = 0;
+    this.lastCancelReason = null;
 
     this.handlePointerDown = this.handlePointerDown.bind(this);
     this.handlePointerMove = this.handlePointerMove.bind(this);
@@ -57,7 +58,7 @@ export class SwipeController {
   setEnabled(enabled) {
     this.enabled = Boolean(enabled);
     if (!this.enabled && this.activePointerId !== null) {
-      this.endGesture({ animateReturn: false });
+      this.endGesture({ animateReturn: false, reason: "disabled" });
     }
   }
 
@@ -72,11 +73,21 @@ export class SwipeController {
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? reduced : normal;
   }
 
+  capturePointer(pointerId) {
+    try {
+      this.card.setPointerCapture?.(pointerId);
+      return this.card.hasPointerCapture?.(pointerId) ?? true;
+    } catch {
+      return false;
+    }
+  }
+
   handlePointerDown(event) {
     if (
       !this.enabled ||
       this.returning ||
       this.handoffPending ||
+      this.activePointerId !== null ||
       event.isPrimary === false ||
       event.pointerType === "mouse"
     ) {
@@ -90,6 +101,10 @@ export class SwipeController {
     this.deltaY = 0;
     this.horizontalActive = false;
     this.verticalAborted = false;
+    this.lastCancelReason = null;
+
+    // Real-touch contract: own the pointer stream immediately.
+    this.capturePointer(event.pointerId);
   }
 
   handlePointerMove(event) {
@@ -107,9 +122,7 @@ export class SwipeController {
         absY > absX * this.options.verticalIntentRatio
       ) {
         this.verticalAborted = true;
-        const pointerId = this.activePointerId;
-        this.cleanupGestureState();
-        this.releasePointer(pointerId);
+        this.endGesture({ animateReturn: false, reason: "vertical-intent" });
         return;
       }
 
@@ -122,12 +135,9 @@ export class SwipeController {
 
       this.horizontalActive = true;
       this.card.classList.add("is-dragging");
-      try {
-        this.card.setPointerCapture(event.pointerId);
-      } catch {
-        // Capture can fail if the browser has already cancelled the pointer.
-      }
     }
+
+    if (event.cancelable) event.preventDefault();
 
     const width = Math.max(this.card.clientWidth, 1);
     const progress = clamp(this.deltaX / width, -1, 1);
@@ -154,23 +164,24 @@ export class SwipeController {
       return;
     }
 
-    this.endGesture({ animateReturn: this.horizontalActive });
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "pointerup" });
   }
 
   handlePointerCancel(event) {
     if (event.pointerId !== this.activePointerId) return;
-    this.endGesture({ animateReturn: this.horizontalActive });
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "pointercancel" });
   }
 
   handleLostPointerCapture(event) {
     if (event.pointerId !== this.activePointerId) return;
-    this.endGesture({ animateReturn: this.horizontalActive });
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "lostpointercapture" });
   }
 
-  endGesture({ animateReturn }) {
+  endGesture({ animateReturn, reason = "cancelled" }) {
     const pointerId = this.activePointerId;
     const hadTransform = Boolean(this.card.style.transform);
 
+    this.lastCancelReason = reason;
     this.card.classList.remove("is-dragging");
     this.cleanupGestureState({ preserveTransform: animateReturn && hadTransform });
     if (pointerId !== null) this.releasePointer(pointerId);
@@ -188,7 +199,7 @@ export class SwipeController {
         this.card.releasePointerCapture(pointerId);
       }
     } catch {
-      // No-op: pointer may already be released by the browser.
+      // Pointer may already be released by the browser.
     }
   }
 
@@ -198,25 +209,17 @@ export class SwipeController {
 
     const revision = ++this.animationRevision;
     const from = this.card.style.transform || "translate3d(0, 0, 0) rotate(0deg)";
-    const duration = this.motionDuration(
-      this.options.returnDuration,
-      this.options.reducedReturnDuration
-    );
+    const duration = this.motionDuration(this.options.returnDuration, this.options.reducedReturnDuration);
 
     const animation = this.card.animate(
-      [
-        { transform: from },
-        { transform: "translate3d(0, 0, 0) rotate(0deg)" }
-      ],
+      [{ transform: from }, { transform: "translate3d(0, 0, 0) rotate(0deg)" }],
       { duration, easing: "cubic-bezier(.2,.75,.3,1)" }
     );
     this.animation = animation;
 
     try {
       await animation.finished;
-    } catch {
-      // Cancellation is expected when another game-state transition takes ownership.
-    }
+    } catch {}
 
     if (revision !== this.animationRevision || this.animation !== animation) return false;
 
@@ -237,10 +240,7 @@ export class SwipeController {
     const startTransform = this.card.style.transform || "translate3d(0, 0, 0) rotate(0deg)";
     const distance = Math.max(window.innerWidth, this.card.clientWidth) + this.card.clientWidth + 80;
     const targetTransform = `translate3d(${sign * distance}px, 40px, 0) rotate(${sign * 18}deg)`;
-    const duration = this.motionDuration(
-      this.options.throwDuration,
-      this.options.reducedThrowDuration
-    );
+    const duration = this.motionDuration(this.options.throwDuration, this.options.reducedThrowDuration);
 
     this.card.classList.remove("is-dragging");
     this.cleanupGestureState({ preserveTransform: true });
@@ -257,24 +257,16 @@ export class SwipeController {
 
     try {
       await animation.finished;
-    } catch {
-      // Cancellation is expected only when a higher-level state transition takes ownership.
-    }
+    } catch {}
 
     if (revision !== this.animationRevision || this.animation !== animation) return false;
 
-    // Commit the hidden/off-screen state before cancelling the WAAPI fill.
-    // The old card must never snap back to the centre after a successful throw.
     this.card.style.transform = targetTransform;
     this.card.style.opacity = "0";
     this.onProgress(0);
     this.handoffPending = true;
 
-    try {
-      animation.cancel();
-    } catch {
-      // Already finished/cancelled.
-    }
+    try { animation.cancel(); } catch {}
     this.animation = null;
     return true;
   }
@@ -297,10 +289,7 @@ export class SwipeController {
     this.card.style.transform = "";
     this.card.style.opacity = "0";
 
-    const duration = this.motionDuration(
-      this.options.revealDuration,
-      this.options.reducedRevealDuration
-    );
+    const duration = this.motionDuration(this.options.revealDuration, this.options.reducedRevealDuration);
     const revision = ++this.animationRevision;
     const animation = this.card.animate(
       [{ opacity: 0 }, { opacity: 1 }],
@@ -310,9 +299,7 @@ export class SwipeController {
 
     try {
       await animation.finished;
-    } catch {
-      // Cancellation is expected when the game changes screen/state.
-    }
+    } catch {}
 
     if (revision !== this.animationRevision || this.animation !== animation) return false;
 
@@ -320,11 +307,7 @@ export class SwipeController {
     this.card.style.transform = "";
     this.handoffPending = false;
 
-    try {
-      animation.cancel();
-    } catch {
-      // Already finished/cancelled.
-    }
+    try { animation.cancel(); } catch {}
     this.animation = null;
     return true;
   }
@@ -343,11 +326,7 @@ export class SwipeController {
   stopAnimation() {
     this.animationRevision += 1;
     if (this.animation) {
-      try {
-        this.animation.cancel();
-      } catch {
-        // Already finished/cancelled.
-      }
+      try { this.animation.cancel(); } catch {}
       this.animation = null;
     }
   }

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
+import { AnswerFeedbackController } from "../js/answer-feedback.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -47,12 +48,12 @@ class FakeClassList {
     this.values = new Set();
   }
 
-  add(value) {
-    this.values.add(value);
+  add(...values) {
+    values.forEach((value) => this.values.add(value));
   }
 
-  remove(value) {
-    this.values.delete(value);
+  remove(...values) {
+    values.forEach((value) => this.values.delete(value));
   }
 
   contains(value) {
@@ -173,6 +174,7 @@ async function testSwipeLifecycle() {
       isPrimary: true,
       pointerType: "touch"
     });
+    assert.equal(card.capturedPointers.has(1), true, "touch pointer must be captured on pointerdown");
     card.dispatch("pointermove", {
       pointerId: 1,
       clientX: 140,
@@ -210,6 +212,26 @@ async function testSwipeLifecycle() {
       pointerType: "touch"
     });
     assert.equal(controller.activePointerId, 3, "new swipe must work after return finishes");
+
+    card.dispatch("pointercancel", {
+      pointerId: 3,
+      clientX: 210,
+      clientY: 210,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    await flushTasks();
+    assert.equal(controller.activePointerId, null);
+
+    card.dispatch("pointerdown", {
+      pointerId: 4,
+      clientX: 220,
+      clientY: 220,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    assert.equal(controller.activePointerId, 4, "swipe must recover after pointercancel");
+    assert.equal(card.capturedPointers.has(4), true);
 
     controller.destroy();
 
@@ -283,6 +305,71 @@ async function testImageReadinessContract() {
   }
 }
 
+
+
+class FakeFeedbackElement {
+  constructor() {
+    this.classList = new FakeClassList();
+    this.dataset = {};
+    this.attributes = new Map();
+    this.children = {
+      icon: { textContent: "" },
+      label: { textContent: "" },
+      ring: { animate: () => new FakeAnimation() }
+    };
+    this.lastAnimationOptions = null;
+  }
+
+  querySelector(selector) {
+    if (selector === "[data-feedback-icon]") return this.children.icon;
+    if (selector === "[data-feedback-label]") return this.children.label;
+    if (selector === "[data-feedback-ring]") return this.children.ring;
+    return null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  removeAttribute(name) {
+    this.attributes.delete(name);
+  }
+
+  animate(keyframes, options) {
+    this.lastAnimationOptions = options;
+    return new FakeAnimation();
+  }
+}
+
+async function testAnswerFeedbackLifecycle() {
+  const previousWindow = globalThis.window;
+  globalThis.window = { matchMedia: () => ({ matches: false }) };
+
+  try {
+    const root = new FakeFeedbackElement();
+    const feedback = new AnswerFeedbackController(root, { options: { duration: 20 } });
+
+    const promise = feedback.play(false);
+    assert.equal(root.children.icon.textContent, "×");
+    assert.equal(root.children.label.textContent, "ŹLE");
+    assert.equal(root.classList.contains("is-incorrect"), true);
+    assert.equal(root.dataset.result, "incorrect");
+    assert.equal(root.attributes.get("aria-hidden"), "false");
+    assert.equal(await promise, true);
+    assert.equal(root.attributes.get("aria-hidden"), "true");
+    assert.equal(root.children.label.textContent, "");
+
+    globalThis.window.matchMedia = () => ({ matches: true });
+    const reducedRoot = new FakeFeedbackElement();
+    const reduced = new AnswerFeedbackController(reducedRoot, {
+      options: { duration: 430, reducedDuration: 1 }
+    });
+    assert.equal(await reduced.play(true), true);
+    assert.equal(reducedRoot.lastAnimationOptions.duration, 1);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+}
 
 async function copyRuntimeFixture(targetRoot) {
   for (const entry of ["index.html", "css", "js"]) {
@@ -483,14 +570,15 @@ async function testSourceContracts() {
 
   assert.ok(!html.includes("final-percent"));
   assert.ok(!html.includes("reset-history"));
-  assert.ok(!/[✓✕×]/u.test(html));
+  assert.ok(html.includes("data-feedback-icon"));
+  assert.ok(html.includes("data-feedback-label"));
   assert.ok(html.includes('rel="icon"'));
   assert.ok(html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
   assert.ok(!html.includes(">Sesja<"), "mode name must stay hidden until multiple modes exist");
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
-  assert.ok(css.includes("touch-action: pan-y"));
+  assert.ok(css.includes("touch-action: none"));
   assert.ok(!css.includes("transition: opacity 120ms ease"), "image fade must not race the card handoff");
   assert.ok(css.includes("overflow-x: clip") || css.includes("overflow-x: hidden"));
   assert.ok(!game.includes("localStorage"));
@@ -500,6 +588,12 @@ async function testSourceContracts() {
   assert.ok(game.includes("activeSessionSize"));
   assert.ok(game.includes("roundSize: requestedSessionSize"));
   assert.ok(!game.includes("FEEDBACK_HOLD_MS"), "swipe must not pause before throw");
+  assert.ok(game.includes("AnswerFeedbackController"));
+  assert.ok(game.includes("Promise.all([feedbackPromise, throwPromise])"));
+  assert.ok(!html.includes("feedback-badge"));
+  assert.ok(html.indexOf('id="answer-feedback"') > html.indexOf("</article>"), "feedback must be outside moving card");
+  assert.ok(css.includes("--correct:"));
+  assert.ok(css.includes("--incorrect:"));
   assert.ok(game.includes("swipe.prepareHidden()"));
   assert.ok(game.includes("await swipe.reveal()"));
   assert.ok(game.includes("selector.recordExposure(item.id, sessionNumber)"));
@@ -514,6 +608,7 @@ async function testSourceContracts() {
   assert.ok(game.includes("Settings > Pages > Source = GitHub Actions"));
   assert.ok(!game.includes("Nie udało się wczytać katalogu obrazów ("));
   assert.ok(swipe.includes("pointerdown"));
+  assert.ok(swipe.includes("this.capturePointer(event.pointerId)"));
   assert.ok(swipe.includes("pointermove"));
   assert.ok(swipe.includes("lostpointercapture"));
   assert.ok(!swipe.includes("touchstart"));
@@ -543,6 +638,7 @@ await testBuildTooSmall();
 await testCrossClassDuplicate();
 await testSwipeLifecycle();
 await testImageReadinessContract();
+await testAnswerFeedbackLifecycle();
 await testSourceContracts();
 
 console.log("TEST PASS");
@@ -556,4 +652,6 @@ console.log("Build <10 controlled failure: PASS");
 console.log("Cross-class binary duplicate detection: PASS");
 console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");
+console.log("Mobile pointer capture/cancel recovery: PASS");
+console.log("Answer feedback semantic lifecycle: PASS");
 console.log("UI/deploy source contracts: PASS");
