@@ -1,28 +1,78 @@
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_CONCURRENCY = 4;
 
-export function preloadImage(src, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+function hasDecodedPixels(image) {
+  return Boolean(image?.complete && Number(image.naturalWidth) > 0);
+}
+
+async function decodeLoadedImage(image) {
+  if (typeof image.decode !== "function") return;
+
+  try {
+    await image.decode();
+  } catch (error) {
+    // Some browsers/formats can reject decode() even though the loaded image is displayable.
+    // Treat it as fatal only when the element no longer has valid decoded dimensions.
+    if (!hasDecodedPixels(image)) throw error;
+  }
+}
+
+export function loadImageIntoElement(image, src, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  if (!image) throw new TypeError("image element is required");
+  if (typeof src !== "string" || !src) throw new TypeError("image src is required");
+
   return new Promise((resolve, reject) => {
-    const image = new Image();
     let settled = false;
+    let loadHandled = false;
+
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      image.removeEventListener?.("load", handleLoad);
+      image.removeEventListener?.("error", handleError);
+    };
 
     const finish = (callback, value) => {
       if (settled) return;
       settled = true;
-      window.clearTimeout(timer);
-      image.onload = null;
-      image.onerror = null;
+      cleanup();
       callback(value);
     };
 
+    const handleLoad = async () => {
+      if (settled || loadHandled) return;
+      loadHandled = true;
+
+      try {
+        await decodeLoadedImage(image);
+        finish(resolve, image);
+      } catch (error) {
+        finish(reject, error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+
+    const handleError = () => {
+      finish(reject, new Error(`Image load failed: ${src}`));
+    };
+
     const timer = window.setTimeout(() => {
-      finish(reject, new Error(`Image preload timed out: ${src}`));
+      finish(reject, new Error(`Image load timed out: ${src}`));
     }, timeoutMs);
 
-    image.onload = () => finish(resolve, image);
-    image.onerror = () => finish(reject, new Error(`Image preload failed: ${src}`));
+    image.addEventListener?.("load", handleLoad);
+    image.addEventListener?.("error", handleError);
     image.src = src;
+
+    // Cached resources can already be complete before the event listener receives a new event.
+    if (hasDecodedPixels(image)) {
+      queueMicrotask(handleLoad);
+    }
   });
+}
+
+export function preloadImage(src, { timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const image = new Image();
+  image.decoding = "async";
+  return loadImageIntoElement(image, src, { timeoutMs });
 }
 
 async function preloadWithConcurrency(candidates, { timeoutMs, concurrency }) {

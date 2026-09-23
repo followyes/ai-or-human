@@ -231,7 +231,6 @@ h2 {
   object-fit: contain;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
 }
 
 #game-image.is-ready {

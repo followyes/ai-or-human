@@ -13,7 +13,7 @@ Nazwy plików nie mają znaczenia. Możesz używać także podfolderów.
 
 Obsługiwane formaty: JPG/JPEG/JFIF, PNG, BMP, WebP, AVIF, GIF i SVG.
 
-## Zasady V1
+## Zasady V1.1
 
 - jedna runda = dokładnie 20 unikalnych obrazów,
 - proporcja AI/HUMAN jest losowa,
@@ -21,7 +21,11 @@ Obsługiwane formaty: JPG/JPEG/JFIF, PNG, BMP, WebP, AVIF, GIF i SVG.
 - pomiędzy rundami powtórki są dozwolone, ale niedawno pokazane obrazy mają niższą wagę losowania,
 - pełne odświeżenie strony zaczyna nową sesję wag,
 - mobile: swipe w lewo = CZŁOWIEK, swipe w prawo = AI,
-- desktop: przyciski.
+- desktop: przyciski,
+- po udanym swipe stara karta pozostaje ukryta do chwili pełnej gotowości następnego obrazu,
+- następny obraz jest ładowany i dekodowany przed reveal,
+- przyciski i swipe są odblokowywane dopiero po zakończeniu reveal,
+- ostatnia karta po throw przechodzi bezpośrednio do wyniku i nie wraca na środek.
 
 ## Build
 
@@ -36,7 +40,7 @@ npm run build
 
 ## GitHub Pages — wymagany tryb wdrożenia
 
-V1 **nie może być publikowane przez `Deploy from a branch` z katalogu głównego repozytorium**. Źródłowy kod celowo nie zawiera `data/images.json`; plik powstaje dopiero podczas builda.
+V1.1 **nie może być publikowane przez `Deploy from a branch` z katalogu głównego repozytorium**. Źródłowy kod celowo nie zawiera `data/images.json`; plik powstaje dopiero podczas builda.
 
 W repozytorium musi istnieć:
 

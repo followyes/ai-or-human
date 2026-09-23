@@ -5,6 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
+import { SwipeController } from "../js/swipe-controller.js";
+import { loadImageIntoElement } from "../js/image-preloader.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -30,6 +32,250 @@ async function writeSvg(filePath, label) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="white"/><text x="2" y="20">${label}</text></svg>`;
   await fs.writeFile(filePath, svg, "utf8");
 }
+
+
+
+class FakeClassList {
+  constructor() {
+    this.values = new Set();
+  }
+
+  add(value) {
+    this.values.add(value);
+  }
+
+  remove(value) {
+    this.values.delete(value);
+  }
+
+  contains(value) {
+    return this.values.has(value);
+  }
+}
+
+class FakeAnimation {
+  constructor({ deferred = false } = {}) {
+    this.cancelled = false;
+    this.resolveFinished = null;
+    this.rejectFinished = null;
+    this.finished = new Promise((resolve, reject) => {
+      this.resolveFinished = resolve;
+      this.rejectFinished = reject;
+    });
+
+    if (!deferred) queueMicrotask(() => this.resolveFinished());
+  }
+
+  cancel() {
+    this.cancelled = true;
+  }
+
+  finish() {
+    this.resolveFinished();
+  }
+}
+
+class FakeCard {
+  constructor() {
+    this.clientWidth = 400;
+    this.style = { transform: "", opacity: "" };
+    this.classList = new FakeClassList();
+    this.listeners = new Map();
+    this.capturedPointers = new Set();
+    this.deferNextAnimation = false;
+    this.lastAnimation = null;
+  }
+
+  addEventListener(type, listener) {
+    this.listeners.set(type, listener);
+  }
+
+  removeEventListener(type) {
+    this.listeners.delete(type);
+  }
+
+  setPointerCapture(pointerId) {
+    this.capturedPointers.add(pointerId);
+  }
+
+  hasPointerCapture(pointerId) {
+    return this.capturedPointers.has(pointerId);
+  }
+
+  releasePointerCapture(pointerId) {
+    this.capturedPointers.delete(pointerId);
+  }
+
+  animate(keyframes, options) {
+    this.lastAnimationKeyframes = keyframes;
+    this.lastAnimationOptions = options;
+    const animation = new FakeAnimation({ deferred: this.deferNextAnimation });
+    this.deferNextAnimation = false;
+    this.lastAnimation = animation;
+    return animation;
+  }
+
+  dispatch(type, event) {
+    this.listeners.get(type)?.(event);
+  }
+}
+
+async function flushTasks() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function testSwipeLifecycle() {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    innerWidth: 900,
+    matchMedia: () => ({ matches: false }),
+    setTimeout,
+    clearTimeout
+  };
+
+  try {
+    const card = new FakeCard();
+    const decisions = [];
+    const controller = new SwipeController(card, {
+      onDecision: (direction) => decisions.push(direction)
+    });
+
+    const thrown = await controller.throw("ai");
+    assert.equal(thrown, true, "throw must complete");
+    assert.equal(card.style.opacity, "0", "successful throw must leave old card hidden");
+    assert.match(card.style.transform, /translate3d\([1-9]/, "successful throw must leave old card off-screen");
+    assert.equal(controller.handoffPending, true, "throw must transfer ownership to card handoff");
+
+    controller.prepareHidden();
+    assert.equal(card.style.opacity, "0", "prepareHidden must keep card hidden");
+    assert.equal(card.style.transform, "", "prepareHidden must reset geometry while hidden");
+
+    const revealed = await controller.reveal();
+    assert.equal(revealed, true, "reveal must complete");
+    assert.equal(card.style.opacity, "", "reveal must restore normal card opacity");
+    assert.equal(controller.handoffPending, false, "reveal must finish handoff");
+    controller.setEnabled(true);
+
+    // A short swipe starts an async return. New pointerdown must be ignored until that
+    // return owns/finishes its lifecycle, preventing old cleanup from corrupting a new gesture.
+    card.deferNextAnimation = true;
+    card.dispatch("pointerdown", {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    card.dispatch("pointermove", {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 102,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    card.dispatch("pointerup", {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 102,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+
+    assert.equal(controller.returning, true, "short swipe must own a return transition");
+    card.dispatch("pointerdown", {
+      pointerId: 2,
+      clientX: 200,
+      clientY: 200,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    assert.equal(controller.activePointerId, null, "pointerdown during return must be ignored");
+
+    card.lastAnimation.finish();
+    await flushTasks();
+    assert.equal(controller.returning, false, "return transition must release its lock after finish");
+
+    card.dispatch("pointerdown", {
+      pointerId: 3,
+      clientX: 210,
+      clientY: 210,
+      isPrimary: true,
+      pointerType: "touch"
+    });
+    assert.equal(controller.activePointerId, 3, "new swipe must work after return finishes");
+
+    controller.destroy();
+
+    // Reduced-motion keeps the exact same hidden-handoff contract, only with shorter timings.
+    globalThis.window.matchMedia = () => ({ matches: true });
+    const reducedCard = new FakeCard();
+    const reducedController = new SwipeController(reducedCard, { onDecision: () => {} });
+    assert.equal(await reducedController.throw("human"), true);
+    assert.equal(reducedCard.lastAnimationOptions.duration, 150);
+    assert.equal(reducedCard.style.opacity, "0");
+    reducedController.prepareHidden();
+    assert.equal(await reducedController.reveal(), true);
+    assert.equal(reducedCard.lastAnimationOptions.duration, 1);
+    assert.equal(reducedCard.style.opacity, "");
+    reducedController.destroy();
+  } finally {
+    globalThis.window = previousWindow;
+  }
+}
+
+async function testImageReadinessContract() {
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    setTimeout,
+    clearTimeout
+  };
+
+  class FakeImageElement {
+    constructor() {
+      this.complete = false;
+      this.naturalWidth = 0;
+      this.listeners = new Map();
+      this.decodeCalls = 0;
+      this._src = "";
+    }
+
+    addEventListener(type, listener) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type).add(listener);
+    }
+
+    removeEventListener(type, listener) {
+      this.listeners.get(type)?.delete(listener);
+    }
+
+    set src(value) {
+      this._src = value;
+      this.complete = true;
+      this.naturalWidth = 100;
+      queueMicrotask(() => {
+        for (const listener of this.listeners.get("load") || []) listener();
+      });
+    }
+
+    get src() {
+      return this._src;
+    }
+
+    async decode() {
+      this.decodeCalls += 1;
+    }
+  }
+
+  try {
+    const image = new FakeImageElement();
+    const result = await loadImageIntoElement(image, "./images/AI/example.png", { timeoutMs: 500 });
+    assert.equal(result, image);
+    assert.equal(image.decodeCalls, 1, "visible image readiness must include decode()");
+  } finally {
+    globalThis.window = previousWindow;
+  }
+}
+
 
 async function copyRuntimeFixture(targetRoot) {
   for (const entry of ["index.html", "css", "js"]) {
@@ -158,9 +404,22 @@ async function testSourceContracts() {
   assert.ok(html.includes('rel="icon"'));
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
   assert.ok(css.includes("touch-action: pan-y"));
+  assert.ok(!css.includes("transition: opacity 120ms ease"), "image fade must not race the card handoff");
   assert.ok(css.includes("overflow-x: clip") || css.includes("overflow-x: hidden"));
   assert.ok(!game.includes("localStorage"));
   assert.ok(!game.includes("history.js"));
+  assert.ok(!game.includes("FEEDBACK_HOLD_MS"), "swipe must not pause before throw");
+  assert.ok(game.includes("swipe.prepareHidden()"));
+  assert.ok(game.includes("await swipe.reveal()"));
+  assert.ok(game.includes("selector.recordExposure(item.id, roundNumber)"));
+  assert.ok(
+    game.indexOf("await swipe.reveal()") < game.indexOf("selector.recordExposure(item.id, roundNumber)"),
+    "exposure must be recorded only after reveal"
+  );
+  assert.ok(
+    game.indexOf("selector.recordExposure(item.id, roundNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, roundNumber)")),
+    "input must unlock only after reveal/exposure"
+  );
   assert.ok(game.includes("Settings > Pages > Source = GitHub Actions"));
   assert.ok(!game.includes("Nie udało się wczytać katalogu obrazów ("));
   assert.ok(swipe.includes("pointerdown"));
@@ -168,6 +427,9 @@ async function testSourceContracts() {
   assert.ok(swipe.includes("lostpointercapture"));
   assert.ok(!swipe.includes("touchstart"));
   assert.ok(!swipe.includes("touchmove"));
+  assert.ok(swipe.includes("handoffPending"));
+  assert.ok(swipe.includes("prepareHidden()"));
+  assert.ok(swipe.includes("async reveal()"));
   assert.ok(workflow.includes("npm run test"));
   assert.ok(workflow.includes("npm run build"));
   assert.ok(workflow.includes("Verify generated Pages artifact"));
@@ -185,6 +447,8 @@ await testRoundSelector();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
+await testSwipeLifecycle();
+await testImageReadinessContract();
 await testSourceContracts();
 
 console.log("TEST PASS");
@@ -194,4 +458,6 @@ console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=20 + unicode filenames: PASS");
 console.log("Build <20 controlled failure: PASS");
 console.log("Cross-class binary duplicate detection: PASS");
+console.log("Swipe throw/handoff/return lifecycle: PASS");
+console.log("Visible image decode readiness: PASS");
 console.log("UI/deploy source contracts: PASS");

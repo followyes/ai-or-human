@@ -1,9 +1,8 @@
 import { RoundSelector } from "./round-selector.js";
-import { RoundPreloader } from "./image-preloader.js";
+import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 
 const ROUND_SIZE = 20;
-const FEEDBACK_HOLD_MS = 280;
 
 const startScreen = document.querySelector("#start-screen");
 const gameScreen = document.querySelector("#game-screen");
@@ -36,10 +35,7 @@ let roundDeck = [];
 let currentIndex = 0;
 let score = 0;
 let state = "boot";
-
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+let presentationRevision = 0;
 
 function showOnly(screen) {
   [startScreen, gameScreen, endScreen, errorScreen].forEach((element) => {
@@ -60,8 +56,31 @@ function setButtonBusy(button, busy, normalText) {
   button.textContent = busy ? "Przygotowywanie…" : normalText;
 }
 
+function nextPaint() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+  });
+}
+
+function updateSwipeHints(progress) {
+  humanHint.style.opacity = String(Math.max(0, Math.min(1, -progress * 3)));
+  aiHint.style.opacity = String(Math.max(0, Math.min(1, progress * 3)));
+}
+
+function clearCardOverlays() {
+  feedbackBadge.classList.remove("is-visible");
+  feedbackBadge.textContent = "";
+  updateSwipeHints(0);
+}
+
+function hideImageContent() {
+  gameImage.classList.remove("is-ready");
+}
+
 function showFatalError(message) {
+  presentationRevision += 1;
   setState("error");
+  swipe?.resetVisuals();
   errorMessage.textContent = message;
   showOnly(errorScreen);
 }
@@ -127,38 +146,49 @@ async function loadManifest() {
   preloader = new RoundPreloader(selector, { roundSize: ROUND_SIZE });
 }
 
-function updateSwipeHints(progress) {
-  humanHint.style.opacity = String(Math.max(0, Math.min(1, -progress * 3)));
-  aiHint.style.opacity = String(Math.max(0, Math.min(1, progress * 3)));
-}
-
-function resetCard() {
-  gameImage.classList.remove("is-ready");
-  feedbackBadge.classList.remove("is-visible");
-  feedbackBadge.textContent = "";
-  updateSwipeHints(0);
-  swipe?.resetVisuals();
-}
-
-function renderCurrentCard() {
+async function presentCurrentCard({ revealGameScreen = false } = {}) {
   const item = roundDeck[currentIndex];
   if (!item) {
     finishRound();
-    return;
+    return false;
   }
 
-  resetCard();
+  const revision = ++presentationRevision;
+  setState("presenting");
+  clearCardOverlays();
+  hideImageContent();
+  swipe.prepareHidden();
+
   roundCounter.textContent = `${currentIndex + 1} / ${ROUND_SIZE}`;
   scoreDisplay.textContent = String(score);
 
-  gameImage.onload = () => gameImage.classList.add("is-ready");
-  gameImage.onerror = () => {
+  try {
+    await loadImageIntoElement(gameImage, item.src);
+  } catch (error) {
+    console.error("[AI OR HUMAN] Obraz rundy nie jest już dostępny po preloadzie.", error);
     showFatalError("Przygotowany obraz przestał być dostępny. Odśwież stronę i spróbuj ponownie.");
-  };
-  gameImage.src = item.src;
+    return false;
+  }
+
+  if (revision !== presentationRevision || state === "error") return false;
+
+  gameImage.classList.add("is-ready");
+
+  if (revealGameScreen) {
+    showOnly(gameScreen);
+  }
+
+  // Give the browser a paint opportunity while the card itself is still hidden.
+  // The new src is therefore committed before the card can return to the centre.
+  await nextPaint();
+  if (revision !== presentationRevision || state === "error") return false;
+
+  const revealed = await swipe.reveal();
+  if (!revealed || revision !== presentationRevision || state === "error") return false;
 
   selector.recordExposure(item.id, roundNumber);
   setState("playing");
+  return true;
 }
 
 async function prepareAndStartRound(triggerButton, normalText) {
@@ -177,8 +207,7 @@ async function prepareAndStartRound(triggerButton, normalText) {
     score = 0;
     scoreDisplay.textContent = "0";
 
-    showOnly(gameScreen);
-    renderCurrentCard();
+    await presentCurrentCard({ revealGameScreen: true });
   } catch (error) {
     console.error(error);
     showFatalError(error instanceof Error ? error.message : String(error));
@@ -207,15 +236,29 @@ async function answer(type) {
   }
 
   showFeedback(correct);
-  await delay(FEEDBACK_HOLD_MS);
-  await swipe.throw(type);
+
+  // The feedback travels with the outgoing card. There is no artificial pause
+  // between releasing a swipe and the throw animation.
+  const thrown = await swipe.throw(type);
+  if (!thrown || state === "error") return;
 
   currentIndex += 1;
-  renderCurrentCard();
+
+  if (currentIndex >= ROUND_SIZE) {
+    finishRound();
+    return;
+  }
+
+  await presentCurrentCard();
 }
 
 function finishRound() {
+  presentationRevision += 1;
   setState("result");
+  clearCardOverlays();
+  hideImageContent();
+  // After the final throw the card intentionally stays hidden. Do not reset it
+  // before switching screens, otherwise the 20th image can flash back on screen.
   finalScore.textContent = `${score} / ${ROUND_SIZE}`;
   playAgainButton.disabled = false;
   playAgainButton.textContent = "Zagraj ponownie";
