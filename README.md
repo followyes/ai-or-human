@@ -131,3 +131,17 @@ The 10 / 20 / 50 selector now uses one shared moving indicator instead of three 
 - resize/orientation re-aligns the indicator,
 - reduced-motion disables the liquid deformation,
 - no GSAP/MorphSVG dependency was added.
+
+## V1.4.1 — True Liquid SVG Morph
+
+V1.4's moving one-slot indicator was replaced rather than layered over.
+The Session-size selector now uses a selector-wide SVG path whose actual geometry stretches from the source slot to the target slot, holds a connected liquid bridge, transfers the trailing edge, and settles on the target.
+
+Key properties:
+- true source-to-target path deformation instead of `translate + scaleX`,
+- direct 10 ↔ 50 remains one continuous morph,
+- 760 ms adjacent / 900 ms two-slot transition,
+- stronger static selection: dark pill + white label,
+- reduced motion snaps without liquid deformation,
+- no GSAP/MorphSVG dependency,
+- hidden picker sync and resize refresh preserved.
