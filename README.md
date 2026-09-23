@@ -117,3 +117,17 @@ Current timings:
 - next-card reveal: 200 ms.
 
 CI no longer enforces narrow subjective timing ranges. It keeps only functional invariants such as positive durations and feedback outliving the outgoing card.
+
+
+## V1.4 — Liquid Session Size Picker
+
+The 10 / 20 / 50 selector now uses one shared moving indicator instead of three separate selected backgrounds.
+
+- selected option = dark neutral pill + white number,
+- adjacent changes use a native liquid stretch / flow / settle animation,
+- direct 10 ↔ 50 uses one continuous stronger morph,
+- start and result pickers remain synchronized,
+- hidden pickers snap to the correct state rather than animating invisibly,
+- resize/orientation re-aligns the indicator,
+- reduced-motion disables the liquid deformation,
+- no GSAP/MorphSVG dependency was added.

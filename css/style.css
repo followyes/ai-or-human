@@ -148,42 +148,104 @@ h2 {
 }
 
 .session-size-options {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   padding: 5px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(32, 39, 45, 0.14);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70);
+}
+
+.session-size-indicator {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.session-size-options.is-enhanced .session-size-indicator {
+  display: block;
+}
+
+.session-size-indicator__body,
+.session-size-indicator__bridge {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 999px;
+  background: var(--text);
+}
+
+.session-size-indicator__body {
+  box-shadow:
+    0 7px 18px rgba(23, 31, 38, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  will-change: transform, border-radius;
+}
+
+.session-size-indicator__bridge {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  width: 54%;
+  height: 70%;
+  opacity: 0;
+  transform: translate3d(0, -50%, 0) scale(.3);
+  filter: blur(.15px);
+  will-change: transform, opacity;
 }
 
 .session-size-button {
+  position: relative;
+  z-index: 2;
   min-height: 42px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  font-weight: 700;
-  transition: background 150ms ease, box-shadow 150ms ease, opacity 150ms ease, transform 150ms ease;
+  font-weight: 750;
+  transition: color 150ms ease, opacity 150ms ease, transform 150ms ease, background 150ms ease;
+}
+
+.session-size-options:not(.is-enhanced) .session-size-button.is-selected {
+  background: var(--text);
+  color: #ffffff;
+  box-shadow: 0 7px 18px rgba(23, 31, 38, 0.18);
+}
+
+.session-size-options.is-enhanced .session-size-button.is-selected {
+  color: #ffffff;
 }
 
 .session-size-button:hover:not(:disabled):not(.is-selected) {
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(32, 39, 45, 0.06);
 }
 
 .session-size-button:active:not(:disabled) {
   transform: scale(0.97);
 }
 
-.session-size-button.is-selected {
-  background: var(--surface);
-  box-shadow: 0 4px 14px rgba(23, 31, 38, 0.10);
+.session-size-button:focus-visible {
+  outline: 3px solid rgba(32, 39, 45, 0.24);
+  outline-offset: 2px;
 }
 
 .session-size-button:disabled {
   cursor: default;
-  opacity: 0.32;
+  opacity: 0.30;
+}
+
+.session-size-button.is-selected:disabled {
+  opacity: 1;
 }
 
 

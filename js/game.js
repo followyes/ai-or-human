@@ -2,6 +2,7 @@ import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js";
+import { SessionSizePicker } from "./session-size-picker.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -21,6 +22,7 @@ const playAgainButton = document.querySelector("#play-again-button");
 const humanButton = document.querySelector("#human-button");
 const aiButton = document.querySelector("#ai-button");
 const sessionSizeButtons = [...document.querySelectorAll("[data-session-size]")];
+const sessionSizeOptionGroups = [...document.querySelectorAll(".session-size-options")];
 
 const roundCounter = document.querySelector("#round-counter");
 const scoreDisplay = document.querySelector("#score");
@@ -37,6 +39,7 @@ let selector = null;
 let preloader = null;
 let swipe = null;
 let answerFeedback = null;
+let sessionSizePickers = [];
 
 let sessionNumber = 0;
 let sessionDeck = [];
@@ -52,6 +55,12 @@ function showOnly(screen) {
   [startScreen, gameScreen, endScreen, errorScreen].forEach((element) => {
     element.classList.toggle("is-hidden", element !== screen);
   });
+
+  if (sessionSizePickers.length) {
+    window.requestAnimationFrame(() => {
+      sessionSizePickers.forEach((picker) => picker.refresh());
+    });
+  }
 }
 
 function setState(nextState) {
@@ -95,7 +104,7 @@ function isSessionSizeAvailable(size) {
   return isConfiguredSessionSizeAvailable(size, getUsableImageCount());
 }
 
-function syncSessionSizeControls({ busy = false } = {}) {
+function syncSessionSizeControls({ busy = false, animate = false } = {}) {
   for (const button of sessionSizeButtons) {
     const size = Number(button.dataset.sessionSize);
     const available = isSessionSizeAvailable(size);
@@ -103,7 +112,6 @@ function syncSessionSizeControls({ busy = false } = {}) {
 
     button.disabled = busy || !available;
     button.setAttribute("aria-pressed", String(selected));
-    button.classList.toggle("is-selected", selected);
 
     if (!available && availableImageCount > 0) {
       button.title = `Ta opcja wymaga co najmniej ${size} obrazów w puli.`;
@@ -111,12 +119,18 @@ function syncSessionSizeControls({ busy = false } = {}) {
       button.removeAttribute("title");
     }
   }
+
+  for (const picker of sessionSizePickers) {
+    picker.sync(selectedSessionSize, { animate: animate && picker.isVisible() });
+  }
 }
 
 function chooseSessionSize(size) {
   if (!isSessionSizeAvailable(size)) return false;
+  if (size === selectedSessionSize) return true;
+
   selectedSessionSize = size;
-  syncSessionSizeControls();
+  syncSessionSizeControls({ animate: true });
   return true;
 }
 
@@ -325,6 +339,7 @@ function finishSession() {
 
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
+  sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
   swipe = new SwipeController(imageCard, {
     onDecision: (type) => answer(type),
     onProgress: updateSwipeHints

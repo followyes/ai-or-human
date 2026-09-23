@@ -1,10 +1,10 @@
 {
   "name": "ai-or-human",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --check js/game.js && node --check js/round-selector.js && node --check js/session-config.js && node --check js/image-preloader.js && node --check js/swipe-controller.js && node --check js/answer-feedback.js && node --check scripts/build-site.js && node --check scripts/test-project.js && node scripts/test-project.js",
+    "test": "node --check js/game.js && node --check js/round-selector.js && node --check js/session-config.js && node --check js/session-size-picker.js && node --check js/image-preloader.js && node --check js/swipe-controller.js && node --check js/answer-feedback.js && node --check scripts/build-site.js && node --check scripts/test-project.js && node scripts/test-project.js",
     "build": "node scripts/build-site.js"
   }
 }

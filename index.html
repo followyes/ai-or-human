@@ -19,8 +19,12 @@
       <div class="session-size-picker" aria-labelledby="start-size-label">
         <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
         <div class="session-size-options" aria-label="Liczba obrazów">
+          <span class="session-size-indicator" data-session-indicator aria-hidden="true">
+            <span class="session-size-indicator__body" data-session-indicator-body></span>
+            <span class="session-size-indicator__bridge" data-session-indicator-bridge></span>
+          </span>
           <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
-          <button class="session-size-button" type="button" data-session-size="20" aria-pressed="true">20</button>
+          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
           <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
         </div>
       </div>
@@ -83,8 +87,12 @@
       <div class="session-size-picker session-size-picker-end" aria-labelledby="end-size-label">
         <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
         <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
+          <span class="session-size-indicator" data-session-indicator aria-hidden="true">
+            <span class="session-size-indicator__body" data-session-indicator-body></span>
+            <span class="session-size-indicator__bridge" data-session-indicator-bridge></span>
+          </span>
           <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
-          <button class="session-size-button" type="button" data-session-size="20" aria-pressed="true">20</button>
+          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
           <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
 import { AnswerFeedbackController } from "../js/answer-feedback.js";
+import { getLiquidDuration, getLiquidMotionProfile } from "../js/session-size-picker.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -377,6 +378,21 @@ async function copyRuntimeFixture(targetRoot) {
   }
 }
 
+function testLiquidSessionPickerProfile() {
+  const rightAdjacent = getLiquidMotionProfile(1, 1);
+  const leftAdjacent = getLiquidMotionProfile(-1, 1);
+  const rightLong = getLiquidMotionProfile(1, 2);
+
+  assert.equal(rightAdjacent.sign, 1);
+  assert.equal(leftAdjacent.sign, -1);
+  assert.equal(rightAdjacent.transformOrigin, "0% 50%");
+  assert.equal(leftAdjacent.transformOrigin, "100% 50%");
+  assert.ok(rightLong.stretch > rightAdjacent.stretch, "direct 10↔50 travel should use a stronger liquid stretch");
+  assert.ok(rightLong.bridgeTravel > rightAdjacent.bridgeTravel, "direct 10↔50 travel should carry the bridge farther");
+  assert.ok(getLiquidDuration(1) > 0);
+  assert.ok(getLiquidDuration(2) > getLiquidDuration(1), "two-slot liquid travel should be slightly longer than adjacent travel");
+}
+
 function testSessionConfig() {
   assert.deepEqual(SESSION_SIZE_OPTIONS, [10, 20, 50]);
   assert.equal(MIN_SESSION_SIZE, 10);
@@ -567,6 +583,7 @@ async function testSourceContracts() {
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
+  const sessionPicker = await fs.readFile(path.join(projectRoot, "js", "session-size-picker.js"), "utf8");
   const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -577,7 +594,18 @@ async function testSourceContracts() {
   assert.ok(html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
+  assert.equal((html.match(/data-session-indicator/g) || []).length, 6, "both pickers must have indicator/body/bridge hooks");
   assert.ok(!html.includes(">Sesja<"), "mode name must stay hidden until multiple modes exist");
+  assert.ok(css.includes(".session-size-indicator"));
+  assert.ok(css.includes("background: var(--text)"));
+  assert.ok(css.includes(".session-size-button.is-selected"));
+  assert.ok(game.includes("SessionSizePicker"));
+  assert.ok(game.includes("syncSessionSizeControls({ animate: true })"));
+  assert.ok(game.includes("picker.refresh()"));
+  assert.ok(sessionPicker.includes("ResizeObserver"));
+  assert.ok(sessionPicker.includes("prefers-reduced-motion"));
+  assert.ok(!sessionPicker.includes("gsap"));
+  assert.ok(!sessionPicker.includes("MorphSVG"));
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
   assert.ok(css.includes("touch-action: none"));
   assert.ok(!css.includes("transition: opacity 120ms ease"), "image fade must not race the card handoff");
@@ -655,6 +683,7 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("actions: read"));
 }
 
+testLiquidSessionPickerProfile();
 testSessionConfig();
 await testDynamicRoundPreloader();
 await testRoundSelector();
@@ -667,6 +696,7 @@ await testAnswerFeedbackLifecycle();
 await testSourceContracts();
 
 console.log("TEST PASS");
+console.log("Liquid Session picker motion profile: PASS");
 console.log("Session configuration 10/20/50: PASS");
 console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
