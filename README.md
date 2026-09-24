@@ -145,3 +145,34 @@ Key properties:
 - reduced motion snaps without liquid deformation,
 - no GSAP/MorphSVG dependency,
 - hidden picker sync and resize refresh preserved.
+
+
+## V1.4.3 — Reference-Driven Bean Morph
+
+The Session size selector keeps the existing three-option control, but its selected bean now follows a hand-authored motion language derived from the approved switch reference:
+
+- 150 ms hard leading-edge stretch,
+- 150 ms mass transfer,
+- 500 ms elastic settle for adjacent moves,
+- dedicated long-route poses for 10 ↔ 50,
+- 150 ms hover pre-pull on pointer devices,
+- reduced-motion snaps directly to the target.
+
+The previous generic V1.4.1 liquid-width algorithm was removed rather than layered underneath the new motion system.
+
+
+## V1.4.3 — Simple Sliding Session Pill
+
+The rejected liquid/morph experiments were removed from the active picker.
+
+Current Session-size control:
+- one fixed outer track,
+- one plain inner pill,
+- pill slides between 10 / 20 / 50 with a 320 ms CSS transform transition,
+- no SVG path morph,
+- no stretch / liquid / elastic stages,
+- no hover morph,
+- reduced-motion snaps instantly,
+- hidden picker and resize synchronization remain intact.
+
+The active choice is emphasized by the moving white pill, stronger border/shadow, full text opacity and heavier label weight.

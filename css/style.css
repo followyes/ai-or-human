@@ -156,32 +156,35 @@ h2 {
   padding: 5px;
   border: 1px solid rgba(32, 39, 45, 0.14);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.64);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.70);
+  background: rgba(32, 39, 45, 0.045);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 2px 7px rgba(23, 31, 38, 0.025);
 }
 
-.session-size-liquid {
+.session-size-indicator {
   position: absolute;
-  z-index: 0;
-  inset: 0;
-  display: none;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  border: 1px solid rgba(32, 39, 45, 0.13);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 7px 18px rgba(23, 31, 38, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  opacity: 0;
   pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition-property: transform, width, height;
+  transition-timing-function: cubic-bezier(.22, .78, .30, 1);
+  will-change: transform;
 }
 
-.session-size-options.is-enhanced .session-size-liquid {
-  display: block;
-}
-
-.session-size-liquid__path {
-  fill: var(--text);
-  stroke: rgba(255, 255, 255, 0.09);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 7px 9px rgba(23, 31, 38, 0.17));
-  shape-rendering: geometricPrecision;
+.session-size-options.is-enhanced .session-size-indicator {
+  opacity: 1;
 }
 
 .session-size-button {
@@ -191,24 +194,30 @@ h2 {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--text);
+  color: rgba(32, 39, 45, 0.66);
   cursor: pointer;
-  font-weight: 750;
-  transition: color 150ms ease, opacity 150ms ease, transform 150ms ease, background 150ms ease;
+  font-weight: 700;
+  transition:
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+.session-size-button.is-selected {
+  color: var(--text);
+  font-weight: 850;
 }
 
 .session-size-options:not(.is-enhanced) .session-size-button.is-selected {
-  background: var(--text);
-  color: #ffffff;
-  box-shadow: 0 7px 18px rgba(23, 31, 38, 0.18);
-}
-
-.session-size-options.is-enhanced .session-size-button.is-selected {
-  color: #ffffff;
+  background: #ffffff;
+  border: 1px solid rgba(32, 39, 45, 0.13);
+  box-shadow: 0 7px 18px rgba(23, 31, 38, 0.14);
 }
 
 .session-size-button:hover:not(:disabled):not(.is-selected) {
-  background: rgba(32, 39, 45, 0.06);
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--text);
 }
 
 .session-size-button:active:not(:disabled) {
@@ -554,6 +563,10 @@ h2 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .session-size-indicator {
+    transition-duration: 0.001ms !important;
+  }
+
   .primary-button,
   .choice-button,
   .session-size-button,

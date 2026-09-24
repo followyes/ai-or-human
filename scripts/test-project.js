@@ -7,7 +7,11 @@ import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
 import { AnswerFeedbackController } from "../js/answer-feedback.js";
-import { SessionSizePicker, buildLiquidPath, getLiquidDuration, getLiquidMorphFrame } from "../js/session-size-picker.js";
+import {
+  SessionSizePicker,
+  getIndicatorTransform,
+  normalizeGeometry
+} from "../js/session-size-picker.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -395,58 +399,21 @@ async function copyRuntimeFixture(targetRoot) {
   }
 }
 
-function testLiquidSessionPickerProfile() {
-  const source = { left: 5, top: 5, width: 100, height: 42 };
-  const adjacent = { left: 113, top: 5, width: 100, height: 42 };
-  const far = { left: 221, top: 5, width: 100, height: 42 };
-
-  const start = getLiquidMorphFrame(source, far, 0);
-  const stretch = getLiquidMorphFrame(source, far, 0.5);
-  const end = getLiquidMorphFrame(source, far, 1);
-  const reverseMid = getLiquidMorphFrame(far, source, 0.5);
-
-  assert.equal(start.left, source.left);
-  assert.equal(start.right, source.left + source.width);
-  assert.equal(end.left, far.left);
-  assert.equal(end.right, far.left + far.width);
-  assert.equal(stretch.left, source.left, "mid-morph must keep the source side connected");
-  assert.equal(stretch.right, far.left + far.width, "mid-morph must physically reach the target side");
-  assert.ok(stretch.right - stretch.left > source.width * 2.5, "10↔50 mid-frame must be much wider than one slot");
-  assert.ok(stretch.liquidness > 0.9, "mid-frame must use a strong liquid deformation");
-  assert.equal(reverseMid.left, source.left, "reverse morph must reach the left target");
-  assert.equal(reverseMid.right, far.left + far.width, "reverse morph must remain connected to the old right side");
-
-  const startPath = buildLiquidPath(start);
-  const midPath = buildLiquidPath(stretch);
-  const endPath = buildLiquidPath(end);
-  assert.ok(startPath.startsWith(`M ${source.left} `));
-  assert.notEqual(midPath, startPath, "mid-frame path must actually morph");
-  assert.notEqual(midPath, endPath, "mid-frame path must not already be the target pill");
-  assert.ok((midPath.match(/C /g) || []).length >= 8, "liquid shape must use curved path geometry");
-
-  const adjacentMid = getLiquidMorphFrame(source, adjacent, 0.5);
-  assert.ok(adjacentMid.right - adjacentMid.left > source.width * 1.8, "adjacent mid-frame must span source and target");
-  assert.ok(getLiquidDuration(1) > 0);
-  assert.ok(getLiquidDuration(2) > getLiquidDuration(1), "two-slot liquid morph should be slightly longer than adjacent morph");
+function testSlidingPillGeometry() {
+  const geometry = normalizeGeometry({ left: 115, top: 5, width: 102, height: 42 });
+  assert.deepEqual(geometry, { left: 115, top: 5, width: 102, height: 42 });
+  assert.equal(getIndicatorTransform(geometry), "translate3d(115px, 5px, 0)");
 }
 
-
-async function testLiquidSessionPickerLifecycle() {
+async function testSlidingPillLifecycle() {
   const previousWindow = globalThis.window;
-  const previousGetComputedStyle = globalThis.getComputedStyle;
   const previousResizeObserver = globalThis.ResizeObserver;
-  const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
-  const previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
 
   class FakeNode {
     constructor() {
-      this.attributes = new Map();
       this.classList = new FakeClassList();
-      this.style = { color: "" };
-    }
-
-    setAttribute(name, value) {
-      this.attributes.set(name, String(value));
+      this.style = {};
+      this.disabled = false;
     }
   }
 
@@ -459,18 +426,13 @@ async function testLiquidSessionPickerLifecycle() {
       this.offsetWidth = 102;
       this.offsetHeight = 42;
     }
-
-    animate() {
-      return { cancel() {} };
-    }
   }
 
   class FakeRoot extends FakeNode {
     constructor() {
       super();
       this.buttons = [new FakeButton(10, 5), new FakeButton(20, 115), new FakeButton(50, 225)];
-      this.svg = new FakeNode();
-      this.path = new FakeNode();
+      this.indicator = new FakeNode();
       this.clientWidth = 332;
       this.clientHeight = 52;
     }
@@ -480,8 +442,7 @@ async function testLiquidSessionPickerLifecycle() {
     }
 
     querySelector(selector) {
-      if (selector === "[data-session-liquid]") return this.svg;
-      if (selector === "[data-session-liquid-path]") return this.path;
+      if (selector === "[data-session-indicator]") return this.indicator;
       return null;
     }
 
@@ -496,50 +457,52 @@ async function testLiquidSessionPickerLifecycle() {
 
   let reduced = false;
   globalThis.window = { matchMedia: () => ({ matches: reduced }) };
-  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "#20272d" });
+  let disconnectCount = 0;
   globalThis.ResizeObserver = class {
     observe() {}
-    disconnect() {}
+    disconnect() { disconnectCount += 1; }
   };
-  globalThis.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 1);
-  globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle);
 
   try {
     const root = new FakeRoot();
     const picker = new SessionSizePicker(root, {
-      options: { adjacentDuration: 18, longDuration: 24 }
+      options: { slideDuration: 360 }
     });
 
     assert.equal(picker.sync(20), true);
     assert.equal(root.classList.contains("is-enhanced"), true);
-    const initialPath = root.path.attributes.get("d");
-    assert.ok(initialPath?.length > 20);
     assert.equal(root.buttons[1].classList.contains("is-selected"), true);
+    assert.equal(root.indicator.style.transform, "translate3d(115px, 5px, 0)");
+    assert.equal(root.indicator.style.width, "102px");
+    assert.equal(root.indicator.style.height, "42px");
+    assert.equal(root.indicator.style.transitionDuration, "0ms",
+      "initial placement must snap without an entrance animation");
 
     assert.equal(picker.sync(50, { animate: true }), true);
-    await new Promise((resolve) => setTimeout(resolve, 35));
     assert.equal(root.buttons[2].classList.contains("is-selected"), true);
-    const final50 = root.path.attributes.get("d");
-    assert.notEqual(final50, initialPath);
+    assert.equal(root.indicator.style.transform, "translate3d(225px, 5px, 0)");
+    assert.equal(root.indicator.style.transitionDuration, "360ms",
+      "user selection must use the configured slide duration");
 
     picker.sync(10, { animate: true });
-    await new Promise((resolve) => setTimeout(resolve, 4));
     picker.sync(20, { animate: true });
-    await new Promise((resolve) => setTimeout(resolve, 35));
-    assert.equal(root.buttons[1].classList.contains("is-selected"), true, "rapid retarget must settle on the latest target");
+    assert.equal(root.indicator.style.transform, "translate3d(115px, 5px, 0)",
+      "rapid retarget must leave the latest target geometry on the indicator");
+    assert.equal(root.buttons[1].classList.contains("is-selected"), true,
+      "rapid retarget must leave the latest target selected");
 
     reduced = true;
     picker.sync(10, { animate: true });
+    assert.equal(root.indicator.style.transitionDuration, "0ms",
+      "reduced motion must snap instead of sliding");
+    assert.equal(root.indicator.style.transform, "translate3d(5px, 5px, 0)");
     assert.equal(root.buttons[0].classList.contains("is-selected"), true);
-    assert.equal(root.classList.contains("is-animating"), false, "reduced motion must snap without liquid animation");
 
     picker.destroy();
+    assert.equal(disconnectCount, 1, "destroy must disconnect ResizeObserver");
   } finally {
     globalThis.window = previousWindow;
-    globalThis.getComputedStyle = previousGetComputedStyle;
     globalThis.ResizeObserver = previousResizeObserver;
-    globalThis.requestAnimationFrame = previousRequestAnimationFrame;
-    globalThis.cancelAnimationFrame = previousCancelAnimationFrame;
   }
 }
 
@@ -744,26 +707,35 @@ async function testSourceContracts() {
   assert.ok(html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
-  assert.equal((html.match(/data-session-liquid aria-hidden/g) || []).length, 2, "both pickers must have one selector-wide liquid SVG");
-  assert.equal((html.match(/data-session-liquid-path/g) || []).length, 2, "both liquid SVGs must expose one morph path");
+  assert.equal((html.match(/data-session-indicator aria-hidden/g) || []).length, 2,
+    "both pickers must have one moving pill indicator");
+  assert.ok(!html.includes("data-session-liquid"), "obsolete morph SVG markup must be removed");
+  assert.ok(!html.includes("data-session-liquid-path"), "obsolete morph path markup must be removed");
   assert.ok(!html.includes(">Sesja<"), "mode name must stay hidden until multiple modes exist");
-  assert.ok(css.includes(".session-size-liquid"));
-  assert.ok(css.includes(".session-size-liquid__path"));
-  assert.ok(!css.includes(".session-size-indicator"), "obsolete V1.4 moving-pill CSS must be removed");
-  assert.ok(css.includes("background: var(--text)"));
+  assert.ok(css.includes(".session-size-indicator"));
+  assert.ok(!css.includes(".session-size-liquid"), "obsolete morph SVG CSS must be removed");
+  assert.ok(!css.includes(".session-size-liquid__path"), "obsolete morph path CSS must be removed");
+  assert.ok(css.includes("transition-property: transform, width, height"),
+    "indicator must use a simple CSS slide transition");
   assert.ok(css.includes(".session-size-button.is-selected"));
+  assert.ok(!css.includes(".session-size-button.is-liquid-covered"),
+    "morph-era transient label coverage must be removed");
   assert.ok(game.includes("SessionSizePicker"));
   assert.ok(game.includes("syncSessionSizeControls({ animate: true })"));
   assert.ok(game.includes("picker.refresh()"));
   assert.ok(sessionPicker.includes("ResizeObserver"));
   assert.ok(sessionPicker.includes("prefers-reduced-motion"));
-  assert.ok(sessionPicker.includes("buildLiquidPath"));
-  assert.ok(sessionPicker.includes("getLiquidMorphFrame"));
-  assert.ok(sessionPicker.includes("path.setAttribute('d'"), "runtime must morph real SVG path geometry");
-  assert.ok(!sessionPicker.includes("data-session-indicator"), "obsolete V1.4 indicator hooks must be gone");
-  assert.ok(!sessionPicker.includes("bridgeTravel"), "obsolete decorative bridge model must be gone");
-  assert.ok(!sessionPicker.includes("gsap"));
-  assert.ok(!sessionPicker.includes("MorphSVG"));
+  assert.ok(sessionPicker.includes("data-session-indicator"));
+  assert.ok(sessionPicker.includes("translate3d("));
+  assert.ok(sessionPicker.includes("slideDuration"));
+  assert.ok(!sessionPicker.includes("buildReferencePoseSet"), "rejected hand-authored morph poses must be removed");
+  assert.ok(!sessionPicker.includes("hardStretch"), "morph hard-stretch stage must be removed");
+  assert.ok(!sessionPicker.includes("massTransfer"), "morph mass-transfer stage must be removed");
+  assert.ok(!sessionPicker.includes("buildHoverBeanPoints"), "morph hover pre-pull must be removed");
+  assert.ok(!sessionPicker.includes("elasticOut"), "morph elastic settle must be removed");
+  assert.ok(!sessionPicker.includes("path.setAttribute('d'"), "picker must no longer morph SVG paths");
+  assert.ok(!sessionPicker.includes("visualValue"), "morph-era semantic/visual split must be removed");
+  assert.ok(!sessionPicker.includes("setLiquidCoverage"), "morph-era label coverage must be removed");
   assert.ok(css.includes('font-family: "Segoe UI", sans-serif'));
   assert.ok(css.includes("touch-action: none"));
   assert.ok(!css.includes("transition: opacity 120ms ease"), "image fade must not race the card handoff");
@@ -841,8 +813,8 @@ async function testSourceContracts() {
   assert.ok(workflow.includes("actions: read"));
 }
 
-testLiquidSessionPickerProfile();
-await testLiquidSessionPickerLifecycle();
+testSlidingPillGeometry();
+await testSlidingPillLifecycle();
 testSessionConfig();
 await testDynamicRoundPreloader();
 await testRoundSelector();
@@ -855,7 +827,7 @@ await testAnswerFeedbackLifecycle();
 await testSourceContracts();
 
 console.log("TEST PASS");
-console.log("True liquid SVG morph geometry + lifecycle: PASS");
+console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 10/20/50: PASS");
 console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
