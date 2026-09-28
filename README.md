@@ -274,3 +274,34 @@ Therefore, after this code is deployed, the expected migration behavior is:
 
 V1.5.2 is not considered CLOSED until that browser smoke is confirmed on the
 deployed GitHub Pages site.
+
+
+## V1.5.3 — Admin Auth
+
+V1.5.2 is production-verified and CLOSED.
+
+V1.5.3 adds a direct, unlinked admin route:
+`/admin/`
+
+Public game:
+- no Admin link,
+- no Login link,
+- no registration UI,
+- gameplay behavior unchanged.
+
+Admin authentication:
+- Supabase email/password sign-in,
+- direct Auth REST API using the existing public `sb_publishable_*` key,
+- session stored only in `sessionStorage` for the current browser tab,
+- expired access tokens refresh through Supabase Auth,
+- current user is revalidated through `/auth/v1/user`,
+- authorization is independently checked by the DB RPC `is_current_user_admin()`,
+- sign-out uses local-session scope.
+
+Security change:
+the public `game_images_public_read_active` RLS policy is now `anon` only.
+An authenticated user who is not listed in `private.admin_users` therefore
+cannot inherit the public policy and read full internal image metadata.
+
+V1.5.3 does not yet implement upload, AVIF conversion or delete-X. Those remain
+V1.5.4/V1.5.5.

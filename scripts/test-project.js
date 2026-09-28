@@ -27,6 +27,17 @@ import {
   loadContentManifest,
   resolveSupabasePublicConfig
 } from "../js/content-source.js";
+import {
+  ADMIN_SESSION_STORAGE_KEY,
+  AdminAuthError,
+  authorizeAdminSession,
+  clearAdminSession,
+  loadAdminSession,
+  saveAdminSession,
+  signInWithPassword,
+  signOutAdmin,
+  verifyAdminAuthority
+} from "../js/admin-auth.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -401,7 +412,7 @@ async function testAnswerFeedbackLifecycle() {
 }
 
 async function copyRuntimeFixture(targetRoot) {
-  for (const entry of ["index.html", "css", "js"]) {
+  for (const entry of ["index.html", "css", "js", "admin"]) {
     await fs.cp(path.join(projectRoot, entry), path.join(targetRoot, entry), { recursive: true });
   }
 }
@@ -784,6 +795,194 @@ async function testExternalContentSource() {
   );
 }
 
+
+class MemorySessionStorage {
+  constructor() {
+    this.values = new Map();
+  }
+
+  getItem(key) {
+    return this.values.has(key) ? this.values.get(key) : null;
+  }
+
+  setItem(key, value) {
+    this.values.set(key, String(value));
+  }
+
+  removeItem(key) {
+    this.values.delete(key);
+  }
+}
+
+async function testAdminAuthContract() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+
+  const authUser = {
+    id: "11111111-1111-4111-8111-111111111111",
+    email: "admin@example.com"
+  };
+
+  const sessionPayload = {
+    access_token: "access-token-1",
+    refresh_token: "refresh-token-1",
+    expires_in: 3600,
+    user: authUser
+  };
+
+  const requests = [];
+  const signInFetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    requests.push({ url, options });
+
+    assert.equal(url.pathname, "/auth/v1/token");
+    assert.equal(url.searchParams.get("grant_type"), "password");
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers.apikey, config.publishableKey);
+    assert.equal("Authorization" in options.headers, false);
+    assert.deepEqual(JSON.parse(options.body), {
+      email: "admin@example.com",
+      password: "correct-password"
+    });
+
+    return makeJsonResponse(sessionPayload);
+  };
+
+  const signedIn = await signInWithPassword({
+    email: " admin@example.com ",
+    password: "correct-password",
+    config,
+    fetchImpl: signInFetch
+  });
+
+  assert.equal(signedIn.user.id, authUser.id);
+  assert.equal(signedIn.user.email, authUser.email);
+  assert.equal(requests.length, 1);
+
+  const storage = new MemorySessionStorage();
+  saveAdminSession(signedIn, storage);
+  assert.ok(storage.getItem(ADMIN_SESSION_STORAGE_KEY));
+  assert.ok(!storage.getItem(ADMIN_SESSION_STORAGE_KEY).includes("correct-password"),
+    "admin password must never be persisted");
+  assert.equal(loadAdminSession(storage).user.id, authUser.id);
+  clearAdminSession(storage);
+  assert.equal(loadAdminSession(storage), null);
+
+  const authFlowRequests = [];
+  const authorizedFetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    authFlowRequests.push({ url, options });
+
+    if (url.pathname === "/auth/v1/user") {
+      assert.equal(options.headers.apikey, config.publishableKey);
+      assert.equal(options.headers.Authorization, "Bearer access-token-1");
+      return makeJsonResponse(authUser);
+    }
+
+    if (url.pathname === "/rest/v1/rpc/is_current_user_admin") {
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.Authorization, "Bearer access-token-1");
+      assert.equal(options.headers.apikey, config.publishableKey);
+      assert.equal(options.body, "{}");
+      return makeJsonResponse(true);
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const authorized = await authorizeAdminSession({
+    session: signedIn,
+    config,
+    fetchImpl: authorizedFetch
+  });
+  assert.equal(authorized.user.email, "admin@example.com");
+  assert.deepEqual(
+    authFlowRequests.map(({ url }) => url.pathname),
+    ["/auth/v1/user", "/rest/v1/rpc/is_current_user_admin"]
+  );
+
+  await assert.rejects(
+    () => verifyAdminAuthority({
+      session: signedIn,
+      config,
+      fetchImpl: async () => makeJsonResponse(false)
+    }),
+    (error) => error instanceof AdminAuthError && error.code === "ADMIN_FORBIDDEN"
+  );
+
+  // Expired access token must refresh, revalidate the user and only then check
+  // private.admin_users through the RPC.
+  const refreshSequence = [];
+  const refreshingFetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    refreshSequence.push(url.pathname + (url.search ? url.search : ""));
+
+    if (url.pathname === "/auth/v1/user" && options.headers.Authorization === "Bearer expired-token") {
+      return makeJsonResponse({ error_code: "bad_jwt" }, { status: 401 });
+    }
+
+    if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "refresh_token") {
+      assert.deepEqual(JSON.parse(options.body), { refresh_token: "refresh-token-old" });
+      return makeJsonResponse({
+        access_token: "refreshed-token",
+        refresh_token: "refresh-token-new",
+        expires_in: 3600,
+        user: authUser
+      });
+    }
+
+    if (url.pathname === "/auth/v1/user" && options.headers.Authorization === "Bearer refreshed-token") {
+      return makeJsonResponse(authUser);
+    }
+
+    if (url.pathname === "/rest/v1/rpc/is_current_user_admin") {
+      assert.equal(options.headers.Authorization, "Bearer refreshed-token");
+      return makeJsonResponse(true);
+    }
+
+    throw new Error(`Unexpected refresh request: ${url}`);
+  };
+
+  const refreshed = await authorizeAdminSession({
+    session: {
+      access_token: "expired-token",
+      refresh_token: "refresh-token-old",
+      expires_at: 1,
+      user: authUser
+    },
+    config,
+    fetchImpl: refreshingFetch
+  });
+  assert.equal(refreshed.access_token, "refreshed-token");
+  assert.equal(refreshed.refresh_token, "refresh-token-new");
+  assert.deepEqual(refreshSequence, [
+    "/auth/v1/user",
+    "/auth/v1/token?grant_type=refresh_token",
+    "/auth/v1/user",
+    "/rest/v1/rpc/is_current_user_admin"
+  ]);
+
+  const logoutRequests = [];
+  await signOutAdmin({
+    session: signedIn,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      logoutRequests.push({ url, options });
+      return {
+        ok: true,
+        status: 204,
+        async json() { throw new Error("204 has no JSON"); }
+      };
+    }
+  });
+  assert.equal(logoutRequests[0].url.pathname, "/auth/v1/logout");
+  assert.equal(logoutRequests[0].url.searchParams.get("scope"), "local");
+  assert.equal(logoutRequests[0].options.headers.Authorization, "Bearer access-token-1");
+}
+
 async function testBuildSuccess() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-ok-"));
   await copyRuntimeFixture(tempRoot);
@@ -802,6 +1001,8 @@ async function testBuildSuccess() {
   assert.ok(manifest.images.some((item) => item.src.includes("%C5%BC")), "unicode paths must be URL encoded");
   assert.ok(manifest.images.every((item) => ["ai", "human"].includes(item.type)));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "index.html")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "index.html")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
 
   await fs.rm(tempRoot, { recursive: true, force: true });
 }
@@ -854,7 +1055,13 @@ async function testSourceContracts() {
   const sessionPicker = await fs.readFile(path.join(projectRoot, "js", "session-size-picker.js"), "utf8");
   const contentSource = await fs.readFile(path.join(projectRoot, "js", "content-source.js"), "utf8");
   const supabaseConfig = await fs.readFile(path.join(projectRoot, "js", "supabase-config.js"), "utf8");
-  const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
+  
+const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
+  const adminHtml = await fs.readFile(path.join(projectRoot, "admin", "index.html"), "utf8");
+  const adminCss = await fs.readFile(path.join(projectRoot, "admin", "admin.css"), "utf8");
+  const adminJs = await fs.readFile(path.join(projectRoot, "admin", "admin.js"), "utf8");
+  const adminAuth = await fs.readFile(path.join(projectRoot, "js", "admin-auth.js"), "utf8");
+  const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
   assert.ok(!html.includes("reset-history"));
@@ -971,6 +1178,30 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
   assert.ok(swipe.includes("handoffPending"));
   assert.ok(swipe.includes("prepareHidden()"));
   assert.ok(swipe.includes("async reveal()"));
+
+assert.ok(!html.toLowerCase().includes("/admin"), "public page must not link to /admin");
+assert.ok(!html.includes("Panel administratora"), "public page must not expose admin UI");
+assert.ok(adminHtml.includes('name="email"'));
+assert.ok(adminHtml.includes('name="password"'));
+assert.ok(adminHtml.includes('autocomplete="current-password"'));
+assert.ok(adminHtml.includes('name="robots" content="noindex, nofollow, noarchive"'));
+assert.ok(!adminHtml.toLowerCase().includes("rejestr"), "admin UI must not expose sign-up");
+assert.ok(!adminHtml.toLowerCase().includes("sign up"), "admin UI must not expose sign-up");
+assert.ok(adminHtml.includes("./admin.js"));
+assert.ok(adminCss.includes('font-family: "Segoe UI", sans-serif'));
+assert.ok(adminJs.includes("authorizeAdminSession"));
+assert.ok(adminJs.includes("sessionStorage") === false,
+  "session storage handling belongs in admin-auth.js, not scattered through admin UI");
+assert.ok(adminAuth.includes("/auth/v1/token"));
+assert.ok(adminAuth.includes("grant_type"));
+assert.ok(adminAuth.includes("/auth/v1/user"));
+assert.ok(adminAuth.includes("/auth/v1/logout"));
+assert.ok(adminAuth.includes('buildUrl(resolved.projectUrl, "/auth/v1/logout", { scope: "local" })'));
+assert.ok(adminAuth.includes("/rest/v1/rpc/is_current_user_admin"));
+assert.ok(adminAuth.includes("sessionStorage"));
+assert.ok(!adminAuth.includes("/auth/v1/signup"), "admin client must never expose public sign-up");
+assert.ok(!adminAuth.includes("localStorage"), "admin tokens must use tab-scoped sessionStorage");
+assert.ok(buildSiteSource.includes('"admin"'), "build must publish /admin directory");
   assert.ok(workflow.includes("npm run test"));
   assert.ok(workflow.includes("npm run build"));
   assert.ok(workflow.includes("Verify generated Pages artifact"));
@@ -993,6 +1224,7 @@ testSessionConfig();
 await testDynamicRoundPreloader();
 await testRoundSelector();
 await testExternalContentSource();
+await testAdminAuthContract();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -1007,6 +1239,7 @@ console.log("Session configuration 10/20/50: PASS");
 console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
 console.log("External Supabase content source + pagination + migration fallback: PASS");
+console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");

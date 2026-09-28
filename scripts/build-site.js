@@ -110,7 +110,7 @@ async function collectImages(projectRoot) {
 }
 
 async function copyRuntime(projectRoot, distRoot) {
-  const runtimeEntries = ["index.html", "css", "js"];
+  const runtimeEntries = ["index.html", "css", "js", "admin"];
 
   for (const entry of runtimeEntries) {
     const source = path.join(projectRoot, entry);
