@@ -147,7 +147,7 @@ Key properties:
 - hidden picker sync and resize refresh preserved.
 
 
-## V1.4.3 — Reference-Driven Bean Morph
+## V1.4.2 — Reference-Driven Bean Morph
 
 The Session size selector keeps the existing three-option control, but its selected bean now follows a hand-authored motion language derived from the approved switch reference:
 
@@ -176,3 +176,101 @@ Current Session-size control:
 - hidden picker and resize synchronization remain intact.
 
 The active choice is emphasized by the moving white pill, stronger border/shadow, full text opacity and heavier label weight.
+
+## Roadmap po V1.4.3
+
+### V1.5 — External Content Library + `/admin`
+
+Następny większy etap przenosi obrazy poza repozytorium GitHub, aby zarządzanie contentem nie wymagało commitów ani przebudowy GitHub Pages.
+
+Założenia:
+- publiczna gra nadal nie ma logowania ani kont użytkowników,
+- panel administracyjny jest dostępny bezpośrednio pod `.../admin`,
+- uwierzytelnianie istnieje wyłącznie wewnątrz panelu admina,
+- admin wybiera klasę `AI` albo `HUMAN`,
+- obsługiwany jest drag & drop wielu obrazów,
+- pliki źródłowe JPG/PNG/WebP/itd. są automatycznie konwertowane do AVIF,
+- po potwierdzonej konwersji przechowywany jest tylko zoptymalizowany AVIF,
+- exact duplicates oraz cross-class duplicates są blokowane po hash-u,
+- content usuwa się przez kontrolkę `X`,
+- dodanie/usunięcie obrazu nie wymaga Git commit / GitHub Actions / deployu strony.
+
+Provider został wybrany: **Supabase**. V1.5.1 tworzy fundament DB/Storage/RLS; publiczna gra nadal korzysta z repozytoryjnego `data/images.json` do czasu V1.5.2.
+
+### V1.6 — Multi-Mode
+
+Gdy pojawią się kolejne tryby, obecna ukryta nazwa `Sesja` staje się widocznym trybem w selektorze.
+
+Planowane tryby:
+
+1. **Sesja** — obecny klasyczny tryb.
+2. **7 sekund** — każda karta ma 7 sekund; timeout zmienia kartę i daje 0 punktów.
+3. **Death mech** — wspólny timer 60 s; dobra odpowiedź `+3 s`, zła `-5 s`, maksimum 60 s, minimum 0 s; przy 0 s tryb się kończy.
+
+Szczegóły, które pozostają do ustalenia przed Death mech:
+- czy ignoruje wybór 10 / 20 / 50 i działa wyłącznie do wyzerowania czasu,
+- czy istnieje osobny timeout na pojedynczą kartę,
+- jaki dokładnie zestaw statystyk pokazuje ekran końcowy.
+
+Pełny plan etapów i acceptance gates znajduje się w `OUTSIDE_REPO/ROADMAP.md`.
+## V1.5.1 — Supabase Foundation
+
+Status: **PASS / CLOSED** after production SQL + consolidated postcheck.
+
+Supabase foundation contains:
+- `private.admin_users`,
+- `private.is_admin()`,
+- `public.game_images`,
+- grants + RLS,
+- public `game-images` bucket restricted to AVIF,
+- admin-only Storage mutation policies.
+
+## V1.5.2 — External Content Read Path
+
+V1.5.2 moves ownership of the public image catalog out of `game.js` and into
+`js/content-source.js`.
+
+The migration behavior is intentionally safe:
+- if Supabase public config is valid and at least 10 active images exist, the game uses Supabase,
+- the REST catalog is paged until an empty page, so the client does not impose a 1000-image ceiling,
+- public AVIF URLs are built from the `game-images` bucket,
+- if Supabase is unconfigured, unavailable or still has fewer than 10 active images, the existing repository `data/images.json` remains the temporary fallback,
+- the fallback is removed only after the real content migration is verified in V1.5.6.
+
+Public configuration lives in:
+`js/supabase-config.js`
+
+Only a **Project URL** and **sb_publishable_...** key belong there. Never place an
+`sb_secret_...` key in browser code.
+
+V1.5.2 also narrows anonymous database privileges to only the public catalog
+columns required by the game. Hashes, original filenames and internal metadata
+are no longer table-wide readable by the anonymous role.
+
+
+### V1.5.2 — Production public configuration
+
+The public runtime is now configured for the project's Supabase instance:
+
+- Project URL: `https://kopmcnabslumyweebjgf.supabase.co`
+- credential type: `sb_publishable_*` (public browser key)
+
+The publishable key is intentionally browser-visible and relies on the V1.5.2
+grants + RLS boundary. No secret/service-role credential or database password
+belongs in the repository.
+
+Production SQL/postcheck for V1.5.2: **PASS**.
+
+Current production data state at the SQL gate:
+- `game_image_count = 0`
+- `admin_user_count = 0`
+
+Therefore, after this code is deployed, the expected migration behavior is:
+
+1. query Supabase,
+2. receive an empty active catalog,
+3. fall back to the existing repository manifest,
+4. keep the game playable.
+
+V1.5.2 is not considered CLOSED until that browser smoke is confirmed on the
+deployed GitHub Pages site.

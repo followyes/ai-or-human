@@ -3,6 +3,7 @@ import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js";
 import { SessionSizePicker } from "./session-size-picker.js";
+import { loadContentManifest } from "./content-source.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -186,29 +187,25 @@ function validateManifest(manifest) {
 }
 
 async function loadManifest() {
-  let response;
+  let result;
 
   try {
-    response = await fetch("./data/images.json", { cache: "no-store" });
+    result = await loadContentManifest({ minimumImageCount: MIN_SESSION_SIZE });
   } catch (error) {
-    console.error("[AI OR HUMAN] Nie udało się pobrać manifestu obrazów.", error);
+    console.error("[AI OR HUMAN] Nie udało się pobrać żadnego źródła obrazów.", error);
     throw new Error("Gra jest chwilowo niedostępna. Spróbuj ponownie za chwilę.");
   }
 
-  if (!response.ok) {
-    if (response.status === 404) {
-      console.error(
-        "[AI OR HUMAN] Brak dist/data/images.json. Na GitHub Pages aplikacja musi być publikowana przez workflow GitHub Actions. " +
-        "Sprawdź: repo zawiera .github/workflows/pages.yml, Settings > Pages > Source = GitHub Actions oraz ostatni workflow zakończył się PASS."
-      );
-    } else {
-      console.error(`[AI OR HUMAN] Manifest obrazów zwrócił HTTP ${response.status}.`);
-    }
-
-    throw new Error("Gra jest chwilowo niedostępna. Spróbuj ponownie za chwilę.");
+  if (result.source === "repository" && result.fallbackReason) {
+    console.warn(
+      "[AI OR HUMAN] Supabase nie jest jeszcze gotowy jako źródło produkcyjne; użyto repozytoryjnego fallbacku.",
+      result.fallbackReason
+    );
   }
 
-  const images = validateManifest(await response.json());
+  const images = validateManifest(result.manifest);
+  console.info(`[AI OR HUMAN] Źródło obrazów: ${result.source}; pula: ${images.length}.`);
+
   selector = new RoundSelector(images);
   preloader = new RoundPreloader(selector);
   configureSessionSizeAvailability(images.length);

@@ -21,6 +21,13 @@ import {
 } from "../js/session-config.js";
 import { RoundPreloader, loadImageIntoElement } from "../js/image-preloader.js";
 
+import {
+  buildPublicStorageUrl,
+  fetchSupabaseImages,
+  loadContentManifest,
+  resolveSupabasePublicConfig
+} from "../js/content-source.js";
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
 
@@ -629,6 +636,154 @@ async function testRoundSelector() {
   assert.ok(exclusionRound.every((item) => !excluded.has(item.id)), "excluded IDs must not be selected");
 }
 
+
+function makeJsonResponse(data, { status = 200 } = {}) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async json() { return data; }
+  };
+}
+
+function makeSupabaseRow(index, type = index % 2 === 0 ? "ai" : "human") {
+  return {
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    content_class: type,
+    storage_bucket: "game-images",
+    storage_path: `${type}/folder ${Math.floor(index / 100)}/obraz #${index}.avif`,
+    created_at: `2026-09-28T00:${String(index % 60).padStart(2, "0")}:00Z`
+  };
+}
+
+async function testExternalContentSource() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co/",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+
+  const resolved = resolveSupabasePublicConfig(config);
+  assert.equal(resolved.configured, true);
+  assert.equal(resolved.projectUrl, "https://abcdefghijklmnopqrst.supabase.co");
+
+  assert.equal(resolveSupabasePublicConfig({ projectUrl: "", publishableKey: "" }).configured, false);
+  assert.throws(
+    () => resolveSupabasePublicConfig({
+      projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+      publishableKey: "sb_secret_NEVER_IN_BROWSER"
+    }),
+    (error) => error?.code === "SUPABASE_SECRET_KEY_FORBIDDEN"
+  );
+  assert.throws(
+    () => resolveSupabasePublicConfig({ projectUrl: "http://bad.example", publishableKey: "sb_publishable_test" }),
+    (error) => error?.code === "SUPABASE_URL_INVALID"
+  );
+  assert.throws(
+    () => resolveSupabasePublicConfig({ projectUrl: "https://example.com/not-project-root", publishableKey: "sb_publishable_test" }),
+    (error) => error?.code === "SUPABASE_URL_INVALID"
+  );
+
+  const encodedUrl = buildPublicStorageUrl(
+    resolved.projectUrl,
+    "game-images",
+    "human/Zażółć gęślą #1.avif"
+  );
+  assert.equal(
+    encodedUrl,
+    "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/human/Za%C5%BC%C3%B3%C5%82%C4%87%20g%C4%99%C5%9Bl%C4%85%20%231.avif"
+  );
+
+  // Simulate an API max-row setting LOWER than our requested 1000 rows.
+  // The client must keep paging until an empty page, not stop on a short page.
+  const allRows = Array.from({ length: 1205 }, (_, index) => makeSupabaseRow(index));
+  const apiPageCap = 400;
+  const requestedOffsets = [];
+  const headersSeen = [];
+
+  const pagedFetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    assert.equal(url.pathname, "/rest/v1/game_images");
+    assert.equal(url.searchParams.has("is_active"), false, "active-row filtering must stay in RLS so anon need not SELECT is_active");
+    assert.equal(url.searchParams.get("order"), "created_at.asc,id.asc");
+    assert.equal(url.searchParams.get("select"), "id,content_class,storage_bucket,storage_path,created_at");
+    assert.equal(url.searchParams.get("limit"), "1000");
+    const offset = Number(url.searchParams.get("offset"));
+    requestedOffsets.push(offset);
+    headersSeen.push(options.headers);
+    return makeJsonResponse(allRows.slice(offset, offset + apiPageCap));
+  };
+
+  const externalImages = await fetchSupabaseImages({ config, fetchImpl: pagedFetch });
+  assert.equal(externalImages.length, 1205, "external catalog must have no 1000-row client ceiling");
+  assert.deepEqual(requestedOffsets, [0, 400, 800, 1200, 1205]);
+  assert.ok(headersSeen.every((headers) => headers.apikey === config.publishableKey));
+  assert.ok(headersSeen.every((headers) => !("Authorization" in headers)),
+    "publishable key must use apikey header, not Authorization bearer");
+  assert.equal(externalImages[0].type, "ai");
+  assert.ok(externalImages[1].src.includes("/human/"));
+  assert.ok(externalImages[1].src.endsWith("obraz%20%231.avif"));
+
+  let localFetchCount = 0;
+  const supabasePreferredFetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/game_images")) {
+      const offset = Number(new URL(url).searchParams.get("offset"));
+      return makeJsonResponse(offset === 0 ? allRows.slice(0, 12) : []);
+    }
+    localFetchCount += 1;
+    return makeJsonResponse({ images: makeImages(20) });
+  };
+
+  const preferred = await loadContentManifest({ config, fetchImpl: supabasePreferredFetch, minimumImageCount: 10 });
+  assert.equal(preferred.source, "supabase");
+  assert.equal(preferred.manifest.images.length, 12);
+  assert.equal(localFetchCount, 0, "repository manifest must not be fetched when Supabase is usable");
+
+  const fallbackManifest = {
+    schemaVersion: 1,
+    imageCount: 20,
+    images: makeImages(20)
+  };
+  const fallbackFetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/rest/v1/game_images")) return makeJsonResponse([]);
+    assert.equal(url, "./data/images.json");
+    return makeJsonResponse(fallbackManifest);
+  };
+
+  const fallback = await loadContentManifest({ config, fetchImpl: fallbackFetch, minimumImageCount: 10 });
+  assert.equal(fallback.source, "repository");
+  assert.equal(fallback.manifest.imageCount, 20);
+  assert.equal(fallback.fallbackReason?.code, "SUPABASE_POOL_TOO_SMALL");
+
+  const unconfigured = await loadContentManifest({
+    config: { projectUrl: "", publishableKey: "" },
+    fetchImpl: async (input) => {
+      assert.equal(String(input), "./data/images.json");
+      return makeJsonResponse(fallbackManifest);
+    }
+  });
+  assert.equal(unconfigured.source, "repository");
+  assert.equal(unconfigured.fallbackReason, null);
+
+  await assert.rejects(
+    () => fetchSupabaseImages({
+      config,
+      fetchImpl: async () => makeJsonResponse({ message: "denied" }, { status: 401 })
+    }),
+    (error) => error?.code === "SUPABASE_HTTP_ERROR"
+  );
+
+  await assert.rejects(
+    () => fetchSupabaseImages({
+      config,
+      fetchImpl: async () => makeJsonResponse([
+        { ...makeSupabaseRow(0), content_class: "human", storage_path: "ai/bad.avif" }
+      ])
+    }),
+    (error) => error?.code === "SUPABASE_ROW_INVALID"
+  );
+}
+
 async function testBuildSuccess() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-ok-"));
   await copyRuntimeFixture(tempRoot);
@@ -697,6 +852,8 @@ async function testSourceContracts() {
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
   const sessionPicker = await fs.readFile(path.join(projectRoot, "js", "session-size-picker.js"), "utf8");
+  const contentSource = await fs.readFile(path.join(projectRoot, "js", "content-source.js"), "utf8");
+  const supabaseConfig = await fs.readFile(path.join(projectRoot, "js", "supabase-config.js"), "utf8");
   const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows", "pages.yml"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -720,6 +877,22 @@ async function testSourceContracts() {
   assert.ok(css.includes(".session-size-button.is-selected"));
   assert.ok(!css.includes(".session-size-button.is-liquid-covered"),
     "morph-era transient label coverage must be removed");
+
+assert.ok(game.includes('loadContentManifest'));
+assert.ok(!game.includes('fetch("./data/images.json"'), "game.js must not own the content transport anymore");
+assert.ok(contentSource.includes('/rest/v1/game_images'));
+assert.ok(contentSource.includes('cache: "no-store"'));
+assert.ok(contentSource.includes('apikey: resolved.publishableKey'));
+assert.ok(!contentSource.includes('Authorization:'));
+assert.ok(contentSource.includes('while (true)'));
+assert.ok(contentSource.includes('offset += rows.length'));
+assert.ok(contentSource.includes('/storage/v1/object/public/'));
+assert.ok(contentSource.includes('source: "repository"'));
+assert.ok(contentSource.includes('source: "supabase"'));
+assert.ok(supabaseConfig.includes('projectUrl: "https://kopmcnabslumyweebjgf.supabase.co"'));
+assert.ok(supabaseConfig.includes('publishableKey: "sb_publishable_'));
+assert.ok(!/publishableKey:\s*["']sb_secret_/i.test(supabaseConfig), "browser config must never contain a Supabase secret key");
+assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEVER place an sb_secret_'));
   assert.ok(game.includes("SessionSizePicker"));
   assert.ok(game.includes("syncSessionSizeControls({ animate: true })"));
   assert.ok(game.includes("picker.refresh()"));
@@ -786,7 +959,8 @@ async function testSourceContracts() {
     game.indexOf("selector.recordExposure(item.id, sessionNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, sessionNumber)")),
     "input must unlock only after reveal/exposure"
   );
-  assert.ok(game.includes("Settings > Pages > Source = GitHub Actions"));
+  assert.ok(contentSource.includes("./data/images.json"));
+  assert.ok(contentSource.includes("REPOSITORY_MANIFEST_HTTP_ERROR"));
   assert.ok(!game.includes("Nie udało się wczytać katalogu obrazów ("));
   assert.ok(swipe.includes("pointerdown"));
   assert.ok(swipe.includes("this.capturePointer(event.pointerId)"));
@@ -818,6 +992,7 @@ await testSlidingPillLifecycle();
 testSessionConfig();
 await testDynamicRoundPreloader();
 await testRoundSelector();
+await testExternalContentSource();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -831,6 +1006,7 @@ console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 10/20/50: PASS");
 console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
+console.log("External Supabase content source + pagination + migration fallback: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");
