@@ -538,8 +538,7 @@ export async function insertGameImageMetadata({
     avif_sha256: avifSha256,
     width,
     height,
-    file_size_bytes: fileSizeBytes,
-    is_active: false
+    file_size_bytes: fileSizeBytes
   };
 
   const rows = await request(url, {
@@ -675,4 +674,193 @@ const storagePath = storagePathFactory(contentClass);
 
     throw error;
   }
+}
+
+
+function validateExpectedManifestEntries(entries) {
+  if (!Array.isArray(entries) || entries.length < 10) {
+    throw new AdminContentError(
+      "MIGRATION_EXPECTED_MANIFEST_INVALID",
+      "Manifest migracji musi zawierać co najmniej 10 obrazów."
+    );
+  }
+
+  const seen = new Set();
+  let ai = 0;
+  let human = 0;
+
+  const normalized = entries.map((entry) => {
+    const sha256 = typeof entry?.sha256 === "string" ? entry.sha256.toLowerCase() : "";
+    const type = entry?.type;
+
+    if (!/^[0-9a-f]{64}$/.test(sha256) || (type !== "ai" && type !== "human")) {
+      throw new AdminContentError(
+        "MIGRATION_EXPECTED_MANIFEST_INVALID",
+        "Manifest migracji zawiera nieprawidłowy SHA-256 lub klasę."
+      );
+    }
+
+    if (seen.has(sha256)) {
+      throw new AdminContentError(
+        "MIGRATION_EXPECTED_MANIFEST_DUPLICATE",
+        "Manifest migracji zawiera zduplikowany SHA-256."
+      );
+    }
+
+    seen.add(sha256);
+    if (type === "ai") ai += 1;
+    else human += 1;
+
+    return Object.freeze({ sha256, type });
+  });
+
+  if (ai < 1 || human < 1) {
+    throw new AdminContentError(
+      "MIGRATION_EXPECTED_MANIFEST_INVALID",
+      "Manifest migracji musi zawierać obrazy AI i HUMAN."
+    );
+  }
+
+  return Object.freeze({
+    total: normalized.length,
+    ai,
+    human,
+    entries: Object.freeze(normalized)
+  });
+}
+
+export async function fetchRepositoryMigrationTarget({
+  fetchImpl = globalThis.fetch,
+  manifestUrl = "../data/images.json"
+} = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new AdminContentError(
+      "MIGRATION_FETCH_UNAVAILABLE",
+      "Przeglądarka nie udostępnia funkcji fetch()."
+    );
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(manifestUrl, { cache: "no-store" });
+  } catch (error) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_FETCH_FAILED",
+      "Nie udało się pobrać repozytoryjnego manifestu migracji.",
+      { cause: error }
+    );
+  }
+
+  if (!response?.ok) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_HTTP_ERROR",
+      `Manifest repozytorium zwrócił HTTP ${response?.status ?? "?"}.`,
+      { status: response?.status ?? null }
+    );
+  }
+
+  let manifest;
+  try {
+    manifest = await response.json();
+  } catch (error) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_INVALID",
+      "Repozytoryjny manifest migracji ma nieprawidłowy JSON.",
+      { cause: error }
+    );
+  }
+
+  if (!manifest || !Array.isArray(manifest.images)) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_INVALID",
+      "Repozytoryjny manifest migracji nie zawiera listy images."
+    );
+  }
+
+  if (
+    Number.isInteger(manifest.imageCount) &&
+    manifest.imageCount !== manifest.images.length
+  ) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_COUNTS_INVALID",
+      "imageCount nie zgadza się z liczbą rekordów manifestu."
+    );
+  }
+
+  return validateExpectedManifestEntries(
+    manifest.images.map((image) => ({
+      sha256: image?.id,
+      type: image?.type
+    }))
+  );
+}
+
+async function callMigrationRpc({
+  session,
+  functionName,
+  body,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+
+  const resolved = resolveConfig(config);
+  const url = new URL(`/rest/v1/rpc/${functionName}`, `${resolved.projectUrl}/`);
+
+  return request(url, {
+    fetchImpl,
+    method: "POST",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json"
+    }),
+    body: JSON.stringify(body || {})
+  });
+}
+
+export async function getContentMigrationStatus({
+  session,
+  expectedManifest,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const target = validateExpectedManifestEntries(expectedManifest);
+
+  return callMigrationRpc({
+    session,
+    functionName: "get_content_migration_status",
+    body: { p_expected_manifest: target.entries },
+    config,
+    fetchImpl
+  });
+}
+
+export async function cutoverExternalContent({
+  session,
+  expectedManifest,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const target = validateExpectedManifestEntries(expectedManifest);
+
+  return callMigrationRpc({
+    session,
+    functionName: "cutover_external_content",
+    body: { p_expected_manifest: target.entries },
+    config,
+    fetchImpl
+  });
+}
+
+export async function rollbackExternalContentCutover({
+  session,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  return callMigrationRpc({
+    session,
+    functionName: "rollback_external_content_cutover",
+    body: {},
+    config,
+    fetchImpl
+  });
 }

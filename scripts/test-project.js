@@ -42,10 +42,14 @@ import {
   AdminContentError,
   assertImageHashAvailable,
   createStoragePath,
+  cutoverExternalContent,
   deleteGameImage,
+  fetchRepositoryMigrationTarget,
   findImageByHash,
+  getContentMigrationStatus,
   listGameImages,
-  registerPreparedImage
+  registerPreparedImage,
+  rollbackExternalContentCutover
 } from "../js/admin-content.js";
 import {
   AVIF_ENCODER_MODULE_URL,
@@ -1090,9 +1094,10 @@ async function testAdminContentUploadContracts() {
       assert.equal(body.original_filename, "photo.jpg");
       assert.equal(body.source_sha256, "a".repeat(64));
       assert.equal(body.avif_sha256, "b".repeat(64));
-      assert.equal(body.is_active, false);
+      assert.equal(Object.hasOwn(body, "is_active"), false,
+        "V1.5.6 browser must not own publication state on INSERT");
       assert.equal(body.file_size_bytes, 3);
-      return makeJsonResponse([{ id: "row-1", ...body }]);
+      return makeJsonResponse([{ id: "row-1", ...body, is_active: false }]);
     }
 
     throw new Error(`Unexpected request: ${url}`);
@@ -1314,6 +1319,137 @@ async function testAdminInventoryPaginationAndDelete() {
       ["/storage/v1/object/game-images", "DELETE", undefined],
       ["/rest/v1/game_images", "PATCH", true]
     ]
+  );
+}
+
+
+async function testProductionMigrationContracts() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+  const session = { access_token: "admin-access-token" };
+
+  const entries = [
+    ...Array.from({ length: 7 }, (_, index) => ({
+      sha256: index.toString(16).padStart(64, "0"),
+      type: "ai"
+    })),
+    ...Array.from({ length: 5 }, (_, index) => ({
+      sha256: (index + 100).toString(16).padStart(64, "0"),
+      type: "human"
+    }))
+  ];
+
+  const target = await fetchRepositoryMigrationTarget({
+    manifestUrl: "../data/images.json",
+    fetchImpl: async (input, options = {}) => {
+      assert.equal(String(input), "../data/images.json");
+      assert.equal(options.cache, "no-store");
+      return makeJsonResponse({
+        schemaVersion: 1,
+        imageCount: 12,
+        images: entries.map((entry, index) => ({
+          id: entry.sha256,
+          src: `./images/${entry.type === "ai" ? "AI" : "HUMAN"}/${index}.avif`,
+          type: entry.type
+        }))
+      });
+    }
+  });
+
+  assert.equal(target.total, 12);
+  assert.equal(target.ai, 7);
+  assert.equal(target.human, 5);
+  assert.deepEqual(target.entries, entries);
+
+  const readyStatus = {
+    expected: { total: 12, ai: 7, human: 5 },
+    runtime: { external_live: false, cutover_at: null, cutover_by: null },
+    metadata: { total: 12, ai: 7, human: 5, active: 0, inactive: 12 },
+    storage: { total: 12, ai: 7, human: 5 },
+    integrity: { metadata_missing_storage: 0, storage_orphans: 0 },
+    identity: { missing_expected: 0, unexpected_metadata: 0, class_mismatch: 0 },
+    ready_for_cutover: true,
+    live_matches_expected: false
+  };
+
+  const status = await getContentMigrationStatus({
+    session,
+    expectedManifest: target.entries,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/rpc/get_content_migration_status");
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.deepEqual(JSON.parse(options.body), {
+        p_expected_manifest: entries
+      });
+      return makeJsonResponse(readyStatus);
+    }
+  });
+  assert.equal(status.ready_for_cutover, true);
+  assert.equal(status.identity.missing_expected, 0);
+
+  const liveStatus = {
+    ...readyStatus,
+    runtime: {
+      external_live: true,
+      cutover_at: "2026-09-29T18:00:00Z",
+      cutover_by: "11111111-1111-4111-8111-111111111111"
+    },
+    metadata: { total: 12, ai: 7, human: 5, active: 12, inactive: 0 },
+    ready_for_cutover: false,
+    live_matches_expected: true
+  };
+
+  const cutover = await cutoverExternalContent({
+    session,
+    expectedManifest: target.entries,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/rpc/cutover_external_content");
+      assert.deepEqual(JSON.parse(options.body), {
+        p_expected_manifest: entries
+      });
+      return makeJsonResponse(liveStatus);
+    }
+  });
+  assert.equal(cutover.live_matches_expected, true);
+  assert.equal(cutover.metadata.active, 12);
+
+  const rollback = await rollbackExternalContentCutover({
+    session,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/rpc/rollback_external_content_cutover");
+      assert.deepEqual(JSON.parse(options.body), {});
+      return makeJsonResponse({
+        external_live: false,
+        changed: true,
+        active_count: 0
+      });
+    }
+  });
+  assert.equal(rollback.external_live, false);
+
+  await assert.rejects(
+    () => fetchRepositoryMigrationTarget({
+      fetchImpl: async () => makeJsonResponse({
+        imageCount: 10,
+        images: [
+          { id: "not-a-sha", type: "ai" },
+          ...Array.from({ length: 9 }, (_, index) => ({
+            id: (index + 200).toString(16).padStart(64, "0"),
+            type: "human"
+          }))
+        ]
+      })
+    }),
+    (error) => error.code === "MIGRATION_EXPECTED_MANIFEST_INVALID"
   );
 }
 
@@ -1566,6 +1702,7 @@ await testAdminAuthContract();
 await testAvifConversionContracts();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
+await testProductionMigrationContracts();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -1584,6 +1721,7 @@ console.log("Admin password Auth + session refresh + RLS authority probe: PASS")
 console.log("V1.5.4 AVIF conversion contracts: PASS");
 console.log("V1.5.4 staged Storage + metadata upload contracts: PASS");
 console.log("V1.5.5 inventory pagination + Delete X lifecycle: PASS");
+console.log("V1.5.6 production migration + cutover RPC contracts: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");

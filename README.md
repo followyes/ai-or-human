@@ -369,3 +369,53 @@ V1.5.5 adds `idx_game_images_class_created` for category-filtered inventory
 ordered newest-first.
 
 Public gameplay remains unchanged and still ignores all inactive staging rows.
+
+
+## V1.5.6 — Production Content Migration
+
+V1.5.5 Content Inventory + Delete X is production-verified and CLOSED.
+
+V1.5.6 introduces a controlled two-phase production migration.
+
+### Phase A — migrate + verify + cut over
+
+`/admin` reads the current generated repository manifest (`data/images.json`)
+as the exact migration target. The manifest `id` is already the SHA-256 of
+each repository image, so cutover validates exact file identity + class,
+not only aggregate counts. It compares:
+
+- total image count,
+- AI count,
+- HUMAN count,
+- Supabase metadata count,
+- Supabase Storage count,
+- exact repository SHA-256/class pairs against `game_images.source_sha256`,
+- missing expected repository images,
+- unexpected metadata rows,
+- class mismatches,
+- missing Storage objects,
+- Storage orphans.
+
+The **Aktywuj Supabase** button stays disabled until the DB RPC confirms exact
+parity.
+
+The cutover RPC atomically:
+- verifies the expected AI/HUMAN counts again server-side,
+- requires zero Storage/metadata drift,
+- activates the full verified `game_images` pool,
+- sets `private.content_runtime.external_live=true`.
+
+After cutover, a DB trigger becomes authoritative for new uploads and marks
+future inserted images active automatically.
+
+A controlled rollback RPC remains available while repository fallback still
+exists.
+
+### Phase B — repository runtime cleanup
+
+The repository fallback and image-tree runtime dependency are NOT removed in
+the first V1.5.6 package.
+
+They are removed only after the production public game is proven to load the
+full Supabase pool after cutover. This prevents an irreversible one-deploy
+migration.
