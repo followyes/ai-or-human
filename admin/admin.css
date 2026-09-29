@@ -299,7 +299,12 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
 .upload-queue {
   display: grid;
   gap: 10px;
+  max-height: 480px;
   margin-top: 12px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .queue-item {
@@ -311,14 +316,20 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
   border: 1px solid var(--border);
   border-radius: 16px;
   background: #ffffff;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 
 .queue-thumb {
   width: 58px;
   height: 58px;
-  object-fit: cover;
+  display: grid;
+  place-items: center;
   border-radius: 12px;
   background: #edf1f3;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
 }
 
 .queue-main { min-width: 0; }
@@ -346,10 +357,27 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
   font-weight: 800;
 }
 
-.queue-item[data-state="working"] .queue-state { color: var(--warning); }
-.queue-item[data-state="done"] { border-color: rgba(19, 138, 75, 0.22); }
+.queue-item[data-state="pending"] {
+  border-color: rgba(161, 106, 16, 0.28);
+  background: rgba(161, 106, 16, 0.08);
+}
+.queue-item[data-state="pending"] .queue-state { color: var(--warning); }
+
+.queue-item[data-state="working"] {
+  background: var(--surface-soft);
+}
+.queue-item[data-state="working"] .queue-state { color: var(--text); }
+
+.queue-item[data-state="done"] {
+  border-color: rgba(19, 138, 75, 0.28);
+  background: rgba(19, 138, 75, 0.08);
+}
 .queue-item[data-state="done"] .queue-state { color: var(--success); }
-.queue-item[data-state="error"] { border-color: rgba(163, 51, 59, 0.22); }
+
+.queue-item[data-state="error"] {
+  border-color: rgba(163, 51, 59, 0.34);
+  background: rgba(163, 51, 59, 0.10);
+}
 .queue-item[data-state="error"] .queue-state { color: var(--danger); }
 
 .boot-state {
@@ -581,7 +609,8 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
 }
 
 .queue-item[data-state="duplicate"] {
-  border-color: rgba(161, 106, 16, 0.24);
+  border-color: rgba(161, 106, 16, 0.28);
+  background: rgba(161, 106, 16, 0.08);
 }
 
 .queue-item[data-state="duplicate"] .queue-state {
@@ -704,6 +733,8 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
 }
 
 @media (max-width: 680px) {
+  .upload-queue { max-height: 360px; }
+
   .admin-shell { padding: 12px; }
   .admin-card { padding: 24px 16px; border-radius: 22px; }
   .admin-toolbar { flex-direction: column; }

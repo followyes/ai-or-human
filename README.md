@@ -393,6 +393,7 @@ not only aggregate counts. It compares:
 - missing expected repository images,
 - unexpected metadata rows,
 - class mismatches,
+- AVIF payload mismatches (`avif_sha256 != repository SHA-256`),
 - missing Storage objects,
 - Storage orphans.
 
@@ -419,3 +420,36 @@ the first V1.5.6 package.
 They are removed only after the production public game is proven to load the
 full Supabase pool after cutover. This prevents an irreversible one-deploy
 migration.
+
+
+### V1.5.6 corrective — batch upload + AVIF passthrough
+
+Before continuing the production migration, V1.5.6 hardens the admin batch
+uploader:
+
+- every selected file is registered in the queue immediately as `OCZEKUJE`;
+- processing remains sequential to keep browser memory bounded;
+- the queue has its own bounded scroll viewport and a new batch clears old rows;
+- `OCZEKUJE` is yellow/amber, `GOTOWE` green and `BŁĄD` red;
+- a normal per-file error is promoted to the top and does not stop later files;
+- duplicates are tracked separately from actual failures;
+- existing AVIF files use byte-identical passthrough and never load the AVIF encoder;
+- JPG/PNG/WebP still use the existing AVIF conversion path;
+- the redundant second source-SHA preflight is skipped after the UI has already
+  completed that exact check.
+
+Migration repair:
+if a staged repository AVIF was uploaded before this corrective and therefore
+re-encoded, dropping the exact current repository AVIF again repairs the same
+staged row in place. The Storage object is overwritten with the exact source
+bytes and `avif_sha256` is updated. Active production rows are never eligible
+for this automatic repair.
+
+Cutover additionally requires `payload_mismatch = 0`, so a row whose source
+identity matches the repository but whose stored AVIF was re-encoded cannot be
+accepted accidentally.
+
+Because this exact-payload gate is defined for the current all-AVIF production
+repository corpus, the V1.5.6 migration target parser also refuses a manifest
+containing a non-AVIF repository path instead of silently applying the wrong
+payload invariant.

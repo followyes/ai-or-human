@@ -480,6 +480,7 @@ export async function uploadAvifObject({
   session,
   storagePath,
   avifBlob,
+  upsert = false,
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -504,7 +505,8 @@ export async function uploadAvifObject({
     method: "POST",
     headers: authHeaders(resolved.publishableKey, session.access_token, {
       "Content-Type": "image/avif",
-      "Cache-Control": "max-age=31536000"
+      "Cache-Control": "max-age=31536000",
+      ...(upsert ? { "x-upsert": "true" } : {})
     }),
     body: avifBlob
   });
@@ -561,6 +563,155 @@ export async function insertGameImageMetadata({
   return rows[0];
 }
 
+async function updateGameImagePayloadMetadata({
+  session,
+  imageId,
+  avifSha256,
+  width,
+  height,
+  fileSizeBytes,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireImageId(imageId);
+
+  if (!/^[0-9a-f]{64}$/.test(avifSha256 || "")) {
+    throw new AdminContentError("HASH_INVALID", "Nieprawidłowy SHA-256 AVIF.");
+  }
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "game_images");
+  url.searchParams.set("id", `eq.${imageId}`);
+
+  const rows = await request(url, {
+    fetchImpl,
+    method: "PATCH",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    }),
+    body: JSON.stringify({
+      avif_sha256: avifSha256,
+      width,
+      height,
+      file_size_bytes: fileSizeBytes
+    })
+  });
+
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new AdminContentError(
+      "PAYLOAD_METADATA_UPDATE_NOT_CONFIRMED",
+      "Supabase nie potwierdził aktualizacji payloadu AVIF."
+    );
+  }
+
+  return rows[0];
+}
+
+export async function repairPreparedAvifPayload({
+  session,
+  existingImage,
+  contentClass,
+  prepared,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireContentClass(contentClass);
+
+  if (
+    !existingImage ||
+    typeof existingImage.id !== "string" ||
+    typeof existingImage.storage_path !== "string" ||
+    !existingImage.storage_path
+  ) {
+    throw new AdminContentError(
+      "REPAIR_IMAGE_INVALID",
+      "Brak kompletnego rekordu obrazu do naprawy."
+    );
+  }
+
+  requireImageId(existingImage.id);
+
+  if (existingImage.content_class !== contentClass) {
+    throw new AdminContentError(
+      "REPAIR_CLASS_MISMATCH",
+      "Nie można naprawić obrazu przypisanego do innej kategorii."
+    );
+  }
+
+  if (existingImage.is_active === true) {
+    throw new AdminContentError(
+      "REPAIR_ACTIVE_FORBIDDEN",
+      "Aktywnego obrazu produkcyjnego nie można automatycznie nadpisać."
+    );
+  }
+
+  if (
+    prepared?.source?.mimeType !== "image/avif" ||
+    prepared?.output?.passthrough !== true ||
+    prepared?.source?.sha256 !== prepared?.output?.sha256 ||
+    prepared?.source?.sha256 !== existingImage.source_sha256 ||
+    !(prepared?.output?.blob instanceof Blob)
+  ) {
+    throw new AdminContentError(
+      "REPAIR_PAYLOAD_INVALID",
+      "Naprawa wymaga dokładnego AVIF 1:1 zgodnego z istniejącym source SHA-256."
+    );
+  }
+
+  await assertImageHashAvailable({
+    session,
+    field: "avif_sha256",
+    hash: prepared.output.sha256,
+    requestedClass: contentClass,
+    config,
+    fetchImpl
+  });
+
+  await uploadAvifObject({
+    session,
+    storagePath: existingImage.storage_path,
+    avifBlob: prepared.output.blob,
+    upsert: true,
+    config,
+    fetchImpl
+  });
+
+  try {
+    const row = await updateGameImagePayloadMetadata({
+      session,
+      imageId: existingImage.id,
+      avifSha256: prepared.output.sha256,
+      width: prepared.output.width,
+      height: prepared.output.height,
+      fileSizeBytes: prepared.output.size,
+      config,
+      fetchImpl
+    });
+
+    return Object.freeze({
+      storagePath: existingImage.storage_path,
+      row,
+      repaired: true
+    });
+  } catch (error) {
+    throw new AdminContentError(
+      "REPAIR_METADATA_FAILED_AFTER_STORAGE",
+      "Dokładny AVIF został zapisany w Storage, ale metadata nie została zaktualizowana. Ponów ten sam plik; operacja jest bezpieczna do powtórzenia.",
+      {
+        details: {
+          imageId: existingImage.id,
+          storagePath: existingImage.storage_path,
+          originalError: error
+        },
+        cause: error
+      }
+    );
+  }
+}
+
 export async function removeStorageObject({
   session,
   storagePath,
@@ -589,6 +740,7 @@ export async function registerPreparedImage({
   session,
   contentClass,
   prepared,
+  sourceHashPreflightDone = false,
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch,
   storagePathFactory = createStoragePath
@@ -604,14 +756,16 @@ export async function registerPreparedImage({
   }
 
 
-await assertImageHashAvailable({
-  session,
-  field: "source_sha256",
-  hash: prepared.source.sha256,
-  requestedClass: contentClass,
-  config,
-  fetchImpl
-});
+if (!sourceHashPreflightDone) {
+  await assertImageHashAvailable({
+    session,
+    field: "source_sha256",
+    hash: prepared.source.sha256,
+    requestedClass: contentClass,
+    config,
+    fetchImpl
+  });
+}
 
 await assertImageHashAvailable({
   session,
@@ -784,6 +938,16 @@ export async function fetchRepositoryMigrationTarget({
     throw new AdminContentError(
       "MIGRATION_MANIFEST_COUNTS_INVALID",
       "imageCount nie zgadza się z liczbą rekordów manifestu."
+    );
+  }
+
+  const nonAvifTarget = manifest.images.find((image) =>
+    typeof image?.src !== "string" || !/\.avif(?:$|[?#])/i.test(image.src)
+  );
+  if (nonAvifTarget) {
+    throw new AdminContentError(
+      "MIGRATION_MANIFEST_FORMAT_INVALID",
+      "V1.5.6 exact-payload migration wymaga, aby aktualny katalog repo składał się wyłącznie z AVIF."
     );
   }
 

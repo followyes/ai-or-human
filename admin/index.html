@@ -74,7 +74,7 @@
           <button class="drop-zone" id="drop-zone" type="button">
             <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
             <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
-            <span class="drop-zone-formats">JPG · PNG · WebP · AVIF → AVIF</span>
+            <span class="drop-zone-formats">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
           </button>
 
           <input
@@ -86,8 +86,9 @@
           >
 
           <p class="upload-note">
-            Pliki są przetwarzane po kolei, aby ograniczyć zużycie pamięci.
-            Oryginały nie są wysyłane do Storage.
+            Cała kolejka pojawia się od razu, ale pliki są przetwarzane po kolei,
+            aby ograniczyć zużycie pamięci. JPG/PNG/WebP są konwertowane do AVIF;
+            istniejące AVIF trafiają do Storage 1:1 bez ponownej kompresji.
           </p>
 
           <div class="queue-header is-hidden" id="queue-header">

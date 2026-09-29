@@ -49,16 +49,23 @@ import {
   getContentMigrationStatus,
   listGameImages,
   registerPreparedImage,
+  repairPreparedAvifPayload,
   rollbackExternalContentCutover
 } from "../js/admin-content.js";
 import {
   AVIF_ENCODER_MODULE_URL,
+  convertSourceFileToAvif,
   encodeImageDataToAvif,
   formatBytes,
   inspectSourceFile,
   sha256Blob,
   validateSourceFile
 } from "../js/avif-converter.js";
+import {
+  promoteQueueItem,
+  runSequentialUploadBatch,
+  summarizeUploadBatch
+} from "../js/upload-batch.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -1028,6 +1035,79 @@ async function testAvifConversionContracts() {
   assert.equal(encoded.type, "image/avif");
   assert.equal(encoded.size, 4);
 
+  const exactAvifBytes = new Uint8Array([11, 22, 33, 44, 55, 66]);
+  const avifSource = new Blob([exactAvifBytes], { type: "image/avif" });
+  Object.defineProperty(avifSource, "name", { value: "fixture.avif" });
+
+  let encoderLoadCount = 0;
+  let decoderCloseCount = 0;
+  const avifPrepared = await convertSourceFileToAvif(avifSource, {
+    decoder: async () => ({
+      width: 320,
+      height: 180,
+      close() { decoderCloseCount += 1; }
+    }),
+    encoderLoader: async () => {
+      encoderLoadCount += 1;
+      throw new Error("AVIF passthrough must never load the encoder");
+    }
+  });
+
+  assert.equal(avifPrepared.output.passthrough, true);
+  assert.equal(avifPrepared.output.mimeType, "image/avif");
+  assert.equal(avifPrepared.output.size, exactAvifBytes.byteLength);
+  assert.equal(avifPrepared.output.sha256, avifPrepared.source.sha256);
+  assert.equal(encoderLoadCount, 0, "existing AVIF must bypass the encoder");
+  assert.equal(decoderCloseCount, 1, "AVIF validation decoder must be released");
+  assert.deepEqual(
+    new Uint8Array(await avifPrepared.output.blob.arrayBuffer()),
+    exactAvifBytes,
+    "AVIF passthrough must remain byte-identical"
+  );
+
+  const previousDocument = globalThis.document;
+  try {
+    globalThis.document = {
+      createElement(tagName) {
+        assert.equal(tagName, "canvas");
+        return {
+          width: 0,
+          height: 0,
+          getContext() {
+            return {
+              drawImage() {},
+              getImageData() {
+                return {
+                  data: new Uint8ClampedArray([0, 0, 0, 255]),
+                  width: 1,
+                  height: 1
+                };
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const pngSource = new Blob([new Uint8Array([1, 3, 5, 7])], { type: "image/png" });
+    Object.defineProperty(pngSource, "name", { value: "fixture.png" });
+    let pngEncoderLoadCount = 0;
+    const pngPrepared = await convertSourceFileToAvif(pngSource, {
+      decoder: async () => ({ width: 1, height: 1, close() {} }),
+      verifyOutput: false,
+      encoderLoader: async () => {
+        pngEncoderLoadCount += 1;
+        return async () => new Uint8Array([8, 6, 4, 2]);
+      }
+    });
+
+    assert.equal(pngEncoderLoadCount, 1, "non-AVIF sources must still use the encoder");
+    assert.equal(pngPrepared.output.passthrough, false);
+    assert.notEqual(pngPrepared.output.sha256, pngPrepared.source.sha256);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+
   assert.equal(formatBytes(1024), "1.0 KB");
   assert.ok(AVIF_ENCODER_MODULE_URL.includes("@jsquash/avif@2.1.1"));
 
@@ -1107,13 +1187,19 @@ async function testAdminContentUploadContracts() {
     session,
     contentClass: "ai",
     prepared,
+    sourceHashPreflightDone: true,
     config,
     fetchImpl,
     storagePathFactory: () => "ai/11111111-1111-4111-8111-111111111111.avif"
   });
 
   assert.equal(result.row.id, "row-1");
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 3, "UI-preflight path must avoid the duplicate source-hash request");
+  const hashRequests = requests.filter(({ url, options }) =>
+    url.pathname === "/rest/v1/game_images" && options.method !== "POST"
+  );
+  assert.equal(hashRequests.length, 1);
+  assert.equal(hashRequests[0].url.searchParams.get("avif_sha256"), `eq.${"b".repeat(64)}`);
 
   await assert.rejects(
     () => registerPreparedImage({
@@ -1156,6 +1242,91 @@ async function testAdminContentUploadContracts() {
       }
     }),
     (error) => error.code === "23505"
+  );
+
+  const exactSha = "c".repeat(64);
+  const repairBlob = new Blob([new Uint8Array([7, 7, 7, 7])], { type: "image/avif" });
+  const repairPrepared = {
+    source: {
+      filename: "repo.avif",
+      mimeType: "image/avif",
+      size: repairBlob.size,
+      sha256: exactSha
+    },
+    output: {
+      blob: repairBlob,
+      mimeType: "image/avif",
+      size: repairBlob.size,
+      sha256: exactSha,
+      width: 640,
+      height: 480,
+      passthrough: true
+    }
+  };
+  const existingImage = {
+    id: "33333333-3333-4333-8333-333333333333",
+    content_class: "ai",
+    original_filename: "repo.avif",
+    source_sha256: exactSha,
+    avif_sha256: "d".repeat(64),
+    storage_path: "ai/33333333-3333-4333-8333-333333333333.avif",
+    is_active: false
+  };
+  const repairRequests = [];
+  const repaired = await repairPreparedAvifPayload({
+    session,
+    existingImage,
+    contentClass: "ai",
+    prepared: repairPrepared,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      repairRequests.push({ url, options });
+
+      if (url.pathname === "/rest/v1/game_images" && options.method !== "PATCH") {
+        assert.equal(url.searchParams.get("avif_sha256"), `eq.${exactSha}`);
+        return makeJsonResponse([]);
+      }
+
+      if (url.pathname === "/storage/v1/object/game-images/ai/33333333-3333-4333-8333-333333333333.avif") {
+        assert.equal(options.method, "POST");
+        assert.equal(options.headers["x-upsert"], "true");
+        assert.equal(options.body, repairBlob);
+        return makeJsonResponse({ Key: "repaired" });
+      }
+
+      if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
+        assert.equal(url.searchParams.get("id"), "eq.33333333-3333-4333-8333-333333333333");
+        const body = JSON.parse(options.body);
+        assert.deepEqual(body, {
+          avif_sha256: exactSha,
+          width: 640,
+          height: 480,
+          file_size_bytes: 4
+        });
+        return makeJsonResponse([{ ...existingImage, ...body }]);
+      }
+
+      throw new Error(`Unexpected repair request: ${url}`);
+    }
+  });
+
+  assert.equal(repaired.repaired, true);
+  assert.equal(repaired.row.avif_sha256, exactSha);
+  assert.equal(repairRequests.length, 3);
+
+  await assert.rejects(
+    () => repairPreparedAvifPayload({
+      session,
+      existingImage: { ...existingImage, is_active: true },
+      contentClass: "ai",
+      prepared: repairPrepared,
+      config,
+      fetchImpl: async () => {
+        throw new Error("active repair must fail before any network request");
+      }
+    }),
+    (error) => error.code === "REPAIR_ACTIVE_FORBIDDEN"
   );
 }
 
@@ -1369,7 +1540,12 @@ async function testProductionMigrationContracts() {
     metadata: { total: 12, ai: 7, human: 5, active: 0, inactive: 12 },
     storage: { total: 12, ai: 7, human: 5 },
     integrity: { metadata_missing_storage: 0, storage_orphans: 0 },
-    identity: { missing_expected: 0, unexpected_metadata: 0, class_mismatch: 0 },
+    identity: {
+      missing_expected: 0,
+      unexpected_metadata: 0,
+      class_mismatch: 0,
+      payload_mismatch: 0
+    },
     ready_for_cutover: true,
     live_matches_expected: false
   };
@@ -1441,9 +1617,10 @@ async function testProductionMigrationContracts() {
       fetchImpl: async () => makeJsonResponse({
         imageCount: 10,
         images: [
-          { id: "not-a-sha", type: "ai" },
+          { id: "not-a-sha", src: "./images/AI/a.avif", type: "ai" },
           ...Array.from({ length: 9 }, (_, index) => ({
             id: (index + 200).toString(16).padStart(64, "0"),
+            src: `./images/HUMAN/${index}.avif`,
             type: "human"
           }))
         ]
@@ -1451,6 +1628,89 @@ async function testProductionMigrationContracts() {
     }),
     (error) => error.code === "MIGRATION_EXPECTED_MANIFEST_INVALID"
   );
+
+  await assert.rejects(
+    () => fetchRepositoryMigrationTarget({
+      fetchImpl: async () => makeJsonResponse({
+        imageCount: 10,
+        images: [
+          ...Array.from({ length: 5 }, (_, index) => ({
+            id: (index + 300).toString(16).padStart(64, "0"),
+            src: `./images/AI/${index}.png`,
+            type: "ai"
+          })),
+          ...Array.from({ length: 5 }, (_, index) => ({
+            id: (index + 400).toString(16).padStart(64, "0"),
+            src: `./images/HUMAN/${index}.avif`,
+            type: "human"
+          }))
+        ]
+      })
+    }),
+    (error) => error.code === "MIGRATION_MANIFEST_FORMAT_INVALID"
+  );
+}
+
+async function testSequentialUploadBatchContinuity() {
+  const seen = [];
+  const success = [];
+  const failures = [];
+
+  const result = await runSequentialUploadBatch([1, 2, 3, 4], {
+    processEntry: async (entry) => {
+      seen.push(entry);
+      if (entry === 2) throw new Error("simulated file failure");
+      return entry * 10;
+    },
+    onSuccess: ({ entry, result: value }) => success.push([entry, value]),
+    onFailure: ({ entry, error }) => failures.push([entry, error.message]),
+    shouldAbort: () => false
+  });
+
+  assert.deepEqual(seen, [1, 2, 3, 4], "one file failure must not stop the batch");
+  assert.deepEqual(success, [[1, 10], [3, 30], [4, 40]]);
+  assert.deepEqual(failures, [[2, "simulated file failure"]]);
+  assert.equal(result.aborted, false);
+  assert.equal(result.processed, 4);
+  assert.equal(result.remaining, 0);
+
+  assert.deepEqual(
+    summarizeUploadBatch(4, { completed: 3, duplicates: 0, failed: 1 }),
+    { total: 4, completed: 3, duplicates: 0, failed: 1, waiting: 0 }
+  );
+  assert.deepEqual(
+    summarizeUploadBatch(150, { completed: 1, duplicates: 2, failed: 1 }),
+    { total: 150, completed: 1, duplicates: 2, failed: 1, waiting: 146 }
+  );
+
+  const queueOrder = ["ok-1", "failed", "pending"];
+  const fakeContainer = {
+    scrollTop: 120,
+    prepend(item) {
+      const current = queueOrder.indexOf(item);
+      if (current >= 0) queueOrder.splice(current, 1);
+      queueOrder.unshift(item);
+    }
+  };
+  promoteQueueItem(fakeContainer, "failed");
+  assert.deepEqual(queueOrder, ["failed", "ok-1", "pending"],
+    "failed queue row must be promoted to index 0");
+  assert.equal(fakeContainer.scrollTop, 0);
+
+  const abortedSeen = [];
+  const abortError = new Error("session expired");
+  const aborted = await runSequentialUploadBatch([1, 2, 3], {
+    processEntry: async (entry) => {
+      abortedSeen.push(entry);
+      if (entry === 2) throw abortError;
+      return entry;
+    },
+    shouldAbort: (error) => error === abortError
+  });
+
+  assert.deepEqual(abortedSeen, [1, 2]);
+  assert.equal(aborted.aborted, true);
+  assert.equal(aborted.remaining, 1);
 }
 
 async function testBuildSuccess() {
@@ -1475,6 +1735,7 @@ async function testBuildSuccess() {
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "avif-converter.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-batch.js")));
 
   await fs.rm(tempRoot, { recursive: true, force: true });
 }
@@ -1535,6 +1796,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   const adminAuth = await fs.readFile(path.join(projectRoot, "js", "admin-auth.js"), "utf8");
   const adminContent = await fs.readFile(path.join(projectRoot, "js", "admin-content.js"), "utf8");
   const avifConverter = await fs.readFile(path.join(projectRoot, "js", "avif-converter.js"), "utf8");
+  const uploadBatchSource = await fs.readFile(path.join(projectRoot, "js", "upload-batch.js"), "utf8");
   const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -1666,6 +1928,28 @@ assert.ok(adminCss.includes('font-family: "Segoe UI", sans-serif'));
 assert.ok(adminJs.includes("authorizeAdminSession"));
 assert.ok(adminJs.includes("sessionStorage") === false,
   "session storage handling belongs in admin-auth.js, not scattered through admin UI");
+assert.ok(adminHtml.includes("AVIF bez rekompresji"), "admin must disclose AVIF passthrough");
+assert.ok(adminCss.includes("max-height: 480px"), "upload queue must be internally bounded");
+assert.ok(adminCss.includes("overflow-y: auto"), "upload queue must scroll internally");
+assert.ok(adminCss.includes('.queue-item[data-state="pending"]'), "pending state must be styled");
+assert.ok(adminCss.includes('background: rgba(161, 106, 16, 0.08)'), "pending/duplicate rows must be visibly yellow/amber");
+assert.ok(adminCss.includes('background: rgba(19, 138, 75, 0.08)'), "completed rows must be visibly green");
+assert.ok(adminCss.includes('background: rgba(163, 51, 59, 0.10)'), "error rows must be visibly red");
+assert.ok(adminJs.includes("uploadQueue.replaceChildren()"), "a new batch must clear previous queue rows");
+assert.ok(adminJs.includes("files.map((file) => ({"), "all batch rows must be created before processing");
+assert.ok(adminJs.includes("createQueueItem(file)"), "batch rows must be materialized immediately");
+assert.ok(adminJs.includes("entry.queueItem.promoteToTop()"), "failed rows must be promoted to the top");
+assert.ok(adminJs.includes("runSequentialUploadBatch"), "batch processing must use the tested sequential runner");
+assert.ok(adminJs.includes("sourceHashPreflightDone: true"), "UI must not repeat the source-hash preflight");
+assert.ok(adminJs.includes("repairPreparedAvifPayload"), "pre-corrective AVIF payloads must be repairable in place");
+assert.ok(adminJs.includes("payload_mismatch"), "migration UI must surface exact AVIF payload mismatch");
+assert.ok(avifConverter.includes('source.mimeType === "image/avif"'), "AVIF passthrough branch must exist");
+assert.ok(avifConverter.includes("sha256: source.sha256"), "AVIF passthrough must preserve exact source hash");
+assert.ok(avifConverter.includes("passthrough: true"), "AVIF passthrough must be explicit in prepared metadata");
+assert.ok(uploadBatchSource.includes("for (let index = 0; index < entries.length; index += 1)"), "batch runner must remain sequential");
+assert.ok(uploadBatchSource.includes("shouldAbort"), "batch runner must support explicit fatal abort only");
+assert.ok(adminContent.includes('"x-upsert": "true"'), "repair path must upsert the exact AVIF payload");
+assert.ok(adminContent.includes("REPAIR_ACTIVE_FORBIDDEN"), "repair must refuse active production rows");
 assert.ok(adminAuth.includes("/auth/v1/token"));
 assert.ok(adminAuth.includes("grant_type"));
 assert.ok(adminAuth.includes("/auth/v1/user"));
@@ -1703,6 +1987,7 @@ await testAvifConversionContracts();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
 await testProductionMigrationContracts();
+await testSequentialUploadBatchContinuity();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -1722,6 +2007,7 @@ console.log("V1.5.4 AVIF conversion contracts: PASS");
 console.log("V1.5.4 staged Storage + metadata upload contracts: PASS");
 console.log("V1.5.5 inventory pagination + Delete X lifecycle: PASS");
 console.log("V1.5.6 production migration + cutover RPC contracts: PASS");
+console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");

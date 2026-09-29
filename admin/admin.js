@@ -9,13 +9,14 @@ import {
 } from "../js/admin-auth.js";
 import {
   AdminContentError,
-  assertImageHashAvailable,
   cutoverExternalContent,
   deleteGameImage,
   fetchRepositoryMigrationTarget,
+  findImageByHash,
   getContentMigrationStatus,
   listGameImages,
   registerPreparedImage,
+  repairPreparedAvifPayload,
   rollbackExternalContentCutover
 } from "../js/admin-content.js";
 import {
@@ -24,6 +25,11 @@ import {
   formatBytes,
   inspectSourceFile
 } from "../js/avif-converter.js";
+import {
+  promoteQueueItem,
+  runSequentialUploadBatch,
+  summarizeUploadBatch
+} from "../js/upload-batch.js";
 
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
@@ -72,6 +78,7 @@ let currentSession = null;
 let authBusy = false;
 let uploadBusy = false;
 let completedCount = 0;
+let duplicateCount = 0;
 let failedCount = 0;
 
 let inventoryRows = [];
@@ -389,6 +396,10 @@ function renderMigration() {
       migrationSnapshot.identity?.class_mismatch === 0
     );
     appendMigrationCheck(
+      "Payload AVIF zgodny 1:1 z manifestem repo",
+      migrationSnapshot.identity?.payload_mismatch === 0
+    );
+    appendMigrationCheck(
       "Brak metadata bez pliku Storage",
       integrity.metadata_missing_storage === 0
     );
@@ -451,7 +462,8 @@ async function refreshMigration({ quiet = false } = {}) {
       setMigrationStatus(
         `Migracja w toku: ${migrationSnapshot.metadata.total}/${migrationTarget.total} metadata · ` +
         `brakujące ${migrationSnapshot.identity?.missing_expected ?? "?"} · ` +
-        `dodatkowe ${migrationSnapshot.identity?.unexpected_metadata ?? "?"}.`
+        `dodatkowe ${migrationSnapshot.identity?.unexpected_metadata ?? "?"} · ` +
+        `payload mismatch ${migrationSnapshot.identity?.payload_mismatch ?? "?"}.`
       );
     }
   } catch (error) {
@@ -581,20 +593,23 @@ async function establishAuthorizedSession(session) {
   return authorized;
 }
 
+function queueFileLabel(file) {
+  const name = typeof file?.name === "string" ? file.name : "";
+  const extension = name.includes(".") ? name.split(".").pop().toUpperCase() : "IMG";
+  return extension && extension.length <= 5 ? extension : "IMG";
+}
+
 function createQueueItem(file) {
   const item = document.createElement("article");
   item.className = "queue-item";
-  item.dataset.state = "working";
+  item.dataset.state = "pending";
 
-  const preview = document.createElement("img");
+  // Keep pending rows lightweight. Creating 150 object URLs / decoded previews at
+  // once would defeat the sequential-memory contract of the uploader.
+  const preview = document.createElement("div");
   preview.className = "queue-thumb";
-  preview.alt = "";
-  preview.decoding = "async";
-
-  const previewUrl = URL.createObjectURL(file);
-  preview.src = previewUrl;
-  preview.addEventListener("load", () => URL.revokeObjectURL(previewUrl), { once: true });
-  preview.addEventListener("error", () => URL.revokeObjectURL(previewUrl), { once: true });
+  preview.setAttribute("aria-hidden", "true");
+  preview.textContent = queueFileLabel(file);
 
   const main = document.createElement("div");
   main.className = "queue-main";
@@ -605,16 +620,16 @@ function createQueueItem(file) {
 
   const detail = document.createElement("p");
   detail.className = "queue-detail";
-  detail.textContent = `${formatBytes(file.size)} · przygotowanie SHA-256`;
+  detail.textContent = `${formatBytes(file.size)} · czeka w kolejce`;
 
   main.append(name, detail);
 
   const state = document.createElement("div");
   state.className = "queue-state";
-  state.textContent = "START";
+  state.textContent = "OCZEKUJE";
 
   item.append(preview, main, state);
-  uploadQueue.prepend(item);
+  uploadQueue.append(item);
 
   return {
     item,
@@ -624,41 +639,123 @@ function createQueueItem(file) {
       item.dataset.state = itemState;
       state.textContent = status;
       detail.textContent = detailText;
+    },
+    promoteToTop() {
+      promoteQueueItem(uploadQueue, item);
     }
   };
 }
 
 function updateQueueSummary(total) {
   queueHeader.classList.remove("is-hidden");
-  queueSummary.textContent = `${completedCount} zapisanych · ${failedCount} błędów · ${total} w partii`;
+  const summary = summarizeUploadBatch(total, {
+    completed: completedCount,
+    duplicates: duplicateCount,
+    failed: failedCount
+  });
+  queueSummary.textContent =
+    `${summary.completed} gotowe · ${summary.duplicates} duplikatów · ${summary.failed} błędów · ` +
+    `${summary.waiting} oczekuje · ${summary.total} w partii`;
+}
+
+function duplicateErrorFromExisting(existing, requestedClass) {
+  const existingClass = existing?.content_class?.toUpperCase?.() || "INNEJ KATEGORII";
+  const requested = requestedClass?.toUpperCase?.() || "WYBRANEJ KATEGORII";
+  const filename = existing?.original_filename ? ` (${existing.original_filename})` : "";
+
+  if (existing?.content_class === requestedClass) {
+    return new AdminContentError(
+      "SOURCE_DUPLICATE",
+      `Ten obraz już istnieje w kategorii ${existingClass}${filename}.`,
+      { details: existing }
+    );
+  }
+
+  return new AdminContentError(
+    "SOURCE_DUPLICATE",
+    `Ten sam obraz jest już przypisany do ${existingClass}${filename}. ` +
+      `Usuń go z ${existingClass}, jeśli chcesz dodać go jako ${requested}.`,
+    { details: existing }
+  );
+}
+
+function isSessionUploadError(error) {
+  return error instanceof AdminContentError &&
+    (error.code === "CONTENT_SESSION_MISSING" || error.status === 401);
 }
 
 async function processFile(file, contentClass, queueItem) {
   queueItem.set("HASH", `${formatBytes(file.size)} · SHA-256 + kontrola duplikatu`);
 
   const sourceInspection = await inspectSourceFile(file);
+  const existingSource = await findImageByHash({
+    session: currentSession,
+    field: "source_sha256",
+    hash: sourceInspection.sha256
+  });
 
-await assertImageHashAvailable({
-  session: currentSession,
-  field: "source_sha256",
-  hash: sourceInspection.sha256,
-  requestedClass: contentClass
-});
+  if (existingSource) {
+    if (existingSource.content_class !== contentClass) {
+      throw duplicateErrorFromExisting(existingSource, contentClass);
+    }
 
-queueItem.set("AVIF",
- `${formatBytes(file.size)} · dekodowanie + konwersja`);
+    const canRepairExactAvif =
+      sourceInspection.mimeType === "image/avif" &&
+      existingSource.is_active !== true &&
+      existingSource.avif_sha256 !== sourceInspection.sha256;
+
+    if (!canRepairExactAvif) {
+      throw duplicateErrorFromExisting(existingSource, contentClass);
+    }
+
+    queueItem.set(
+      "AVIF 1:1",
+      `${formatBytes(file.size)} · walidacja bez rekompresji`
+    );
+    const prepared = await convertSourceFileToAvif(file, { sourceInspection });
+
+    queueItem.set(
+      "NAPRAWA",
+      `${prepared.output.width}×${prepared.output.height} · przywracanie dokładnego AVIF z repo`
+    );
+
+    const repaired = await repairPreparedAvifPayload({
+      session: currentSession,
+      existingImage: existingSource,
+      contentClass,
+      prepared
+    });
+
+    queueItem.set(
+      "GOTOWE",
+      `${contentClass.toUpperCase()} · AVIF 1:1 naprawiony · ${formatBytes(prepared.output.size)} · ${repaired.storagePath}`,
+      "done"
+    );
+    return Object.freeze({ kind: "repaired", row: repaired.row });
+  }
+
+  const passthrough = sourceInspection.mimeType === "image/avif";
+  queueItem.set(
+    passthrough ? "AVIF 1:1" : "AVIF",
+    passthrough
+      ? `${formatBytes(file.size)} · walidacja bez rekompresji`
+      : `${formatBytes(file.size)} · dekodowanie + konwersja`
+  );
 
   const prepared = await convertSourceFileToAvif(file, { sourceInspection });
 
   queueItem.set(
     "UPLOAD",
-    `${prepared.output.width}×${prepared.output.height} · ${formatBytes(prepared.source.size)} → ${formatBytes(prepared.output.size)}`
+    prepared.output.passthrough
+      ? `${prepared.output.width}×${prepared.output.height} · ${formatBytes(prepared.output.size)} · bez rekompresji`
+      : `${prepared.output.width}×${prepared.output.height} · ${formatBytes(prepared.source.size)} → ${formatBytes(prepared.output.size)}`
   );
 
   const result = await registerPreparedImage({
     session: currentSession,
     contentClass,
-    prepared
+    prepared,
+    sourceHashPreflightDone: true
   });
 
   const publicationState = result.row?.is_active ? "aktywny" : "nieaktywny";
@@ -668,6 +765,8 @@ queueItem.set("AVIF",
     `${contentClass.toUpperCase()} · ${formatBytes(prepared.output.size)} · ${result.storagePath} · ${publicationState}`,
     "done"
   );
+
+  return Object.freeze({ kind: "uploaded", row: result.row });
 }
 
 async function handleFiles(fileList) {
@@ -683,41 +782,54 @@ async function handleFiles(fileList) {
     return;
   }
 
-  setUploadBusy(true);
+  // A batch owns one bounded queue. Old rows are intentionally removed so a
+  // second 77-file batch does not leave 227 historical rows in the page DOM.
+  uploadQueue.replaceChildren();
+  uploadQueue.scrollTop = 0;
+
   completedCount = 0;
+  duplicateCount = 0;
   failedCount = 0;
+
+  // Materialize every lightweight row before any hashing/network work starts.
+  // This makes a 150-file drop visible immediately while processing remains
+  // strictly sequential.
+  const queueEntries = files.map((file) => ({
+    file,
+    queueItem: createQueueItem(file)
+  }));
+
   updateQueueSummary(files.length);
+  setUploadBusy(true);
 
   try {
     currentSession = await authorizeAdminSession({ session: currentSession });
     saveAdminSession(currentSession);
 
-    for (const file of files) {
-      const queueItem = createQueueItem(file);
-
-      try {
-        await processFile(file, contentClass, queueItem);
+    const batchResult = await runSequentialUploadBatch(queueEntries, {
+      processEntry: ({ file, queueItem }) => processFile(file, contentClass, queueItem),
+      onSuccess: () => {
         completedCount += 1;
-      } catch (error) {
-        failedCount += 1;
-
-if (isDuplicateError(error)) {
-  queueItem.set("DUPLIKAT", messageForUploadError(error), "duplicate");
-} else {
-  queueItem.set("BŁĄD", messageForUploadError(error), "error");
-}
-
-        if (
-          error instanceof AdminContentError &&
-          (error.code === "CONTENT_SESSION_MISSING" || error.status === 401)
-        ) {
-          clearAdminSession();
-          showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
-          return;
+        updateQueueSummary(files.length);
+      },
+      onFailure: ({ entry, error }) => {
+        if (isDuplicateError(error)) {
+          duplicateCount += 1;
+          entry.queueItem.set("DUPLIKAT", messageForUploadError(error), "duplicate");
+        } else {
+          failedCount += 1;
+          entry.queueItem.set("BŁĄD", messageForUploadError(error), "error");
+          entry.queueItem.promoteToTop();
         }
-      }
+        updateQueueSummary(files.length);
+      },
+      shouldAbort: (error) => isSessionUploadError(error)
+    });
 
-      updateQueueSummary(files.length);
+    if (batchResult.aborted) {
+      clearAdminSession();
+      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+      return;
     }
   } finally {
     setUploadBusy(false);

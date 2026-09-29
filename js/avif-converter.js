@@ -266,7 +266,8 @@ export async function convertSourceFileToAvif(
   {
     encoderLoader = loadAvifEncoder,
     verifyOutput = true,
-    sourceInspection = null
+    sourceInspection = null,
+    decoder = decodeSource
   } = {}
 ) {
   const source = sourceInspection || await inspectSourceFile(file);
@@ -283,13 +284,47 @@ export async function convertSourceFileToAvif(
     );
   }
 
+  if (typeof decoder !== "function") {
+    throw new AvifConversionError(
+      "SOURCE_DECODER_INVALID",
+      "Brak prawidłowego dekodera obrazu."
+    );
+  }
+
   let decoded = null;
   try {
-    decoded = await decodeSource(file);
+    decoded = await decoder(file);
 
-    const width = Number(decoded.width ?? decoded.naturalWidth);
-    const height = Number(decoded.height ?? decoded.naturalHeight);
+    const width = Number(decoded?.width ?? decoded?.naturalWidth);
+    const height = Number(decoded?.height ?? decoded?.naturalHeight);
     validateDimensions(width, height);
+
+    // Existing AVIF files are already the desired storage format. Re-encoding
+    // them would be slower, could reduce quality and would break byte identity
+    // with the repository migration manifest. Keep the exact source bytes.
+    if (source.mimeType === "image/avif") {
+      const avifBlob = file.type === "image/avif"
+        ? file
+        : file.slice(0, file.size, "image/avif");
+
+      return Object.freeze({
+        source: Object.freeze({
+          filename: source.filename,
+          mimeType: source.mimeType,
+          size: source.size,
+          sha256: source.sha256
+        }),
+        output: Object.freeze({
+          blob: avifBlob,
+          mimeType: "image/avif",
+          size: avifBlob.size,
+          sha256: source.sha256,
+          width,
+          height,
+          passthrough: true
+        })
+      });
+    }
 
     const { context } = createCanvas(width, height);
     context.drawImage(decoded, 0, 0, width, height);
@@ -316,7 +351,8 @@ export async function convertSourceFileToAvif(
         size: avifBlob.size,
         sha256: avifSha256,
         width,
-        height
+        height,
+        passthrough: false
       })
     });
   } catch (error) {
