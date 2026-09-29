@@ -33,14 +33,21 @@ jobs:
       - name: Run project tests
         run: npm run test
 
-      - name: Build static site and image manifest
+      - name: Build static site
         run: npm run build
 
       - name: Verify generated Pages artifact
         run: |
           test -f dist/index.html
-          test -f dist/data/images.json
-          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('dist/data/images.json','utf8')); if(!Array.isArray(m.images) || m.images.length < 10 || m.imageCount !== m.images.length) process.exit(1); console.log('Manifest verified:', m.imageCount, 'images');"
+          test -f dist/admin/index.html
+          test -f dist/js/content-source.js
+          test ! -e dist/data/images.json
+          test ! -d dist/images
+          if grep -R "./data/images.json" dist/js dist/admin 2>/dev/null; then
+            echo "Repository image fallback leaked into production artifact."
+            exit 1
+          fi
+          echo "Supabase-only Pages artifact verified."
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
