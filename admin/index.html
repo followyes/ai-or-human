@@ -97,6 +97,34 @@
 
           <div class="upload-queue" id="upload-queue" aria-live="polite"></div>
         </section>
+
+<section class="inventory-panel" aria-labelledby="inventory-heading">
+  <div class="inventory-heading-row">
+    <div>
+      <p class="admin-eyebrow">BIBLIOTEKA</p>
+      <h2 id="inventory-heading">Aktualny content</h2>
+    </div>
+    <button class="admin-secondary-button compact-button" id="inventory-refresh" type="button">
+      Odśwież
+    </button>
+  </div>
+
+  <div class="inventory-stats" id="inventory-stats" aria-live="polite">
+    <span>RAZEM <strong id="count-total">0</strong></span>
+    <span>AI <strong id="count-ai">0</strong></span>
+    <span>HUMAN <strong id="count-human">0</strong></span>
+    <span>AKTYWNE <strong id="count-active">0</strong></span>
+  </div>
+
+  <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
+    <button type="button" data-filter="all" class="is-active">WSZYSTKIE</button>
+    <button type="button" data-filter="ai">AI</button>
+    <button type="button" data-filter="human">HUMAN</button>
+  </div>
+
+  <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>
+  <div class="inventory-grid" id="inventory-grid"></div>
+</section>
       </section>
 
       <section id="boot-view" class="boot-state is-hidden" aria-live="polite">

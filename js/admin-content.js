@@ -1,8 +1,10 @@
-import { resolveSupabasePublicConfig } from "./content-source.js";
+import { buildPublicStorageUrl, resolveSupabasePublicConfig } from "./content-source.js";
 import { SUPABASE_PUBLIC_CONFIG } from "./supabase-config.js";
 
 export const GAME_IMAGES_BUCKET = "game-images";
 export const CONTENT_REQUEST_TIMEOUT_MS = 20000;
+export const INVENTORY_PAGE_SIZE = 250;
+export const INVENTORY_MAX_PAGES = 1000;
 
 export class AdminContentError extends Error {
   constructor(code, message, { status = null, details = null, cause = null } = {}) {
@@ -146,6 +148,49 @@ function encodeStoragePath(path) {
     .join("/");
 }
 
+function requireImageId(id) {
+  if (
+    typeof id !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+  ) {
+    throw new AdminContentError("IMAGE_ID_INVALID", "Nieprawidłowy identyfikator obrazu.");
+  }
+}
+
+function duplicateMessage(existing, requestedClass, kind) {
+  const existingClass = existing?.content_class?.toUpperCase?.() || "INNEJ KATEGORII";
+  const requested = requestedClass?.toUpperCase?.() || "WYBRANEJ KATEGORII";
+  const filename = existing?.original_filename ? ` (${existing.original_filename})` : "";
+
+  if (existing?.content_class === requestedClass) {
+    return kind === "avif"
+      ? `Taki sam wynik AVIF już istnieje w kategorii ${existingClass}${filename}.`
+      : `Ten obraz już istnieje w kategorii ${existingClass}${filename}.`;
+  }
+
+  return `Ten sam obraz jest już przypisany do ${existingClass}${filename}. Usuń go z ${existingClass}, jeśli chcesz dodać go jako ${requested}.`;
+}
+
+function normalizeInventoryRow(row, projectUrl) {
+  if (
+    !row ||
+    typeof row.id !== "string" ||
+    (row.content_class !== "ai" && row.content_class !== "human") ||
+    typeof row.storage_bucket !== "string" ||
+    typeof row.storage_path !== "string"
+  ) {
+    throw new AdminContentError(
+      "INVENTORY_ROW_INVALID",
+      "Supabase zwrócił nieprawidłowy rekord biblioteki."
+    );
+  }
+
+  return Object.freeze({
+    ...row,
+    public_url: buildPublicStorageUrl(projectUrl, row.storage_bucket, row.storage_path)
+  });
+}
+
 export function createStoragePath(contentClass, {
   uuid = globalThis.crypto?.randomUUID?.()
 } = {}) {
@@ -193,6 +238,242 @@ export async function findImageByHash({
   });
 
   return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+export async function assertImageHashAvailable({
+  session,
+  field,
+  hash,
+  requestedClass,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireContentClass(requestedClass);
+
+  const existing = await findImageByHash({
+    session,
+    field,
+    hash,
+    config,
+    fetchImpl
+  });
+
+  if (!existing) return true;
+
+  const kind = field === "avif_sha256" ? "avif" : "source";
+  throw new AdminContentError(
+    kind === "avif" ? "AVIF_DUPLICATE" : "SOURCE_DUPLICATE",
+    duplicateMessage(existing, requestedClass, kind),
+    { details: existing }
+  );
+}
+
+export async function listGameImages({
+  session,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch,
+  pageSize = INVENTORY_PAGE_SIZE,
+  maxPages = INVENTORY_MAX_PAGES
+} = {}) {
+  requireSession(session);
+
+  const resolved = resolveConfig(config);
+  const normalizedPageSize = Math.max(1, Math.floor(Number(pageSize) || INVENTORY_PAGE_SIZE));
+  const normalizedMaxPages = Math.max(1, Math.floor(Number(maxPages) || INVENTORY_MAX_PAGES));
+  const rows = [];
+  let offset = 0;
+
+  for (let page = 0; page < normalizedMaxPages; page += 1) {
+    const url = buildRestUrl(resolved.projectUrl, "game_images");
+    url.searchParams.set(
+      "select",
+      "id,content_class,storage_bucket,storage_path,original_filename,source_sha256,avif_sha256,width,height,file_size_bytes,is_active,created_at,updated_at"
+    );
+    url.searchParams.set("order", "created_at.desc,id.desc");
+    url.searchParams.set("limit", String(normalizedPageSize));
+    url.searchParams.set("offset", String(offset));
+
+    const batch = await request(url, {
+      fetchImpl,
+      headers: authHeaders(resolved.publishableKey, session.access_token)
+    });
+
+    if (!Array.isArray(batch)) {
+      throw new AdminContentError(
+        "INVENTORY_RESPONSE_INVALID",
+        "Supabase zwrócił nieprawidłową listę contentu."
+      );
+    }
+
+    if (!batch.length) {
+      return Object.freeze(rows.map((row) => normalizeInventoryRow(row, resolved.projectUrl)));
+    }
+
+    rows.push(...batch);
+    offset += batch.length;
+  }
+
+  throw new AdminContentError(
+    "INVENTORY_PAGE_LIMIT",
+    "Biblioteka przekroczyła bezpieczny limit paginacji panelu."
+  );
+}
+
+async function updateGameImageActivity({
+  session,
+  imageId,
+  isActive,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireImageId(imageId);
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "game_images");
+  url.searchParams.set("id", `eq.${imageId}`);
+
+  const rows = await request(url, {
+    fetchImpl,
+    method: "PATCH",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    }),
+    body: JSON.stringify({ is_active: Boolean(isActive) })
+  });
+
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new AdminContentError(
+      "ACTIVITY_UPDATE_NOT_CONFIRMED",
+      "Supabase nie potwierdził zmiany statusu obrazu."
+    );
+  }
+
+  return rows[0];
+}
+
+async function deleteGameImageMetadata({
+  session,
+  imageId,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireImageId(imageId);
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "game_images");
+  url.searchParams.set("id", `eq.${imageId}`);
+
+  const rows = await request(url, {
+    fetchImpl,
+    method: "DELETE",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      Prefer: "return=representation"
+    })
+  });
+
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new AdminContentError(
+      "METADATA_DELETE_NOT_CONFIRMED",
+      "Supabase nie potwierdził usunięcia rekordu metadata."
+    );
+  }
+
+  return rows[0];
+}
+
+export async function deleteGameImage({
+  session,
+  image,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+
+  if (!image || typeof image.id !== "string" || typeof image.storage_path !== "string" || !image.storage_path) {
+    throw new AdminContentError(
+      "DELETE_IMAGE_INVALID",
+      "Brak kompletnego rekordu obrazu do usunięcia."
+    );
+  }
+
+  requireImageId(image.id);
+
+  const wasActive = image.is_active === true;
+  let deactivated = false;
+
+  if (wasActive) {
+    await updateGameImageActivity({
+      session,
+      imageId: image.id,
+      isActive: false,
+      config,
+      fetchImpl
+    });
+    deactivated = true;
+  }
+
+  try {
+    await removeStorageObject({
+      session,
+      storagePath: image.storage_path,
+      config,
+      fetchImpl
+    });
+  } catch (storageError) {
+    if (deactivated) {
+      try {
+        await updateGameImageActivity({
+          session,
+          imageId: image.id,
+          isActive: true,
+          config,
+          fetchImpl
+        });
+      } catch (restoreError) {
+        throw new AdminContentError(
+          "DELETE_STORAGE_FAILED_RESTORE_FAILED",
+          "Nie udało się usunąć pliku ze Storage ani przywrócić jego aktywnego statusu.",
+          {
+            details: { storageError, restoreError, imageId: image.id },
+            cause: storageError
+          }
+        );
+      }
+    }
+
+    throw storageError;
+  }
+
+  try {
+    const deleted = await deleteGameImageMetadata({
+      session,
+      imageId: image.id,
+      config,
+      fetchImpl
+    });
+
+    return Object.freeze({
+      id: image.id,
+      storagePath: image.storage_path,
+      deleted
+    });
+  } catch (metadataError) {
+    throw new AdminContentError(
+      "DELETE_METADATA_FAILED_AFTER_STORAGE",
+      "Plik został usunięty ze Storage, ale rekord metadata pozostał nieaktywny. Odśwież bibliotekę i spróbuj usunąć rekord ponownie.",
+      {
+        details: {
+          imageId: image.id,
+          storagePath: image.storage_path,
+          metadataError
+        },
+        cause: metadataError
+      }
+    );
+  }
 }
 
 export async function uploadAvifObject({
@@ -323,39 +604,27 @@ export async function registerPreparedImage({
     );
   }
 
-  const sourceDuplicate = await findImageByHash({
-    session,
-    field: "source_sha256",
-    hash: prepared.source.sha256,
-    config,
-    fetchImpl
-  });
 
-  if (sourceDuplicate) {
-    throw new AdminContentError(
-      "SOURCE_DUPLICATE",
-      `Ten obraz już istnieje w kategorii ${sourceDuplicate.content_class.toUpperCase()}.`,
-      { details: sourceDuplicate }
-    );
-  }
+await assertImageHashAvailable({
+  session,
+  field: "source_sha256",
+  hash: prepared.source.sha256,
+  requestedClass: contentClass,
+  config,
+  fetchImpl
+});
 
-  const avifDuplicate = await findImageByHash({
-    session,
-    field: "avif_sha256",
-    hash: prepared.output.sha256,
-    config,
-    fetchImpl
-  });
+await assertImageHashAvailable({
+  session,
+  field: "avif_sha256",
+  hash: prepared.output.sha256,
+  requestedClass: contentClass,
+  config,
+  fetchImpl
+});
 
-  if (avifDuplicate) {
-    throw new AdminContentError(
-      "AVIF_DUPLICATE",
-      `Taki sam wynik AVIF już istnieje w kategorii ${avifDuplicate.content_class.toUpperCase()}.`,
-      { details: avifDuplicate }
-    );
-  }
+const storagePath = storagePathFactory(contentClass);
 
-  const storagePath = storagePathFactory(contentClass);
   let uploaded = false;
 
   try {

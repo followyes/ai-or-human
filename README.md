@@ -336,3 +336,36 @@ repository-backed game pool. Publication remains a V1.5.6 operation.
 The exact long-term AVIF quality/resizing/file-size policy is intentionally not
 frozen here. V1.5.4 first collects real source/output measurements using the
 encoder default while preserving original pixel dimensions.
+
+
+## V1.5.5 — Content Inventory + Delete X
+
+V1.5.4 Drag & Drop + AVIF is production-verified and CLOSED.
+
+V1.5.5 turns `/admin` into a basic content-management surface:
+
+- authoritative inventory loaded from `public.game_images`,
+- paginated reads without a client-side 1000-row ceiling,
+- total / AI / HUMAN / active counters,
+- ALL / AI / HUMAN filters,
+- public Storage thumbnails,
+- active/inactive state badges,
+- manual refresh,
+- `×` delete on every image,
+- clearer duplicate and cross-class duplicate messages.
+
+Delete lifecycle:
+1. if a future item is active, mark it inactive first,
+2. delete the exact AVIF Storage object,
+3. delete the `game_images` metadata row,
+4. refresh the authoritative inventory.
+
+If Storage deletion fails for an originally active item, the client attempts to
+restore `is_active=true`. If Storage succeeds but metadata deletion fails, the
+metadata row remains inactive and the panel reports a partial failure instead
+of claiming success.
+
+V1.5.5 adds `idx_game_images_class_created` for category-filtered inventory
+ordered newest-first.
+
+Public gameplay remains unchanged and still ignores all inactive staging rows.

@@ -40,8 +40,11 @@ import {
 } from "../js/admin-auth.js";
 import {
   AdminContentError,
+  assertImageHashAvailable,
   createStoragePath,
+  deleteGameImage,
   findImageByHash,
+  listGameImages,
   registerPreparedImage
 } from "../js/admin-content.js";
 import {
@@ -1151,6 +1154,169 @@ async function testAdminContentUploadContracts() {
   );
 }
 
+
+async function testAdminInventoryPaginationAndDelete() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+  const session = { access_token: "admin-access-token" };
+
+  const inventorySource = Array.from({ length: 1205 }, (_, index) => ({
+    id: `${String(index + 1).padStart(8, "0")}-1111-4111-8111-111111111111`,
+    content_class: index % 2 ? "human" : "ai",
+    storage_bucket: "game-images",
+    storage_path: `${index % 2 ? "human" : "ai"}/${index}.avif`,
+    original_filename: `source-${index}.jpg`,
+    source_sha256: "a".repeat(64),
+    avif_sha256: "b".repeat(64),
+    width: 100,
+    height: 100,
+    file_size_bytes: 1000,
+    is_active: false,
+    created_at: "2026-09-29T12:00:00Z",
+    updated_at: "2026-09-29T12:00:00Z"
+  }));
+
+  const offsets = [];
+  const inventory = await listGameImages({
+    session,
+    config,
+    pageSize: 500,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/game_images");
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+
+      const offset = Number(url.searchParams.get("offset") || 0);
+      offsets.push(offset);
+
+      // Simulate a server response cap of 400 rows.
+      return makeJsonResponse(inventorySource.slice(offset, offset + 400));
+    }
+  });
+
+  assert.equal(inventory.length, 1205);
+  assert.deepEqual(offsets, [0, 400, 800, 1200, 1205]);
+  assert.equal(
+    inventory[0].public_url,
+    "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/ai/0.avif"
+  );
+
+  await assert.rejects(
+    () => assertImageHashAvailable({
+      session,
+      field: "source_sha256",
+      hash: "c".repeat(64),
+      requestedClass: "human",
+      config,
+      fetchImpl: async () => makeJsonResponse([{
+        id: "11111111-1111-4111-8111-111111111111",
+        content_class: "ai",
+        original_filename: "existing.jpg",
+        source_sha256: "c".repeat(64),
+        avif_sha256: "d".repeat(64),
+        storage_path: "ai/existing.avif",
+        is_active: false
+      }])
+    }),
+    (error) =>
+      error.code === "SOURCE_DUPLICATE" &&
+      error.message.includes("przypisany do AI") &&
+      error.message.includes("dodać go jako HUMAN")
+  );
+
+  const inactiveImage = {
+    id: "22222222-2222-4222-8222-222222222222",
+    content_class: "human",
+    storage_path: "human/asset.avif",
+    original_filename: "asset.jpg",
+    is_active: false
+  };
+  const inactiveRequests = [];
+
+  await deleteGameImage({
+    session,
+    image: inactiveImage,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      inactiveRequests.push({ url, options });
+
+      if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+        assert.deepEqual(JSON.parse(options.body), { prefixes: ["human/asset.avif"] });
+        return makeJsonResponse([{ name: "human/asset.avif" }]);
+      }
+
+      if (url.pathname === "/rest/v1/game_images" && options.method === "DELETE") {
+        assert.equal(url.searchParams.get("id"), "eq.22222222-2222-4222-8222-222222222222");
+        return makeJsonResponse([inactiveImage]);
+      }
+
+      throw new Error(`Unexpected inactive delete request: ${url}`);
+    }
+  });
+
+  assert.deepEqual(
+    inactiveRequests.map(({ url, options }) => [url.pathname, options.method]),
+    [
+      ["/storage/v1/object/game-images", "DELETE"],
+      ["/rest/v1/game_images", "DELETE"]
+    ]
+  );
+
+  const activeImage = {
+    id: "33333333-3333-4333-8333-333333333333",
+    content_class: "ai",
+    storage_path: "ai/active.avif",
+    original_filename: "active.jpg",
+    is_active: true
+  };
+  const activeRequests = [];
+
+  await assert.rejects(
+    () => deleteGameImage({
+      session,
+      image: activeImage,
+      config,
+      fetchImpl: async (input, options = {}) => {
+        const url = new URL(String(input));
+        activeRequests.push({ url, options });
+
+        if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
+          const body = JSON.parse(options.body);
+          return makeJsonResponse([{ ...activeImage, is_active: body.is_active }]);
+        }
+
+        if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+          return makeJsonResponse(
+            { code: "storage_failure", message: "simulated" },
+            { status: 500 }
+          );
+        }
+
+        throw new Error(`Unexpected active delete request: ${url}`);
+      }
+    }),
+    (error) => error.code === "storage_failure"
+  );
+
+  assert.deepEqual(
+    activeRequests.map(({ url, options }) => [
+      url.pathname,
+      options.method,
+      options.body && typeof options.body === "string"
+        ? JSON.parse(options.body).is_active
+        : null
+    ]),
+    [
+      ["/rest/v1/game_images", "PATCH", false],
+      ["/storage/v1/object/game-images", "DELETE", undefined],
+      ["/rest/v1/game_images", "PATCH", true]
+    ]
+  );
+}
+
 async function testBuildSuccess() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-ok-"));
   await copyRuntimeFixture(tempRoot);
@@ -1399,6 +1565,7 @@ await testExternalContentSource();
 await testAdminAuthContract();
 await testAvifConversionContracts();
 await testAdminContentUploadContracts();
+await testAdminInventoryPaginationAndDelete();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -1416,6 +1583,7 @@ console.log("External Supabase content source + pagination + migration fallback:
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.4 AVIF conversion contracts: PASS");
 console.log("V1.5.4 staged Storage + metadata upload contracts: PASS");
+console.log("V1.5.5 inventory pagination + Delete X lifecycle: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");
