@@ -300,8 +300,7 @@ export async function convertSourceFileToAvif(
     validateDimensions(width, height);
 
     // Existing AVIF files are already the desired storage format. Re-encoding
-    // them would be slower, could reduce quality and would break byte identity
-    // with the repository migration manifest. Keep the exact source bytes.
+    // them would be slower and could reduce quality. Keep the exact source bytes.
     if (source.mimeType === "image/avif") {
       const avifBlob = file.type === "image/avif"
         ? file

@@ -51,7 +51,7 @@
               <p class="admin-eyebrow">CONTENT</p>
               <h2 id="content-heading">Dodaj obrazy</h2>
             </div>
-            <p class="staging-badge" id="upload-mode-badge">STAGING · NIEAKTYWNE</p>
+            <p class="staging-badge is-live">PRODUKCJA · AKTYWNE</p>
           </div>
 
           <p class="admin-copy content-intro">
@@ -125,58 +125,6 @@
 
   <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>
   <div class="inventory-grid" id="inventory-grid"></div>
-<section class="migration-panel" aria-labelledby="migration-heading">
-  <div class="migration-heading-row">
-    <div>
-      <p class="admin-eyebrow">MIGRACJA</p>
-      <h2 id="migration-heading">Przejście na Supabase</h2>
-    </div>
-    <span class="migration-mode" id="migration-mode">SPRAWDZANIE</span>
-  </div>
-
-  <p class="admin-copy">
-    Panel porównuje aktualny manifest repozytorium z zawartością Supabase.
-    Aktywacja jest dostępna dopiero po dokładnym wyrównaniu AI/HUMAN i
-    sprawdzeniu spójności Storage.
-  </p>
-
-  <div class="migration-columns">
-    <div class="migration-box">
-      <p class="admin-eyebrow">CEL · REPOZYTORIUM</p>
-      <div class="migration-counts">
-        <span>RAZEM <strong id="migration-target-total">—</strong></span>
-        <span>AI <strong id="migration-target-ai">—</strong></span>
-        <span>HUMAN <strong id="migration-target-human">—</strong></span>
-      </div>
-    </div>
-
-    <div class="migration-box">
-      <p class="admin-eyebrow">SUPABASE</p>
-      <div class="migration-counts">
-        <span>RAZEM <strong id="migration-db-total">—</strong></span>
-        <span>AI <strong id="migration-db-ai">—</strong></span>
-        <span>HUMAN <strong id="migration-db-human">—</strong></span>
-        <span>AKTYWNE <strong id="migration-db-active">—</strong></span>
-      </div>
-    </div>
-  </div>
-
-  <div class="migration-checks" id="migration-checks" aria-live="polite"></div>
-
-  <div class="migration-actions">
-    <button class="admin-secondary-button" id="migration-refresh" type="button">
-      Sprawdź gotowość
-    </button>
-    <button class="admin-primary-button migration-cutover-button" id="migration-cutover" type="button" disabled>
-      Aktywuj Supabase
-    </button>
-    <button class="admin-secondary-button danger-button is-hidden" id="migration-rollback" type="button">
-      Przywróć fallback repo
-    </button>
-  </div>
-
-  <p class="inventory-status" id="migration-status" role="status" aria-live="polite"></p>
-</section>
 </section>
       </section>
 

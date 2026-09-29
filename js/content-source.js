@@ -135,7 +135,7 @@ export async function fetchSupabaseImages({
 } = {}) {
   const resolved = resolveSupabasePublicConfig(config);
   if (!resolved.configured) {
-    throw new ContentSourceError("SUPABASE_NOT_CONFIGURED", "Supabase nie jest jeszcze skonfigurowany.");
+    throw new ContentSourceError("SUPABASE_NOT_CONFIGURED", "Supabase nie jest skonfigurowany.");
   }
   if (typeof fetchImpl !== "function") {
     throw new ContentSourceError("FETCH_UNAVAILABLE", "Przeglądarka nie udostępnia funkcji fetch().");
@@ -145,9 +145,8 @@ export async function fetchSupabaseImages({
   const ids = new Set();
   let offset = 0;
 
-  // Deliberately continue until the API returns an empty page. This avoids
-  // imposing a client-side image-count ceiling and also tolerates a server-side
-  // max-row setting lower than SUPABASE_PAGE_SIZE.
+  // Continue until an empty page. This tolerates a server-side max-row setting
+  // lower than the requested page size and keeps the client free of a 1000-row cap.
   while (true) {
     const requestUrl = buildCatalogUrl(resolved.projectUrl, offset);
     let response;
@@ -202,83 +201,26 @@ export async function fetchSupabaseImages({
   return images;
 }
 
-export async function fetchRepositoryManifest({ fetchImpl = globalThis.fetch } = {}) {
-  if (typeof fetchImpl !== "function") {
-    throw new ContentSourceError("FETCH_UNAVAILABLE", "Przeglądarka nie udostępnia funkcji fetch().");
-  }
-
-  let response;
-  try {
-    response = await fetchImpl("./data/images.json", { cache: "no-store" });
-  } catch (error) {
-    throw new ContentSourceError(
-      "REPOSITORY_MANIFEST_FETCH_FAILED",
-      "Nie udało się pobrać repozytoryjnego manifestu obrazów.",
-      error
-    );
-  }
-
-  if (!response?.ok) {
-    throw new ContentSourceError(
-      "REPOSITORY_MANIFEST_HTTP_ERROR",
-      `Repozytoryjny manifest obrazów zwrócił HTTP ${response?.status ?? "?"}.`
-    );
-  }
-
-  try {
-    return await response.json();
-  } catch (error) {
-    throw new ContentSourceError(
-      "REPOSITORY_MANIFEST_JSON_INVALID",
-      "Repozytoryjny manifest obrazów ma nieprawidłowy JSON.",
-      error
-    );
-  }
-}
-
 export async function loadContentManifest({
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch,
   minimumImageCount = MIN_SESSION_SIZE
 } = {}) {
-  let fallbackReason = null;
-  let resolved;
+  const images = await fetchSupabaseImages({ config, fetchImpl });
 
-  try {
-    resolved = resolveSupabasePublicConfig(config);
-  } catch (error) {
-    fallbackReason = error;
-    resolved = { configured: false };
+  if (images.length < minimumImageCount) {
+    throw new ContentSourceError(
+      "SUPABASE_POOL_TOO_SMALL",
+      `Supabase ma ${images.length} aktywnych obrazów; wymagane minimum to ${minimumImageCount}.`
+    );
   }
 
-  if (resolved.configured) {
-    try {
-      const images = await fetchSupabaseImages({ config: resolved, fetchImpl });
-      if (images.length >= minimumImageCount) {
-        return Object.freeze({
-          source: "supabase",
-          fallbackReason: null,
-          manifest: Object.freeze({
-            schemaVersion: 2,
-            imageCount: images.length,
-            images
-          })
-        });
-      }
-
-      fallbackReason = new ContentSourceError(
-        "SUPABASE_POOL_TOO_SMALL",
-        `Supabase ma ${images.length} aktywnych obrazów; wymagane minimum to ${minimumImageCount}.`
-      );
-    } catch (error) {
-      fallbackReason = error;
-    }
-  }
-
-  const manifest = await fetchRepositoryManifest({ fetchImpl });
   return Object.freeze({
-    source: "repository",
-    fallbackReason,
-    manifest
+    source: "supabase",
+    manifest: Object.freeze({
+      schemaVersion: 2,
+      imageCount: images.length,
+      images
+    })
   });
 }

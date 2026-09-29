@@ -10,15 +10,10 @@ import {
 } from "../js/admin-auth.js";
 import {
   AdminContentError,
-  cutoverExternalContent,
   deleteGameImage,
-  fetchRepositoryMigrationTarget,
   findImageByHash,
-  getContentMigrationStatus,
   listGameImages,
-  registerPreparedImage,
-  repairPreparedAvifPayload,
-  rollbackExternalContentCutover
+  registerPreparedImage
 } from "../js/admin-content.js";
 import {
   AvifConversionError,
@@ -50,7 +45,6 @@ const fileInput = document.querySelector("#file-input");
 const queueHeader = document.querySelector("#queue-header");
 const queueSummary = document.querySelector("#queue-summary");
 const uploadQueue = document.querySelector("#upload-queue");
-const uploadModeBadge = document.querySelector("#upload-mode-badge");
 
 const inventoryRefreshButton = document.querySelector("#inventory-refresh");
 const inventoryStatus = document.querySelector("#inventory-status");
@@ -60,19 +54,6 @@ const countTotal = document.querySelector("#count-total");
 const countAi = document.querySelector("#count-ai");
 const countHuman = document.querySelector("#count-human");
 const countActive = document.querySelector("#count-active");
-const migrationMode = document.querySelector("#migration-mode");
-const migrationTargetTotal = document.querySelector("#migration-target-total");
-const migrationTargetAi = document.querySelector("#migration-target-ai");
-const migrationTargetHuman = document.querySelector("#migration-target-human");
-const migrationDbTotal = document.querySelector("#migration-db-total");
-const migrationDbAi = document.querySelector("#migration-db-ai");
-const migrationDbHuman = document.querySelector("#migration-db-human");
-const migrationDbActive = document.querySelector("#migration-db-active");
-const migrationChecks = document.querySelector("#migration-checks");
-const migrationRefreshButton = document.querySelector("#migration-refresh");
-const migrationCutoverButton = document.querySelector("#migration-cutover");
-const migrationRollbackButton = document.querySelector("#migration-rollback");
-const migrationStatus = document.querySelector("#migration-status");
 
 
 let currentSession = null;
@@ -87,9 +68,6 @@ let inventoryFilter = "all";
 let inventoryBusy = false;
 const deletingIds = new Set();
 
-let migrationTarget = null;
-let migrationSnapshot = null;
-let migrationBusy = false;
 
 
 function showOnly(view) {
@@ -138,7 +116,7 @@ function messageForUploadError(error) {
   if (error instanceof AdminContentError) {
     if (error.code === "SOURCE_DUPLICATE" || error.code === "AVIF_DUPLICATE") return error.message;
     if (error.code === "23505") return "Ten obraz już istnieje w bazie.";
-    if (error.code === "CONTENT_SESSION_MISSING" || error.status === 401) return "Sesja administratora wygasła.";
+    if (error.code === "CONTENT_SESSION_MISSING" || error.status === 401 || error.status === 403) return "Sesja administratora wygasła.";
     return error.message || "Supabase odrzucił upload.";
   }
 
@@ -329,272 +307,19 @@ async function handleDelete(imageId) {
     deletingIds.delete(imageId);
     renderInventory();
     await refreshInventory({ quiet: true });
-    await refreshMigration({ quiet: true });
   }
 }
 
-
-function setMigrationStatus(message = "", { error = false } = {}) {
-  migrationStatus.textContent = message;
-  migrationStatus.classList.toggle("is-error", Boolean(error));
-}
-
-function setMigrationBusy(value) {
-  migrationBusy = Boolean(value);
-  migrationRefreshButton.disabled = migrationBusy;
-  migrationCutoverButton.disabled =
-    migrationBusy || migrationSnapshot?.ready_for_cutover !== true;
-  migrationRollbackButton.disabled = migrationBusy;
-}
-
-function appendMigrationCheck(label, passed) {
-  const row = document.createElement("p");
-  row.className = "migration-check";
-  row.classList.add(passed ? "is-pass" : "is-fail");
-  row.textContent = `${passed ? "✓" : "×"} ${label}`;
-  migrationChecks.append(row);
-}
-
-function appendMigrationWarning(label) {
-  const row = document.createElement("p");
-  row.className = "migration-check is-warning";
-  row.textContent = `! ${label}`;
-  migrationChecks.append(row);
-}
-
-function renderMigration() {
-  migrationTargetTotal.textContent = migrationTarget ? String(migrationTarget.total) : "—";
-  migrationTargetAi.textContent = migrationTarget ? String(migrationTarget.ai) : "—";
-  migrationTargetHuman.textContent = migrationTarget ? String(migrationTarget.human) : "—";
-
-  const metadata = migrationSnapshot?.metadata;
-  const storage = migrationSnapshot?.storage;
-  const integrity = migrationSnapshot?.integrity;
-  const runtime = migrationSnapshot?.runtime;
-
-  migrationDbTotal.textContent = metadata ? String(metadata.total) : "—";
-  migrationDbAi.textContent = metadata ? String(metadata.ai) : "—";
-  migrationDbHuman.textContent = metadata ? String(metadata.human) : "—";
-  migrationDbActive.textContent = metadata ? String(metadata.active) : "—";
-
-  migrationChecks.replaceChildren();
-
-  if (migrationTarget && migrationSnapshot) {
-    appendMigrationCheck(
-      `Metadata: ${metadata.total}/${migrationTarget.total}`,
-      metadata.total === migrationTarget.total
-    );
-    appendMigrationCheck(
-      `AI: ${metadata.ai}/${migrationTarget.ai}`,
-      metadata.ai === migrationTarget.ai
-    );
-    appendMigrationCheck(
-      `HUMAN: ${metadata.human}/${migrationTarget.human}`,
-      metadata.human === migrationTarget.human
-    );
-    appendMigrationCheck(
-      `Storage: ${storage.total}/${migrationTarget.total}`,
-      storage.total === migrationTarget.total
-    );
-    appendMigrationCheck(
-      "Brak brakujących plików z manifestu repo",
-      migrationSnapshot.identity?.missing_expected === 0
-    );
-    appendMigrationCheck(
-      "Brak dodatkowych rekordów spoza manifestu repo",
-      migrationSnapshot.identity?.unexpected_metadata === 0
-    );
-    appendMigrationCheck(
-      "Klasy AI/HUMAN zgodne z manifestem",
-      migrationSnapshot.identity?.class_mismatch === 0
-    );
-    const payloadMismatch = migrationSnapshot.identity?.payload_mismatch ?? 0;
-    if (payloadMismatch === 0) {
-      appendMigrationCheck("Payload AVIF zgodny 1:1 z manifestem repo", true);
-    } else {
-      appendMigrationWarning(
-        `Legacy quality warning: ${payloadMismatch} AVIF ma inny payload niż repo; nie blokuje cutover`
-      );
-    }
-    appendMigrationCheck(
-      "Brak metadata bez pliku Storage",
-      integrity.metadata_missing_storage === 0
-    );
-    appendMigrationCheck(
-      "Brak osieroconych plików Storage",
-      integrity.storage_orphans === 0
-    );
-  }
-
-  const live = runtime?.external_live === true;
-  uploadModeBadge.textContent = live ? "PRODUKCJA · AKTYWNE" : "STAGING · NIEAKTYWNE";
-  uploadModeBadge.classList.toggle("is-live", live);
-  migrationMode.classList.toggle("is-ready", !live && migrationSnapshot?.ready_for_cutover === true);
-  migrationMode.classList.toggle("is-live", live);
-
-  if (live) {
-    migrationMode.textContent = "SUPABASE LIVE";
-  } else if (migrationSnapshot?.ready_for_cutover === true) {
-    migrationMode.textContent = "GOTOWE DO AKTYWACJI";
-  } else {
-    migrationMode.textContent = "STAGING";
-  }
-
-  migrationCutoverButton.classList.toggle("is-hidden", live);
-  migrationRollbackButton.classList.toggle("is-hidden", !live);
-  migrationCutoverButton.disabled =
-    migrationBusy || migrationSnapshot?.ready_for_cutover !== true;
-}
-
-async function refreshMigration({ quiet = false } = {}) {
-  if (migrationBusy || !currentSession) return;
-
-  migrationBusy = true;
-  setMigrationBusy(true);
-
-  if (!quiet) setMigrationStatus("Sprawdzanie manifestu repo i stanu Supabase…");
-
-  try {
-    currentSession = await authorizeAdminSession({ session: currentSession });
-    saveAdminSession(currentSession);
-
-    migrationTarget = await fetchRepositoryMigrationTarget();
-    migrationSnapshot = await getContentMigrationStatus({
-      session: currentSession,
-      expectedManifest: migrationTarget.entries
-    });
-
-    renderMigration();
-
-    if (migrationSnapshot.runtime?.external_live === true) {
-      setMigrationStatus(
-        migrationSnapshot.live_matches_expected
-          ? `Supabase LIVE · ${migrationSnapshot.metadata.total} aktywnych obrazów.`
-          : "Supabase jest LIVE, ale stan nie odpowiada obecnemu manifestowi repo.",
-        { error: migrationSnapshot.live_matches_expected !== true }
-      );
-    } else if (migrationSnapshot.ready_for_cutover === true) {
-      const payloadMismatch = migrationSnapshot.identity?.payload_mismatch ?? 0;
-      setMigrationStatus(
-        payloadMismatch > 0
-          ? `Gotowe do aktywacji. Zaakceptowany legacy warning: ${payloadMismatch} AVIF po wcześniejszej rekompresji.`
-          : "Pełna zgodność. Można wykonać kontrolowaną aktywację Supabase."
-      );
-    } else {
-      setMigrationStatus(
-        `Migracja w toku: ${migrationSnapshot.metadata.total}/${migrationTarget.total} metadata · ` +
-        `brakujące ${migrationSnapshot.identity?.missing_expected ?? "?"} · ` +
-        `dodatkowe ${migrationSnapshot.identity?.unexpected_metadata ?? "?"} · ` +
-        `payload mismatch ${migrationSnapshot.identity?.payload_mismatch ?? "?"}.`
-      );
-    }
-  } catch (error) {
-    migrationTarget = null;
-    migrationSnapshot = null;
-    renderMigration();
-    setMigrationStatus(
-      error instanceof Error ? error.message : "Nie udało się sprawdzić migracji.",
-      { error: true }
-    );
-  } finally {
-    migrationBusy = false;
-    setMigrationBusy(false);
-  }
-}
-
-async function handleMigrationCutover() {
-  if (
-    migrationBusy ||
-    !currentSession ||
-    !migrationTarget ||
-    migrationSnapshot?.ready_for_cutover !== true
-  ) return;
-
-  const accepted = window.confirm(
-    `Aktywować Supabase jako produkcyjne źródło?\n\n` +
-    `RAZEM: ${migrationTarget.total}\n` +
-    `AI: ${migrationTarget.ai}\n` +
-    `HUMAN: ${migrationTarget.human}\n\n` +
-    `Wszystkie zweryfikowane rekordy staną się aktywne jednocześnie.`
-  );
-  if (!accepted) return;
-
-  migrationBusy = true;
-  setMigrationBusy(true);
-  setMigrationStatus("Aktywacja Supabase…");
-
-  try {
-    migrationSnapshot = await cutoverExternalContent({
-      session: currentSession,
-      expectedManifest: migrationTarget.entries
-    });
-
-    await refreshInventory({ quiet: true });
-    renderMigration();
-
-    if (migrationSnapshot.live_matches_expected !== true) {
-      throw new Error("Cutover zakończył się bez pełnego potwierdzenia oczekiwanego stanu.");
-    }
-
-    setMigrationStatus(
-      `Supabase LIVE · ${migrationSnapshot.metadata.total} aktywnych obrazów.`
-    );
-  } catch (error) {
-    setMigrationStatus(
-      error instanceof Error ? error.message : "Aktywacja Supabase nie powiodła się.",
-      { error: true }
-    );
-  } finally {
-    migrationBusy = false;
-    setMigrationBusy(false);
-    await refreshMigration({ quiet: true });
-  }
-}
-
-async function handleMigrationRollback() {
-  if (
-    migrationBusy ||
-    !currentSession ||
-    migrationSnapshot?.runtime?.external_live !== true
-  ) return;
-
-  const accepted = window.confirm(
-    "Przywrócić repository fallback?\n\nWszystkie rekordy Supabase zostaną zdezaktywowane."
-  );
-  if (!accepted) return;
-
-  migrationBusy = true;
-  setMigrationBusy(true);
-  setMigrationStatus("Przywracanie fallbacku repo…");
-
-  try {
-    await rollbackExternalContentCutover({ session: currentSession });
-    await refreshInventory({ quiet: true });
-    setMigrationStatus("Fallback repo został przywrócony.");
-  } catch (error) {
-    setMigrationStatus(
-      error instanceof Error ? error.message : "Rollback nie powiódł się.",
-      { error: true }
-    );
-  } finally {
-    migrationBusy = false;
-    setMigrationBusy(false);
-    await refreshMigration({ quiet: true });
-  }
-}
 
 function showLogin(message = "") {
   currentSession = null;
   inventoryRows = [];
   deletingIds.clear();
-  migrationTarget = null;
-  migrationSnapshot = null;
   passwordInput.value = "";
   loginStatus.textContent = message;
   setAuthBusy(false);
   setUploadBusy(false);
   renderInventory();
-  renderMigration();
   showOnly(loginView);
 }
 
@@ -611,7 +336,6 @@ async function establishAuthorizedSession(session) {
   saveAdminSession(authorized);
   showAuthorized(authorized);
   void refreshInventory();
-  void refreshMigration();
   return authorized;
 }
 
@@ -736,43 +460,7 @@ async function processFile(file, contentClass, queueItem) {
   });
 
   if (existingSource) {
-    if (existingSource.content_class !== contentClass) {
-      throw duplicateErrorFromExisting(existingSource, contentClass);
-    }
-
-    const canRepairExactAvif =
-      sourceInspection.mimeType === "image/avif" &&
-      existingSource.is_active !== true &&
-      existingSource.avif_sha256 !== sourceInspection.sha256;
-
-    if (!canRepairExactAvif) {
-      throw duplicateErrorFromExisting(existingSource, contentClass);
-    }
-
-    queueItem.set(
-      "AVIF 1:1",
-      `${formatBytes(file.size)} · walidacja bez rekompresji`
-    );
-    const prepared = await convertSourceFileToAvif(file, { sourceInspection });
-
-    queueItem.set(
-      "NAPRAWA",
-      `${prepared.output.width}×${prepared.output.height} · przywracanie dokładnego AVIF z repo`
-    );
-
-    const repaired = await repairPreparedAvifPayload({
-      session: currentSession,
-      existingImage: existingSource,
-      contentClass,
-      prepared
-    });
-
-    queueItem.set(
-      "GOTOWE",
-      `${contentClass.toUpperCase()} · AVIF 1:1 naprawiony · ${formatBytes(prepared.output.size)} · ${repaired.storagePath}`,
-      "done"
-    );
-    return Object.freeze({ kind: "repaired", row: repaired.row });
+    throw duplicateErrorFromExisting(existingSource, contentClass);
   }
 
   const passthrough = sourceInspection.mimeType === "image/avif";
@@ -879,7 +567,6 @@ async function handleFiles(fileList) {
 
     if (completedCount > 0 && currentSession) {
       await refreshInventory({ quiet: true });
-      await refreshMigration({ quiet: true });
     }
   }
 }
@@ -975,18 +662,6 @@ inventoryGrid.addEventListener("click", (event) => {
   void handleDelete(button.dataset.deleteId);
 });
 
-
-migrationRefreshButton.addEventListener("click", () => {
-  void refreshMigration();
-});
-
-migrationCutoverButton.addEventListener("click", () => {
-  void handleMigrationCutover();
-});
-
-migrationRollbackButton.addEventListener("click", () => {
-  void handleMigrationRollback();
-});
 
 async function bootstrap() {
   const saved = loadAdminSession();

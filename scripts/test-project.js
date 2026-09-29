@@ -44,15 +44,10 @@ import {
   AdminContentError,
   assertImageHashAvailable,
   createStoragePath,
-  cutoverExternalContent,
   deleteGameImage,
-  fetchRepositoryMigrationTarget,
   findImageByHash,
-  getContentMigrationStatus,
   listGameImages,
-  registerPreparedImage,
-  repairPreparedAvifPayload,
-  rollbackExternalContentCutover
+  registerPreparedImage
 } from "../js/admin-content.js";
 import {
   AVIF_ENCODER_MODULE_URL,
@@ -88,11 +83,6 @@ function makeImages(count, type = "ai") {
   }));
 }
 
-async function writeSvg(filePath, label) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="white"/><text x="2" y="20">${label}</text></svg>`;
-  await fs.writeFile(filePath, svg, "utf8");
-}
 
 
 
@@ -763,48 +753,53 @@ async function testExternalContentSource() {
   assert.ok(externalImages[1].src.includes("/human/"));
   assert.ok(externalImages[1].src.endsWith("obraz%20%231.avif"));
 
-  let localFetchCount = 0;
-  const supabasePreferredFetch = async (input) => {
-    const url = String(input);
-    if (url.includes("/rest/v1/game_images")) {
-      const offset = Number(new URL(url).searchParams.get("offset"));
+  let requestCount = 0;
+  const manifest = await loadContentManifest({
+    config,
+    minimumImageCount: 10,
+    fetchImpl: async (input) => {
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/game_images");
+      requestCount += 1;
+      const offset = Number(url.searchParams.get("offset"));
       return makeJsonResponse(offset === 0 ? allRows.slice(0, 12) : []);
     }
-    localFetchCount += 1;
-    return makeJsonResponse({ images: makeImages(20) });
-  };
-
-  const preferred = await loadContentManifest({ config, fetchImpl: supabasePreferredFetch, minimumImageCount: 10 });
-  assert.equal(preferred.source, "supabase");
-  assert.equal(preferred.manifest.images.length, 12);
-  assert.equal(localFetchCount, 0, "repository manifest must not be fetched when Supabase is usable");
-
-  const fallbackManifest = {
-    schemaVersion: 1,
-    imageCount: 20,
-    images: makeImages(20)
-  };
-  const fallbackFetch = async (input) => {
-    const url = String(input);
-    if (url.includes("/rest/v1/game_images")) return makeJsonResponse([]);
-    assert.equal(url, "./data/images.json");
-    return makeJsonResponse(fallbackManifest);
-  };
-
-  const fallback = await loadContentManifest({ config, fetchImpl: fallbackFetch, minimumImageCount: 10 });
-  assert.equal(fallback.source, "repository");
-  assert.equal(fallback.manifest.imageCount, 20);
-  assert.equal(fallback.fallbackReason?.code, "SUPABASE_POOL_TOO_SMALL");
-
-  const unconfigured = await loadContentManifest({
-    config: { projectUrl: "", publishableKey: "" },
-    fetchImpl: async (input) => {
-      assert.equal(String(input), "./data/images.json");
-      return makeJsonResponse(fallbackManifest);
-    }
   });
-  assert.equal(unconfigured.source, "repository");
-  assert.equal(unconfigured.fallbackReason, null);
+  assert.equal(manifest.source, "supabase");
+  assert.equal(manifest.manifest.images.length, 12);
+  assert.equal(requestCount, 2);
+  assert.equal(Object.hasOwn(manifest, "fallbackReason"), false,
+    "permanent Supabase source must not expose repository fallback state");
+
+  let smallPoolRequests = 0;
+  await assert.rejects(
+    () => loadContentManifest({
+      config,
+      minimumImageCount: 10,
+      fetchImpl: async (input) => {
+        const url = new URL(String(input));
+        assert.equal(url.pathname, "/rest/v1/game_images");
+        smallPoolRequests += 1;
+        const offset = Number(url.searchParams.get("offset"));
+        return makeJsonResponse(offset === 0 ? allRows.slice(0, 9) : []);
+      }
+    }),
+    (error) => error?.code === "SUPABASE_POOL_TOO_SMALL"
+  );
+  assert.equal(smallPoolRequests, 2, "small pool must fail at Supabase, not request a repository fallback");
+
+  let unconfiguredFetchCalled = false;
+  await assert.rejects(
+    () => loadContentManifest({
+      config: { projectUrl: "", publishableKey: "" },
+      fetchImpl: async () => {
+        unconfiguredFetchCalled = true;
+        return makeJsonResponse([]);
+      }
+    }),
+    (error) => error?.code === "SUPABASE_NOT_CONFIGURED"
+  );
+  assert.equal(unconfiguredFetchCalled, false);
 
   await assert.rejects(
     () => fetchSupabaseImages({
@@ -822,6 +817,18 @@ async function testExternalContentSource() {
       ])
     }),
     (error) => error?.code === "SUPABASE_ROW_INVALID"
+  );
+
+  const duplicateRows = [makeSupabaseRow(0), makeSupabaseRow(0)];
+  await assert.rejects(
+    () => fetchSupabaseImages({
+      config,
+      fetchImpl: async (input) => {
+        const offset = Number(new URL(String(input)).searchParams.get("offset"));
+        return makeJsonResponse(offset === 0 ? duplicateRows : []);
+      }
+    }),
+    (error) => error?.code === "SUPABASE_DUPLICATE_ID"
   );
 }
 
@@ -1289,7 +1296,7 @@ async function testAdminContentUploadContracts() {
       assert.equal(Object.hasOwn(body, "is_active"), false,
         "V1.5.6 browser must not own publication state on INSERT");
       assert.equal(body.file_size_bytes, 3);
-      return makeJsonResponse([{ id: "row-1", ...body, is_active: false }]);
+      return makeJsonResponse([{ id: "row-1", ...body, is_active: true }]);
     }
 
     throw new Error(`Unexpected request: ${url}`);
@@ -1306,6 +1313,7 @@ async function testAdminContentUploadContracts() {
   });
 
   assert.equal(result.row.id, "row-1");
+  assert.equal(result.row.is_active, true, "permanent production upload should return an active row");
   assert.equal(requests.length, 3, "UI-preflight path must avoid the duplicate source-hash request");
   const hashRequests = requests.filter(({ url, options }) =>
     url.pathname === "/rest/v1/game_images" && options.method !== "POST"
@@ -1356,90 +1364,7 @@ async function testAdminContentUploadContracts() {
     (error) => error.code === "23505"
   );
 
-  const exactSha = "c".repeat(64);
-  const repairBlob = new Blob([new Uint8Array([7, 7, 7, 7])], { type: "image/avif" });
-  const repairPrepared = {
-    source: {
-      filename: "repo.avif",
-      mimeType: "image/avif",
-      size: repairBlob.size,
-      sha256: exactSha
-    },
-    output: {
-      blob: repairBlob,
-      mimeType: "image/avif",
-      size: repairBlob.size,
-      sha256: exactSha,
-      width: 640,
-      height: 480,
-      passthrough: true
-    }
-  };
-  const existingImage = {
-    id: "33333333-3333-4333-8333-333333333333",
-    content_class: "ai",
-    original_filename: "repo.avif",
-    source_sha256: exactSha,
-    avif_sha256: "d".repeat(64),
-    storage_path: "ai/33333333-3333-4333-8333-333333333333.avif",
-    is_active: false
-  };
-  const repairRequests = [];
-  const repaired = await repairPreparedAvifPayload({
-    session,
-    existingImage,
-    contentClass: "ai",
-    prepared: repairPrepared,
-    config,
-    fetchImpl: async (input, options = {}) => {
-      const url = new URL(String(input));
-      repairRequests.push({ url, options });
 
-      if (url.pathname === "/rest/v1/game_images" && options.method !== "PATCH") {
-        assert.equal(url.searchParams.get("avif_sha256"), `eq.${exactSha}`);
-        return makeJsonResponse([]);
-      }
-
-      if (url.pathname === "/storage/v1/object/game-images/ai/33333333-3333-4333-8333-333333333333.avif") {
-        assert.equal(options.method, "POST");
-        assert.equal(options.headers["x-upsert"], "true");
-        assert.equal(options.body, repairBlob);
-        return makeJsonResponse({ Key: "repaired" });
-      }
-
-      if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
-        assert.equal(url.searchParams.get("id"), "eq.33333333-3333-4333-8333-333333333333");
-        const body = JSON.parse(options.body);
-        assert.deepEqual(body, {
-          avif_sha256: exactSha,
-          width: 640,
-          height: 480,
-          file_size_bytes: 4
-        });
-        return makeJsonResponse([{ ...existingImage, ...body }]);
-      }
-
-      throw new Error(`Unexpected repair request: ${url}`);
-    }
-  });
-
-  assert.equal(repaired.repaired, true);
-  assert.equal(repaired.row.avif_sha256, exactSha);
-  assert.equal(repairRequests.length, 3);
-
-  await assert.rejects(
-    () => repairPreparedAvifPayload({
-      session,
-      existingImage: { ...existingImage, is_active: true },
-      contentClass: "ai",
-      prepared: repairPrepared,
-      config,
-      fetchImpl: async () => {
-        throw new Error("active repair must fail before any network request");
-      }
-    }),
-    (error) => error.code === "REPAIR_ACTIVE_FORBIDDEN"
-  );
 }
 
 
@@ -1606,162 +1531,6 @@ async function testAdminInventoryPaginationAndDelete() {
 }
 
 
-async function testProductionMigrationContracts() {
-  const config = {
-    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
-    publishableKey: "sb_publishable_test_public_key"
-  };
-  const session = { access_token: "admin-access-token" };
-
-  const entries = [
-    ...Array.from({ length: 7 }, (_, index) => ({
-      sha256: index.toString(16).padStart(64, "0"),
-      type: "ai"
-    })),
-    ...Array.from({ length: 5 }, (_, index) => ({
-      sha256: (index + 100).toString(16).padStart(64, "0"),
-      type: "human"
-    }))
-  ];
-
-  const target = await fetchRepositoryMigrationTarget({
-    manifestUrl: "../data/images.json",
-    fetchImpl: async (input, options = {}) => {
-      assert.equal(String(input), "../data/images.json");
-      assert.equal(options.cache, "no-store");
-      return makeJsonResponse({
-        schemaVersion: 1,
-        imageCount: 12,
-        images: entries.map((entry, index) => ({
-          id: entry.sha256,
-          src: `./images/${entry.type === "ai" ? "AI" : "HUMAN"}/${index}.avif`,
-          type: entry.type
-        }))
-      });
-    }
-  });
-
-  assert.equal(target.total, 12);
-  assert.equal(target.ai, 7);
-  assert.equal(target.human, 5);
-  assert.deepEqual(target.entries, entries);
-
-  const readyStatus = {
-    expected: { total: 12, ai: 7, human: 5 },
-    runtime: { external_live: false, cutover_at: null, cutover_by: null },
-    metadata: { total: 12, ai: 7, human: 5, active: 0, inactive: 12 },
-    storage: { total: 12, ai: 7, human: 5 },
-    integrity: { metadata_missing_storage: 0, storage_orphans: 0 },
-    identity: {
-      missing_expected: 0,
-      unexpected_metadata: 0,
-      class_mismatch: 0,
-      payload_mismatch: 0
-    },
-    ready_for_cutover: true,
-    live_matches_expected: false
-  };
-
-  const status = await getContentMigrationStatus({
-    session,
-    expectedManifest: target.entries,
-    config,
-    fetchImpl: async (input, options = {}) => {
-      const url = new URL(String(input));
-      assert.equal(url.pathname, "/rest/v1/rpc/get_content_migration_status");
-      assert.equal(options.method, "POST");
-      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
-      assert.deepEqual(JSON.parse(options.body), {
-        p_expected_manifest: entries
-      });
-      return makeJsonResponse(readyStatus);
-    }
-  });
-  assert.equal(status.ready_for_cutover, true);
-  assert.equal(status.identity.missing_expected, 0);
-
-  const liveStatus = {
-    ...readyStatus,
-    runtime: {
-      external_live: true,
-      cutover_at: "2026-09-29T18:00:00Z",
-      cutover_by: "11111111-1111-4111-8111-111111111111"
-    },
-    metadata: { total: 12, ai: 7, human: 5, active: 12, inactive: 0 },
-    ready_for_cutover: false,
-    live_matches_expected: true
-  };
-
-  const cutover = await cutoverExternalContent({
-    session,
-    expectedManifest: target.entries,
-    config,
-    fetchImpl: async (input, options = {}) => {
-      const url = new URL(String(input));
-      assert.equal(url.pathname, "/rest/v1/rpc/cutover_external_content");
-      assert.deepEqual(JSON.parse(options.body), {
-        p_expected_manifest: entries
-      });
-      return makeJsonResponse(liveStatus);
-    }
-  });
-  assert.equal(cutover.live_matches_expected, true);
-  assert.equal(cutover.metadata.active, 12);
-
-  const rollback = await rollbackExternalContentCutover({
-    session,
-    config,
-    fetchImpl: async (input, options = {}) => {
-      const url = new URL(String(input));
-      assert.equal(url.pathname, "/rest/v1/rpc/rollback_external_content_cutover");
-      assert.deepEqual(JSON.parse(options.body), {});
-      return makeJsonResponse({
-        external_live: false,
-        changed: true,
-        active_count: 0
-      });
-    }
-  });
-  assert.equal(rollback.external_live, false);
-
-  await assert.rejects(
-    () => fetchRepositoryMigrationTarget({
-      fetchImpl: async () => makeJsonResponse({
-        imageCount: 10,
-        images: [
-          { id: "not-a-sha", src: "./images/AI/a.avif", type: "ai" },
-          ...Array.from({ length: 9 }, (_, index) => ({
-            id: (index + 200).toString(16).padStart(64, "0"),
-            src: `./images/HUMAN/${index}.avif`,
-            type: "human"
-          }))
-        ]
-      })
-    }),
-    (error) => error.code === "MIGRATION_EXPECTED_MANIFEST_INVALID"
-  );
-
-  await assert.rejects(
-    () => fetchRepositoryMigrationTarget({
-      fetchImpl: async () => makeJsonResponse({
-        imageCount: 10,
-        images: [
-          ...Array.from({ length: 5 }, (_, index) => ({
-            id: (index + 300).toString(16).padStart(64, "0"),
-            src: `./images/AI/${index}.png`,
-            type: "ai"
-          })),
-          ...Array.from({ length: 5 }, (_, index) => ({
-            id: (index + 400).toString(16).padStart(64, "0"),
-            src: `./images/HUMAN/${index}.avif`,
-            type: "human"
-          }))
-        ]
-      })
-    }),
-    (error) => error.code === "MIGRATION_MANIFEST_FORMAT_INVALID"
-  );
-}
 
 async function testSequentialUploadBatchContinuity() {
   const seen = [];
@@ -1825,67 +1594,33 @@ async function testSequentialUploadBatchContinuity() {
   assert.equal(aborted.remaining, 1);
 }
 
-async function testBuildSuccess() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-ok-"));
+async function testSupabaseOnlyBuild() {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-supabase-only-"));
   await copyRuntimeFixture(tempRoot);
 
-  for (let i = 0; i < 13; i += 1) {
-    await writeSvg(path.join(tempRoot, "images", "AI", `AI zażółć ${i}.svg`), `AI-${i}`);
-  }
-  for (let i = 0; i < 12; i += 1) {
-    await writeSvg(path.join(tempRoot, "images", "HUMAN", `Human photo (${i}).svg`), `H-${i}`);
-  }
+  // Even if stale source images are still present in a working tree, the final
+  // Pages artifact must not scan, copy or publish them.
+  await fs.mkdir(path.join(tempRoot, "images", "AI"), { recursive: true });
+  await fs.writeFile(path.join(tempRoot, "images", "AI", "stale-source.svg"), "<svg/>", "utf8");
+
+  // Stale previous build output must be removed atomically.
+  await fs.mkdir(path.join(tempRoot, "dist", "data"), { recursive: true });
+  await fs.mkdir(path.join(tempRoot, "dist", "images"), { recursive: true });
+  await fs.writeFile(path.join(tempRoot, "dist", "data", "images.json"), "{}", "utf8");
+  await fs.writeFile(path.join(tempRoot, "dist", "images", "stale.avif"), "stale", "utf8");
 
   const result = await buildSite({ projectRoot: tempRoot });
-  assert.equal(result.imageCount, 25);
-  const manifest = JSON.parse(await fs.readFile(path.join(tempRoot, "dist", "data", "images.json"), "utf8"));
-  assert.equal(manifest.imageCount, 25);
-  assert.ok(manifest.images.some((item) => item.src.includes("%C5%BC")), "unicode paths must be URL encoded");
-  assert.ok(manifest.images.every((item) => ["ai", "human"].includes(item.type)));
+  assert.equal(result.contentSource, "supabase");
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "index.html")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "index.html")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "content-source.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
-  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "avif-converter.js")));
-  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-batch.js")));
 
-  await fs.rm(tempRoot, { recursive: true, force: true });
-}
-
-async function testBuildTooSmall() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-small-"));
-  await copyRuntimeFixture(tempRoot);
-
-  for (let i = 0; i < 9; i += 1) {
-    await writeSvg(path.join(tempRoot, "images", "AI", `${i}.svg`), `ONLY-${i}`);
-  }
-
-  await assert.rejects(
-    () => buildSite({ projectRoot: tempRoot }),
-    (error) => error?.code === "MINIMUM_IMAGE_COUNT"
-  );
-
-  await fs.rm(tempRoot, { recursive: true, force: true });
-}
-
-async function testCrossClassDuplicate() {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-dup-"));
-  await copyRuntimeFixture(tempRoot);
-
-  const same = `<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20"/></svg>`;
-  await fs.mkdir(path.join(tempRoot, "images", "AI"), { recursive: true });
-  await fs.mkdir(path.join(tempRoot, "images", "HUMAN"), { recursive: true });
-  await fs.writeFile(path.join(tempRoot, "images", "AI", "same.svg"), same, "utf8");
-  await fs.writeFile(path.join(tempRoot, "images", "HUMAN", "same.svg"), same, "utf8");
-
-  for (let i = 0; i < 20; i += 1) {
-    await writeSvg(path.join(tempRoot, "images", "AI", `extra-${i}.svg`), `EXTRA-${i}`);
-  }
-
-  await assert.rejects(
-    () => buildSite({ projectRoot: tempRoot }),
-    (error) => error?.code === "CROSS_CLASS_DUPLICATE"
-  );
+  await assert.rejects(() => fs.stat(path.join(tempRoot, "dist", "data", "images.json")),
+    (error) => error?.code === "ENOENT");
+  await assert.rejects(() => fs.stat(path.join(tempRoot, "dist", "images")),
+    (error) => error?.code === "ENOENT");
 
   await fs.rm(tempRoot, { recursive: true, force: true });
 }
@@ -1935,6 +1670,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
 assert.ok(game.includes('loadContentManifest'));
 assert.ok(!game.includes('fetch("./data/images.json"'), "game.js must not own the content transport anymore");
+assert.ok(!game.includes('repozytoryjnego fallbacku'), "public game must not retain repository fallback messaging");
 assert.ok(contentSource.includes('/rest/v1/game_images'));
 assert.ok(contentSource.includes('cache: "no-store"'));
 assert.ok(contentSource.includes('apikey: resolved.publishableKey'));
@@ -1942,8 +1678,10 @@ assert.ok(!contentSource.includes('Authorization:'));
 assert.ok(contentSource.includes('while (true)'));
 assert.ok(contentSource.includes('offset += rows.length'));
 assert.ok(contentSource.includes('/storage/v1/object/public/'));
-assert.ok(contentSource.includes('source: "repository"'));
 assert.ok(contentSource.includes('source: "supabase"'));
+assert.ok(!contentSource.includes('source: "repository"'), "repository content source must be removed");
+assert.ok(!contentSource.includes('./data/images.json'), "repository manifest transport must be removed");
+assert.ok(!contentSource.includes('fallbackReason'), "runtime fallback state must be removed");
 assert.ok(supabaseConfig.includes('projectUrl: "https://kopmcnabslumyweebjgf.supabase.co"'));
 assert.ok(supabaseConfig.includes('publishableKey: "sb_publishable_'));
 assert.ok(!/publishableKey:\s*["']sb_secret_/i.test(supabaseConfig), "browser config must never contain a Supabase secret key");
@@ -2014,8 +1752,9 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
     game.indexOf("selector.recordExposure(item.id, sessionNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, sessionNumber)")),
     "input must unlock only after reveal/exposure"
   );
-  assert.ok(contentSource.includes("./data/images.json"));
-  assert.ok(contentSource.includes("REPOSITORY_MANIFEST_HTTP_ERROR"));
+  assert.ok(!contentSource.includes("./data/images.json"));
+  assert.ok(!contentSource.includes("REPOSITORY_MANIFEST_HTTP_ERROR"));
+  assert.ok(contentSource.includes("SUPABASE_POOL_TOO_SMALL"));
   assert.ok(!game.includes("Nie udało się wczytać katalogu obrazów ("));
   assert.ok(swipe.includes("pointerdown"));
   assert.ok(swipe.includes("this.capturePointer(event.pointerId)"));
@@ -2040,9 +1779,11 @@ assert.ok(adminCss.includes('font-family: "Segoe UI", sans-serif'));
 assert.ok(adminJs.includes("authorizeAdminSession"));
 assert.ok(adminJs.includes("ensureFreshAdminSession"), "upload batches must refresh session between files when needed");
 assert.ok(adminJs.includes("error instanceof AdminAuthError"), "auth refresh failure must be treated as fatal upload-session failure");
-assert.ok(adminJs.includes("Legacy quality warning"), "payload mismatch must be shown as an explicit warning");
-assert.ok(adminJs.includes("payload mismatch"), "payload mismatch reporting stays visible");
-assert.ok(adminCss.includes(".migration-check.is-warning"), "migration warning needs a dedicated visual state");
+assert.ok(!adminJs.includes("migration"), "one-time migration UI/controller code must be removed");
+assert.ok(!adminHtml.includes("Przejście na Supabase"), "migration panel must be removed");
+assert.ok(!adminHtml.includes("Przywróć fallback repo"), "rollback control must be removed");
+assert.ok(adminHtml.includes("PRODUKCJA · AKTYWNE"), "durable upload contract must be explicit");
+assert.ok(!adminCss.includes(".migration-"), "migration-only CSS must be removed");
 assert.ok(adminJs.includes("sessionStorage") === false,
   "session storage handling belongs in admin-auth.js, not scattered through admin UI");
 assert.ok(adminHtml.includes("AVIF bez rekompresji"), "admin must disclose AVIF passthrough");
@@ -2058,15 +1799,17 @@ assert.ok(adminJs.includes("createQueueItem(file)"), "batch rows must be materia
 assert.ok(adminJs.includes("entry.queueItem.promoteToTop()"), "failed rows must be promoted to the top");
 assert.ok(adminJs.includes("runSequentialUploadBatch"), "batch processing must use the tested sequential runner");
 assert.ok(adminJs.includes("sourceHashPreflightDone: true"), "UI must not repeat the source-hash preflight");
-assert.ok(adminJs.includes("repairPreparedAvifPayload"), "pre-corrective AVIF payloads must be repairable in place");
-assert.ok(adminJs.includes("payload_mismatch"), "migration UI must surface exact AVIF payload mismatch");
+assert.ok(!adminJs.includes("repairPreparedAvifPayload"), "one-time payload repair path must be removed");
 assert.ok(avifConverter.includes('source.mimeType === "image/avif"'), "AVIF passthrough branch must exist");
 assert.ok(avifConverter.includes("sha256: source.sha256"), "AVIF passthrough must preserve exact source hash");
 assert.ok(avifConverter.includes("passthrough: true"), "AVIF passthrough must be explicit in prepared metadata");
 assert.ok(uploadBatchSource.includes("for (let index = 0; index < entries.length; index += 1)"), "batch runner must remain sequential");
 assert.ok(uploadBatchSource.includes("shouldAbort"), "batch runner must support explicit fatal abort only");
-assert.ok(adminContent.includes('"x-upsert": "true"'), "repair path must upsert the exact AVIF payload");
-assert.ok(adminContent.includes("REPAIR_ACTIVE_FORBIDDEN"), "repair must refuse active production rows");
+assert.ok(!adminContent.includes('"x-upsert"'), "normal uploader must not retain migration repair upsert");
+assert.ok(!adminContent.includes("REPAIR_"), "migration repair errors must be removed");
+assert.ok(!adminContent.includes("get_content_migration_status"), "migration RPC client must be removed");
+assert.ok(!adminContent.includes("cutover_external_content"), "cutover RPC client must be removed");
+assert.ok(!adminContent.includes("rollback_external_content_cutover"), "rollback RPC client must be removed");
 assert.ok(adminAuth.includes("/auth/v1/token"));
 assert.ok(adminAuth.includes("grant_type"));
 assert.ok(adminAuth.includes("/auth/v1/user"));
@@ -2077,13 +1820,15 @@ assert.ok(adminAuth.includes("sessionStorage"));
 assert.ok(!adminAuth.includes("/auth/v1/signup"), "admin client must never expose public sign-up");
 assert.ok(!adminAuth.includes("localStorage"), "admin tokens must use tab-scoped sessionStorage");
 assert.ok(buildSiteSource.includes('"admin"'), "build must publish /admin directory");
+assert.ok(!buildSiteSource.includes("images/AI"), "build must not scan repository AI content");
+assert.ok(!buildSiteSource.includes("images.json"), "build must not generate repository manifest");
+assert.ok(!buildSiteSource.includes("MINIMUM_IMAGE_COUNT"), "build must not depend on repository pool size");
   assert.ok(workflow.includes("npm run test"));
   assert.ok(workflow.includes("npm run build"));
   assert.ok(workflow.includes("Verify generated Pages artifact"));
-  assert.ok(workflow.includes("dist/data/images.json"));
-  const workflowMinMatch = workflow.match(/m\.images\.length\s*<\s*(\d+)/);
-  assert.ok(workflowMinMatch, "Pages workflow must verify the generated manifest minimum");
-  assert.equal(Number(workflowMinMatch[1]), 10, "Pages workflow minimum must match the 10-image Session option");
+  assert.ok(workflow.includes("test ! -e dist/data/images.json"), "workflow must reject generated repository manifest");
+  assert.ok(workflow.includes("test ! -d dist/images"), "workflow must reject shipped repository images");
+  assert.ok(workflow.includes("Repository image fallback leaked into production artifact."));
   assert.ok(workflow.includes("cancel-in-progress: false"));
   assert.ok(workflow.includes("actions/checkout@v7"));
   assert.ok(workflow.includes("actions/setup-node@v7"));
@@ -2103,11 +1848,8 @@ await testAdminAuthContract();
 await testAvifConversionContracts();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
-await testProductionMigrationContracts();
 await testSequentialUploadBatchContinuity();
-await testBuildSuccess();
-await testBuildTooSmall();
-await testCrossClassDuplicate();
+await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
 await testImageReadinessContract();
 await testAnswerFeedbackLifecycle();
@@ -2118,18 +1860,15 @@ console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 10/20/50: PASS");
 console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
-console.log("External Supabase content source + pagination + migration fallback: PASS");
+console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.4 AVIF conversion contracts: PASS");
-console.log("V1.5.4 staged Storage + metadata upload contracts: PASS");
+console.log("V1.5.6 production Storage + active metadata upload contracts: PASS");
 console.log("V1.5.5 inventory pagination + Delete X lifecycle: PASS");
-console.log("V1.5.6 production migration + cutover RPC contracts: PASS");
 console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
-console.log("Build >=10 + unicode filenames: PASS");
-console.log("Build <10 controlled failure: PASS");
-console.log("Cross-class binary duplicate detection: PASS");
+console.log("Supabase-only static build + no repository artifact leakage: PASS");
 console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");
 console.log("Mobile pointer capture/cancel recovery: PASS");
