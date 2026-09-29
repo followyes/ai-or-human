@@ -453,3 +453,14 @@ Because this exact-payload gate is defined for the current all-AVIF production
 repository corpus, the V1.5.6 migration target parser also refuses a manifest
 containing a non-AVIF repository path instead of silently applying the wrong
 payload invariant.
+
+
+### Pre-cutover session corrective
+
+`payload_mismatch` remains visible as a legacy quality warning, but no longer
+blocks cutover after explicit acceptance of the 150 pre-passthrough AI files.
+All structural migration gates remain strict.
+
+Admin auth now refreshes access tokens proactively before expiry and retries an
+auth-user 401/403 once through the refresh token. Long sequential upload batches
+check token freshness before each file. Session state remains in sessionStorage.

@@ -3,6 +3,7 @@ import { SUPABASE_PUBLIC_CONFIG } from "./supabase-config.js";
 
 export const ADMIN_SESSION_STORAGE_KEY = "ai-or-human:admin-session:v1";
 export const ADMIN_AUTH_REQUEST_TIMEOUT_MS = 10000;
+export const ADMIN_SESSION_REFRESH_MARGIN_SECONDS = 180;
 
 export class AdminAuthError extends Error {
   constructor(code, message, { status = null, cause = null } = {}) {
@@ -187,6 +188,28 @@ export async function signInWithPassword({
   return normalizeSession(payload);
 }
 
+
+export function shouldRefreshAdminSession(
+  session,
+  {
+    nowMs = Date.now(),
+    marginSeconds = ADMIN_SESSION_REFRESH_MARGIN_SECONDS
+  } = {}
+) {
+  const expiresAt = Number(session?.expires_at);
+  if (!Number.isFinite(expiresAt)) return false;
+
+  const normalizedMargin = Math.max(0, Number(marginSeconds) || 0);
+  const nowSeconds = Math.floor(Number(nowMs) / 1000);
+  return expiresAt <= nowSeconds + normalizedMargin;
+}
+
+function isRefreshableAuthError(error) {
+  return error instanceof AdminAuthError &&
+    error.code !== "ADMIN_FORBIDDEN" &&
+    (error.status === 401 || error.status === 403);
+}
+
 export async function refreshAdminSession({
   session,
   config = SUPABASE_PUBLIC_CONFIG,
@@ -264,24 +287,70 @@ export async function verifyAdminAuthority({
   return true;
 }
 
+export async function ensureFreshAdminSession({
+  session,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch,
+  nowMs = Date.now(),
+  marginSeconds = ADMIN_SESSION_REFRESH_MARGIN_SECONDS,
+  verifyAuthority = true
+} = {}) {
+  let activeSession = session;
+
+  if (!activeSession?.access_token) {
+    throw new AdminAuthError("AUTH_ACCESS_TOKEN_MISSING", "Brak aktywnej sesji.");
+  }
+
+  if (!shouldRefreshAdminSession(activeSession, { nowMs, marginSeconds })) {
+    return activeSession;
+  }
+
+  activeSession = await refreshAdminSession({
+    session: activeSession,
+    config,
+    fetchImpl
+  });
+
+  if (!verifyAuthority) return activeSession;
+
+  const user = await fetchCurrentUser({ session: activeSession, config, fetchImpl });
+  if (!user || typeof user.id !== "string") {
+    throw new AdminAuthError("AUTH_USER_INVALID", "Nie udało się potwierdzić użytkownika.");
+  }
+
+  await verifyAdminAuthority({ session: activeSession, config, fetchImpl });
+
+  return Object.freeze({
+    ...activeSession,
+    user: Object.freeze({
+      id: user.id,
+      email: typeof user.email === "string" ? user.email : activeSession?.user?.email || ""
+    })
+  });
+}
+
 export async function authorizeAdminSession({
   session,
   config = SUPABASE_PUBLIC_CONFIG,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  nowMs = Date.now(),
+  marginSeconds = ADMIN_SESSION_REFRESH_MARGIN_SECONDS
 } = {}) {
   let activeSession = session;
+  let refreshed = false;
   let user;
+
+  if (shouldRefreshAdminSession(activeSession, { nowMs, marginSeconds })) {
+    activeSession = await refreshAdminSession({ session: activeSession, config, fetchImpl });
+    refreshed = true;
+  }
 
   try {
     user = await fetchCurrentUser({ session: activeSession, config, fetchImpl });
   } catch (error) {
-    if (!(error instanceof AdminAuthError) || error.status !== 401) throw error;
-
-    activeSession = await refreshAdminSession({
-      session: activeSession,
-      config,
-      fetchImpl
-    });
+    if (!isRefreshableAuthError(error) || refreshed) throw error;
+    activeSession = await refreshAdminSession({ session: activeSession, config, fetchImpl });
+    refreshed = true;
     user = await fetchCurrentUser({ session: activeSession, config, fetchImpl });
   }
 
@@ -289,7 +358,17 @@ export async function authorizeAdminSession({
     throw new AdminAuthError("AUTH_USER_INVALID", "Nie udało się potwierdzić użytkownika.");
   }
 
-  await verifyAdminAuthority({ session: activeSession, config, fetchImpl });
+  try {
+    await verifyAdminAuthority({ session: activeSession, config, fetchImpl });
+  } catch (error) {
+    if (!isRefreshableAuthError(error) || refreshed) throw error;
+    activeSession = await refreshAdminSession({ session: activeSession, config, fetchImpl });
+    user = await fetchCurrentUser({ session: activeSession, config, fetchImpl });
+    if (!user || typeof user.id !== "string") {
+      throw new AdminAuthError("AUTH_USER_INVALID", "Nie udało się potwierdzić użytkownika.");
+    }
+    await verifyAdminAuthority({ session: activeSession, config, fetchImpl });
+  }
 
   return Object.freeze({
     ...activeSession,

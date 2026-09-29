@@ -716,6 +716,11 @@ h2 { margin-bottom: 8px; font-size: 1.35rem; }
   color: var(--danger);
 }
 
+.migration-check.is-warning {
+  background: rgba(161, 106, 16, 0.08);
+  color: var(--warning);
+}
+
 .migration-actions {
   display: flex;
   flex-wrap: wrap;

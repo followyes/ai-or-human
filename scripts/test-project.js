@@ -32,8 +32,10 @@ import {
   AdminAuthError,
   authorizeAdminSession,
   clearAdminSession,
+  ensureFreshAdminSession,
   loadAdminSession,
   saveAdminSession,
+  shouldRefreshAdminSession,
   signInWithPassword,
   signOutAdmin,
   verifyAdminAuthority
@@ -986,11 +988,121 @@ async function testAdminAuthContract() {
   assert.equal(refreshed.access_token, "refreshed-token");
   assert.equal(refreshed.refresh_token, "refresh-token-new");
   assert.deepEqual(refreshSequence, [
-    "/auth/v1/user",
     "/auth/v1/token?grant_type=refresh_token",
     "/auth/v1/user",
     "/rest/v1/rpc/is_current_user_admin"
   ]);
+
+
+assert.equal(
+  shouldRefreshAdminSession({ expires_at: 1000 }, { nowMs: 900_000, marginSeconds: 180 }),
+  true,
+  "session inside refresh margin must refresh proactively"
+);
+assert.equal(
+  shouldRefreshAdminSession({ expires_at: 2000 }, { nowMs: 900_000, marginSeconds: 180 }),
+  false,
+  "healthy session must not refresh unnecessarily"
+);
+
+const forbiddenAuthSequence = [];
+const auth403Refreshed = await authorizeAdminSession({
+  session: {
+    access_token: "stale-403-token",
+    refresh_token: "refresh-403-old",
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: authUser
+  },
+  config,
+  fetchImpl: async (input, options = {}) => {
+    const url = new URL(String(input));
+    forbiddenAuthSequence.push(url.pathname + (url.search ? url.search : ""));
+    if (url.pathname === "/auth/v1/user" && options.headers.Authorization === "Bearer stale-403-token") {
+      return makeJsonResponse({ error_code: "bad_jwt" }, { status: 403 });
+    }
+    if (url.pathname === "/auth/v1/token" && url.searchParams.get("grant_type") === "refresh_token") {
+      assert.deepEqual(JSON.parse(options.body), { refresh_token: "refresh-403-old" });
+      return makeJsonResponse({
+        access_token: "fresh-403-token",
+        refresh_token: "refresh-403-new",
+        expires_in: 3600,
+        user: authUser
+      });
+    }
+    if (url.pathname === "/auth/v1/user" && options.headers.Authorization === "Bearer fresh-403-token") {
+      return makeJsonResponse(authUser);
+    }
+    if (url.pathname === "/rest/v1/rpc/is_current_user_admin") {
+      assert.equal(options.headers.Authorization, "Bearer fresh-403-token");
+      return makeJsonResponse(true);
+    }
+    throw new Error(`Unexpected 403 refresh request: ${url}`);
+  }
+});
+assert.equal(auth403Refreshed.access_token, "fresh-403-token");
+assert.deepEqual(forbiddenAuthSequence, [
+  "/auth/v1/user",
+  "/auth/v1/token?grant_type=refresh_token",
+  "/auth/v1/user",
+  "/rest/v1/rpc/is_current_user_admin"
+]);
+
+const batchRefreshCalls = [];
+const batchFresh = await ensureFreshAdminSession({
+  session: {
+    access_token: "batch-old-token",
+    refresh_token: "batch-refresh-old",
+    expires_at: 1000,
+    user: authUser
+  },
+  config,
+  nowMs: 900_000,
+  marginSeconds: 180,
+  fetchImpl: async (input) => {
+    const url = new URL(String(input));
+    batchRefreshCalls.push(url.pathname + (url.search ? url.search : ""));
+    if (url.pathname === "/auth/v1/token") {
+      return makeJsonResponse({
+        access_token: "batch-new-token",
+        refresh_token: "batch-refresh-new",
+        expires_in: 3600,
+        user: authUser
+      });
+    }
+    if (url.pathname === "/auth/v1/user") return makeJsonResponse(authUser);
+    if (url.pathname === "/rest/v1/rpc/is_current_user_admin") return makeJsonResponse(true);
+    throw new Error(`Unexpected batch refresh request: ${url}`);
+  }
+});
+assert.equal(batchFresh.access_token, "batch-new-token");
+assert.deepEqual(batchRefreshCalls, [
+  "/auth/v1/token?grant_type=refresh_token",
+  "/auth/v1/user",
+  "/rest/v1/rpc/is_current_user_admin"
+]);
+
+let forbiddenRefreshCalls = 0;
+await assert.rejects(
+  () => authorizeAdminSession({
+    session: {
+      ...signedIn,
+      expires_at: Math.floor(Date.now() / 1000) + 3600
+    },
+    config,
+    fetchImpl: async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/auth/v1/user") return makeJsonResponse(authUser);
+      if (url.pathname === "/rest/v1/rpc/is_current_user_admin") return makeJsonResponse(false);
+      if (url.pathname === "/auth/v1/token") {
+        forbiddenRefreshCalls += 1;
+        throw new Error("ADMIN_FORBIDDEN must not trigger refresh");
+      }
+      throw new Error(`Unexpected admin-forbidden request: ${url}`);
+    }
+  }),
+  (error) => error instanceof AdminAuthError && error.code === "ADMIN_FORBIDDEN"
+);
+assert.equal(forbiddenRefreshCalls, 0);
 
   const logoutRequests = [];
   await signOutAdmin({
@@ -1926,6 +2038,11 @@ assert.ok(!adminHtml.toLowerCase().includes("sign up"), "admin UI must not expos
 assert.ok(adminHtml.includes("./admin.js"));
 assert.ok(adminCss.includes('font-family: "Segoe UI", sans-serif'));
 assert.ok(adminJs.includes("authorizeAdminSession"));
+assert.ok(adminJs.includes("ensureFreshAdminSession"), "upload batches must refresh session between files when needed");
+assert.ok(adminJs.includes("error instanceof AdminAuthError"), "auth refresh failure must be treated as fatal upload-session failure");
+assert.ok(adminJs.includes("Legacy quality warning"), "payload mismatch must be shown as an explicit warning");
+assert.ok(adminJs.includes("payload mismatch"), "payload mismatch reporting stays visible");
+assert.ok(adminCss.includes(".migration-check.is-warning"), "migration warning needs a dedicated visual state");
 assert.ok(adminJs.includes("sessionStorage") === false,
   "session storage handling belongs in admin-auth.js, not scattered through admin UI");
 assert.ok(adminHtml.includes("AVIF bez rekompresji"), "admin must disclose AVIF passthrough");

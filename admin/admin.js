@@ -1,6 +1,7 @@
 import {
   AdminAuthError,
   authorizeAdminSession,
+  ensureFreshAdminSession,
   clearAdminSession,
   loadAdminSession,
   saveAdminSession,
@@ -128,6 +129,11 @@ function messageForAuthError(error) {
 
 function messageForUploadError(error) {
   if (error instanceof AvifConversionError) return error.message;
+
+  if (error instanceof AdminAuthError) {
+    if (error.code === "ADMIN_FORBIDDEN") return "Konto utraciło uprawnienia administratora.";
+    return "Sesja administratora wymaga ponownego logowania.";
+  }
 
   if (error instanceof AdminContentError) {
     if (error.code === "SOURCE_DUPLICATE" || error.code === "AVIF_DUPLICATE") return error.message;
@@ -349,6 +355,13 @@ function appendMigrationCheck(label, passed) {
   migrationChecks.append(row);
 }
 
+function appendMigrationWarning(label) {
+  const row = document.createElement("p");
+  row.className = "migration-check is-warning";
+  row.textContent = `! ${label}`;
+  migrationChecks.append(row);
+}
+
 function renderMigration() {
   migrationTargetTotal.textContent = migrationTarget ? String(migrationTarget.total) : "—";
   migrationTargetAi.textContent = migrationTarget ? String(migrationTarget.ai) : "—";
@@ -395,10 +408,14 @@ function renderMigration() {
       "Klasy AI/HUMAN zgodne z manifestem",
       migrationSnapshot.identity?.class_mismatch === 0
     );
-    appendMigrationCheck(
-      "Payload AVIF zgodny 1:1 z manifestem repo",
-      migrationSnapshot.identity?.payload_mismatch === 0
-    );
+    const payloadMismatch = migrationSnapshot.identity?.payload_mismatch ?? 0;
+    if (payloadMismatch === 0) {
+      appendMigrationCheck("Payload AVIF zgodny 1:1 z manifestem repo", true);
+    } else {
+      appendMigrationWarning(
+        `Legacy quality warning: ${payloadMismatch} AVIF ma inny payload niż repo; nie blokuje cutover`
+      );
+    }
     appendMigrationCheck(
       "Brak metadata bez pliku Storage",
       integrity.metadata_missing_storage === 0
@@ -457,7 +474,12 @@ async function refreshMigration({ quiet = false } = {}) {
         { error: migrationSnapshot.live_matches_expected !== true }
       );
     } else if (migrationSnapshot.ready_for_cutover === true) {
-      setMigrationStatus("Pełna zgodność. Można wykonać kontrolowaną aktywację Supabase.");
+      const payloadMismatch = migrationSnapshot.identity?.payload_mismatch ?? 0;
+      setMigrationStatus(
+        payloadMismatch > 0
+          ? `Gotowe do aktywacji. Zaakceptowany legacy warning: ${payloadMismatch} AVIF po wcześniejszej rekompresji.`
+          : "Pełna zgodność. Można wykonać kontrolowaną aktywację Supabase."
+      );
     } else {
       setMigrationStatus(
         `Migracja w toku: ${migrationSnapshot.metadata.total}/${migrationTarget.total} metadata · ` +
@@ -680,11 +702,30 @@ function duplicateErrorFromExisting(existing, requestedClass) {
 }
 
 function isSessionUploadError(error) {
+  if (error instanceof AdminAuthError) return true;
+
   return error instanceof AdminContentError &&
-    (error.code === "CONTENT_SESSION_MISSING" || error.status === 401);
+    (error.code === "CONTENT_SESSION_MISSING" || error.status === 401 || error.status === 403);
+}
+
+
+async function refreshCurrentSessionForUpload() {
+  const refreshed = await ensureFreshAdminSession({
+    session: currentSession,
+    marginSeconds: 180
+  });
+
+  if (refreshed !== currentSession) {
+    currentSession = refreshed;
+    saveAdminSession(currentSession);
+  }
+
+  return currentSession;
 }
 
 async function processFile(file, contentClass, queueItem) {
+  await refreshCurrentSessionForUpload();
+
   queueItem.set("HASH", `${formatBytes(file.size)} · SHA-256 + kontrola duplikatu`);
 
   const sourceInspection = await inspectSourceFile(file);
