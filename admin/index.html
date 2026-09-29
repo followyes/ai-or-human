@@ -19,57 +19,84 @@
 
       <section id="login-view">
         <p class="admin-copy">Zaloguj się kontem administratora.</p>
-
         <form id="login-form" class="login-form" novalidate>
           <label class="field">
             <span>E-mail</span>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autocomplete="username"
-              inputmode="email"
-              required
-            >
+            <input id="email" name="email" type="email" autocomplete="username" inputmode="email" required>
           </label>
-
           <label class="field">
             <span>Hasło</span>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required
-            >
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
           </label>
-
-          <button class="admin-primary-button" id="login-button" type="submit">
-            Zaloguj
-          </button>
-
+          <button class="admin-primary-button" id="login-button" type="submit">Zaloguj</button>
           <p class="form-status" id="login-status" role="status" aria-live="polite"></p>
         </form>
       </section>
 
-      <section id="authorized-view" class="is-hidden" aria-live="polite">
-        <div class="access-state">
-          <span class="access-dot" aria-hidden="true"></span>
-          <div>
-            <strong>Dostęp administratora aktywny</strong>
-            <p id="admin-email"></p>
+      <section id="authorized-view" class="is-hidden">
+        <div class="admin-toolbar">
+          <div class="access-state">
+            <span class="access-dot" aria-hidden="true"></span>
+            <div>
+              <strong>Dostęp administratora aktywny</strong>
+              <p id="admin-email"></p>
+            </div>
           </div>
+          <button class="admin-secondary-button compact-button" id="logout-button" type="button">Wyloguj</button>
         </div>
 
-        <div class="admin-placeholder">
-          <p class="admin-eyebrow">CONTENT</p>
-          <h2>Zarządzanie obrazami</h2>
-          <p>Panel uploadu i konwersji AVIF zostanie podłączony w kolejnym etapie.</p>
-        </div>
+        <section class="content-panel" aria-labelledby="content-heading">
+          <div class="content-heading-row">
+            <div>
+              <p class="admin-eyebrow">CONTENT</p>
+              <h2 id="content-heading">Dodaj obrazy</h2>
+            </div>
+            <p class="staging-badge">STAGING · NIEAKTYWNE</p>
+          </div>
 
-        <button class="admin-secondary-button" id="logout-button" type="button">
-          Wyloguj
-        </button>
+          <p class="admin-copy content-intro">
+            Wybierz kategorię, a potem przeciągnij obrazy. Źródła są przetwarzane lokalnie,
+            konwertowane do AVIF i dopiero wtedy wysyłane do Supabase.
+          </p>
+
+          <fieldset class="class-picker" id="class-picker">
+            <legend>Kategoria</legend>
+            <label>
+              <input type="radio" name="content-class" value="ai">
+              <span>AI</span>
+            </label>
+            <label>
+              <input type="radio" name="content-class" value="human">
+              <span>HUMAN</span>
+            </label>
+          </fieldset>
+
+          <button class="drop-zone" id="drop-zone" type="button">
+            <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
+            <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
+            <span class="drop-zone-formats">JPG · PNG · WebP · AVIF → AVIF</span>
+          </button>
+
+          <input
+            id="file-input"
+            class="visually-hidden"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.jfif,.png,.webp,.avif"
+            multiple
+          >
+
+          <p class="upload-note">
+            Pliki są przetwarzane po kolei, aby ograniczyć zużycie pamięci.
+            Oryginały nie są wysyłane do Storage.
+          </p>
+
+          <div class="queue-header is-hidden" id="queue-header">
+            <strong>Przetwarzanie</strong>
+            <span id="queue-summary"></span>
+          </div>
+
+          <div class="upload-queue" id="upload-queue" aria-live="polite"></div>
+        </section>
       </section>
 
       <section id="boot-view" class="boot-state is-hidden" aria-live="polite">

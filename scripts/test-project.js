@@ -38,6 +38,20 @@ import {
   signOutAdmin,
   verifyAdminAuthority
 } from "../js/admin-auth.js";
+import {
+  AdminContentError,
+  createStoragePath,
+  findImageByHash,
+  registerPreparedImage
+} from "../js/admin-content.js";
+import {
+  AVIF_ENCODER_MODULE_URL,
+  encodeImageDataToAvif,
+  formatBytes,
+  inspectSourceFile,
+  sha256Blob,
+  validateSourceFile
+} from "../js/avif-converter.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -983,6 +997,160 @@ async function testAdminAuthContract() {
   assert.equal(logoutRequests[0].options.headers.Authorization, "Bearer access-token-1");
 }
 
+
+async function testAvifConversionContracts() {
+  const source = new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/png" });
+  Object.defineProperty(source, "name", { value: "fixture.png" });
+
+  const validated = validateSourceFile(source);
+  assert.equal(validated.filename, "fixture.png");
+  assert.equal(validated.mimeType, "image/png");
+
+  const hash = await sha256Blob(source);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+  assert.equal(hash, await sha256Blob(source));
+
+  const inspection = await inspectSourceFile(source);
+  assert.equal(inspection.sha256, hash);
+  assert.equal(inspection.filename, "fixture.png");
+
+  const encoded = await encodeImageDataToAvif(
+    { data: new Uint8ClampedArray([0, 0, 0, 255]), width: 1, height: 1 },
+    { encoderLoader: async () => async () => new Uint8Array([9, 8, 7, 6]) }
+  );
+  assert.equal(encoded.type, "image/avif");
+  assert.equal(encoded.size, 4);
+
+  assert.equal(formatBytes(1024), "1.0 KB");
+  assert.ok(AVIF_ENCODER_MODULE_URL.includes("@jsquash/avif@2.1.1"));
+
+  const bad = new Blob([new Uint8Array([1])], { type: "text/plain" });
+  Object.defineProperty(bad, "name", { value: "not-image.txt" });
+  assert.throws(
+    () => validateSourceFile(bad),
+    (error) => error.code === "SOURCE_TYPE_UNSUPPORTED"
+  );
+}
+
+async function testAdminContentUploadContracts() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+
+  const session = { access_token: "admin-access-token" };
+
+  const prepared = {
+    source: {
+      filename: "photo.jpg",
+      size: 1200,
+      sha256: "a".repeat(64)
+    },
+    output: {
+      blob: new Blob([new Uint8Array([1, 2, 3])], { type: "image/avif" }),
+      size: 3,
+      sha256: "b".repeat(64),
+      width: 1200,
+      height: 800
+    }
+  };
+
+  assert.equal(
+    createStoragePath("ai", { uuid: "11111111-1111-4111-8111-111111111111" }),
+    "ai/11111111-1111-4111-8111-111111111111.avif"
+  );
+
+  const requests = [];
+  const fetchImpl = async (input, options = {}) => {
+    const url = new URL(String(input));
+    requests.push({ url, options });
+
+    if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") {
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.equal(options.headers.apikey, config.publishableKey);
+      return makeJsonResponse([]);
+    }
+
+    if (url.pathname === "/storage/v1/object/game-images/ai/11111111-1111-4111-8111-111111111111.avif") {
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers["Content-Type"], "image/avif");
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.equal(options.body.type, "image/avif");
+      return makeJsonResponse({ Key: "ok" });
+    }
+
+    if (url.pathname === "/rest/v1/game_images" && options.method === "POST") {
+      const body = JSON.parse(options.body);
+      assert.equal(body.content_class, "ai");
+      assert.equal(body.storage_bucket, "game-images");
+      assert.equal(body.storage_path, "ai/11111111-1111-4111-8111-111111111111.avif");
+      assert.equal(body.original_filename, "photo.jpg");
+      assert.equal(body.source_sha256, "a".repeat(64));
+      assert.equal(body.avif_sha256, "b".repeat(64));
+      assert.equal(body.is_active, false);
+      assert.equal(body.file_size_bytes, 3);
+      return makeJsonResponse([{ id: "row-1", ...body }]);
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const result = await registerPreparedImage({
+    session,
+    contentClass: "ai",
+    prepared,
+    config,
+    fetchImpl,
+    storagePathFactory: () => "ai/11111111-1111-4111-8111-111111111111.avif"
+  });
+
+  assert.equal(result.row.id, "row-1");
+  assert.equal(requests.length, 4);
+
+  await assert.rejects(
+    () => registerPreparedImage({
+      session,
+      contentClass: "human",
+      prepared: {
+        ...prepared,
+        source: { ...prepared.source, sha256: "d".repeat(64) },
+        output: { ...prepared.output, sha256: "e".repeat(64) }
+      },
+      config,
+      storagePathFactory: () => "human/22222222-2222-4222-8222-222222222222.avif",
+      fetchImpl: async (input, options = {}) => {
+        const url = new URL(String(input));
+
+        if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") {
+          return makeJsonResponse([]);
+        }
+
+        if (url.pathname.includes("/storage/v1/object/game-images/human/22222222-2222-4222-8222-222222222222.avif")) {
+          return makeJsonResponse({ Key: "ok" });
+        }
+
+        if (url.pathname === "/rest/v1/game_images" && options.method === "POST") {
+          return makeJsonResponse(
+            { code: "23505", message: "duplicate key" },
+            { status: 409 }
+          );
+        }
+
+        if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+          assert.deepEqual(
+            JSON.parse(options.body),
+            { prefixes: ["human/22222222-2222-4222-8222-222222222222.avif"] }
+          );
+          return makeJsonResponse([{ name: "human/22222222-2222-4222-8222-222222222222.avif" }]);
+        }
+
+        throw new Error(`Unexpected cleanup request: ${url}`);
+      }
+    }),
+    (error) => error.code === "23505"
+  );
+}
+
 async function testBuildSuccess() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-ok-"));
   await copyRuntimeFixture(tempRoot);
@@ -1003,6 +1171,8 @@ async function testBuildSuccess() {
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "index.html")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "index.html")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "avif-converter.js")));
 
   await fs.rm(tempRoot, { recursive: true, force: true });
 }
@@ -1061,6 +1231,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   const adminCss = await fs.readFile(path.join(projectRoot, "admin", "admin.css"), "utf8");
   const adminJs = await fs.readFile(path.join(projectRoot, "admin", "admin.js"), "utf8");
   const adminAuth = await fs.readFile(path.join(projectRoot, "js", "admin-auth.js"), "utf8");
+  const adminContent = await fs.readFile(path.join(projectRoot, "js", "admin-content.js"), "utf8");
+  const avifConverter = await fs.readFile(path.join(projectRoot, "js", "avif-converter.js"), "utf8");
   const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -1225,6 +1397,8 @@ await testDynamicRoundPreloader();
 await testRoundSelector();
 await testExternalContentSource();
 await testAdminAuthContract();
+await testAvifConversionContracts();
+await testAdminContentUploadContracts();
 await testBuildSuccess();
 await testBuildTooSmall();
 await testCrossClassDuplicate();
@@ -1240,6 +1414,8 @@ console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
 console.log("External Supabase content source + pagination + migration fallback: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
+console.log("V1.5.4 AVIF conversion contracts: PASS");
+console.log("V1.5.4 staged Storage + metadata upload contracts: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Build >=10 + unicode filenames: PASS");

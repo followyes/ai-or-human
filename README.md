@@ -305,3 +305,34 @@ cannot inherit the public policy and read full internal image metadata.
 
 V1.5.3 does not yet implement upload, AVIF conversion or delete-X. Those remain
 V1.5.4/V1.5.5.
+
+
+## V1.5.4 — Drag & Drop + AVIF
+
+V1.5.3 `/admin` + Auth is production-verified and CLOSED.
+
+V1.5.4 adds the first real content-ingestion path:
+- explicit AI/HUMAN category selection,
+- multi-file click/drag-and-drop,
+- sequential processing to avoid memory spikes,
+- SHA-256 of the original source,
+- browser-side decode,
+- browser-side AVIF encoding using pinned `@jsquash/avif@2.1.1`,
+- generated AVIF verification,
+- SHA-256 of the final AVIF,
+- duplicate preflight against Supabase metadata,
+- raw AVIF upload to `game-images`,
+- metadata insert into `public.game_images`,
+- compensating Storage cleanup if metadata insert fails,
+- per-file status and before/after byte measurements.
+
+Original JPG/PNG/WebP/AVIF source files are never uploaded to Supabase.
+
+Migration safety:
+all V1.5.4 uploads are inserted with `is_active=false`, and the database default
+is also changed to false. Test batches cannot replace the current public
+repository-backed game pool. Publication remains a V1.5.6 operation.
+
+The exact long-term AVIF quality/resizing/file-size policy is intentionally not
+frozen here. V1.5.4 first collects real source/output measurements using the
+encoder default while preserving original pixel dimensions.
