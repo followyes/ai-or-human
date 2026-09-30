@@ -2,7 +2,7 @@
 
 Webowa gra, w której gracz zgaduje, czy obraz został wygenerowany przez AI, czy stworzony przez człowieka.
 
-## V1.5.6 — architektura contentu
+## Architektura contentu
 
 Supabase jest jedynym produkcyjnym źródłem obrazów.
 
@@ -14,65 +14,46 @@ Supabase jest jedynym produkcyjnym źródłem obrazów.
 → publiczna gra
 ```
 
-Nie ma już repozytoryjnego katalogu `images/AI/**` / `images/HUMAN/**`, `data/images.json` ani runtime fallbacku do GitHuba.
-
-Klasyfikacja obrazu jest zapisywana wyłącznie w `public.game_images.content_class` (`ai` albo `human`). Nazwa pliku nigdy nie służy do klasyfikacji.
+Nie ma repozytoryjnego katalogu contentu, `data/images.json` ani runtime fallbacku do GitHuba. Klasa obrazu jest zapisywana w `public.game_images.content_class` (`ai` albo `human`); nazwa pliku nie klasyfikuje obrazu.
 
 ## Gra
 
-Aktualny tryb pozostaje bez widocznej nazwy trybu do czasu V1.6 Multi-Mode.
+Przed rozpoczęciem gracz wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokładnie wybraną liczbę unikalnych obrazów, bez wymuszonego balansu AI/HUMAN. Mobile obsługuje swipe lewo = CZŁOWIEK i prawo = AI; desktop korzysta z przycisków.
 
-Przed rozpoczęciem gracz wybiera liczbę obrazów:
+Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo jest niedostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
 
-- 10,
-- 20,
-- 50.
+## `/admin` — V1.5.7A
 
-Zasady:
+Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
-- sesja zawiera dokładnie wybraną liczbę unikalnych obrazów;
-- proporcja AI/HUMAN jest losowa;
-- brak powtórzeń w jednej sesji;
-- między sesjami powtórki są dozwolone, ale niedawno pokazane obrazy mają niższą wagę;
-- odświeżenie strony resetuje historię wag;
-- mobile: swipe w lewo = CZŁOWIEK, swipe w prawo = AI;
-- desktop: przyciski;
-- feedback poprawnej/błędnej odpowiedzi animuje się równolegle z wyrzutem karty;
-- następny obraz jest ładowany i dekodowany przed reveal.
+Sesja jest przechowywana w `sessionStorage`. Access token odnawia się automatycznie przed wygaśnięciem oraz po obsługiwalnym auth `401/403`.
 
-Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo nie jest dostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
+Desktop admin działa jako pełnoekranowy workspace:
 
-## `/admin`
+```text
+┌───────────────────────────────────────────────┐
+│ Panel administratora                 Wyloguj │
+├───────────────────┬───────────────────────────┤
+│ Upload            │ Biblioteka                │
+│ AI / HUMAN        │ WSZYSTKIE n · AI n · ... │
+│ Drop zone         │ wewnętrznie przewijana   │
+│ Queue             │ siatka obrazów            │
+└───────────────────┴───────────────────────────┘
+```
 
-Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga:
+Na węższych ekranach upload i biblioteka układają się pionowo.
 
-1. Supabase Auth,
-2. aktywnego wpisu w `private.admin_users`.
+Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji, lokalna konwersja JPG/PNG/WebP, sekwencyjny batch, duplikaty SHA-256, kontynuacja po zwykłym błędzie pliku oraz fatalny abort po rzeczywistej utracie sesji.
 
-Sesja jest przechowywana w `sessionStorage`. Access token jest odnawiany automatycznie przed wygaśnięciem oraz raz po auth `401/403`; zamknięcie sesji przeglądarki usuwa lokalny stan logowania.
+Biblioteka zachowuje paginację >1000, lazy loading, filtrowanie AI/HUMAN, refresh i kontrolowane usuwanie Storage + metadata. `is_active` nadal istnieje w modelu danych, ale nie jest eksponowane jako redundantny status w normalnym UI.
 
-Uploader:
-
-- wymaga jawnego wyboru AI/HUMAN;
-- obsługuje JPG/JPEG/JFIF, PNG, WebP i AVIF;
-- JPG/PNG/WebP konwertuje lokalnie do AVIF;
-- AVIF przechodzi 1:1 bez rekompresji;
-- przetwarza batch sekwencyjnie;
-- błędy pojedynczego pliku nie zatrzymują pozostałych plików;
-- duplikaty są wykrywane po SHA-256;
-- zapisuje wyłącznie AVIF do bucketu `game-images`;
-- metadata trafiają do `public.game_images`;
-- nowy poprawny upload jest aktywny domyślnie.
-
-Biblioteka admina pokazuje rekordy, klasy, stan aktywności i umożliwia kontrolowane usunięcie Storage + metadata.
+V1.5.7A nie obejmuje jeszcze animowanego przejścia login → workspace ani wygładzenia bootstrapu `Sprawdzanie sesji…`; te elementy należą do V1.5.7B.
 
 ## Supabase
 
-Publiczna gra ma anonimowy odczyt tylko aktywnych rekordów przez RLS. Admin ma pełny CRUD wyłącznie po potwierdzeniu `private.is_admin()`.
+Publiczna gra ma anonimowy odczyt tylko aktywnych rekordów przez RLS. Admin ma CRUD po potwierdzeniu `private.is_admin()`.
 
-`is_active` pozostaje trwałym polem publikacji/recovery. W finalnym V1.5.6 jego domyślna wartość to `true`.
-
-Jednorazowe obiekty migracyjne V1.5.6 (`content_runtime`, migration status, cutover, rollback) nie należą do finalnego schematu.
+`is_active` pozostaje trwałym polem publikacji/recovery i ma domyślną wartość `true`.
 
 Kanoniczny fresh schema:
 
@@ -80,11 +61,7 @@ Kanoniczny fresh schema:
 OUTSIDE_REPO/SQL/ALL_IN_ONE.sql
 ```
 
-Delta produkcyjna domykająca V1.5.6:
-
-```text
-OUTSIDE_REPO/SQL/V1_5_6.sql
-```
+V1.5.7A nie zmienia schematu bazy.
 
 ## Build
 
@@ -93,36 +70,17 @@ npm run test
 npm run build
 ```
 
-Build kopiuje wyłącznie runtime statyczny:
-
-```text
-index.html
-css/
-js/
-admin/
-```
-
-Nie skanuje obrazów i nie generuje manifestu contentu.
+Build kopiuje statyczny runtime (`index.html`, `css/`, `js/`, `admin/`) i nie generuje repozytoryjnego manifestu contentu.
 
 ## GitHub Pages
 
-Wymagany tryb:
+Wymagany tryb: **Settings → Pages → Build and deployment → Source → GitHub Actions**.
 
-**Settings → Pages → Build and deployment → Source → GitHub Actions**
-
-Workflow `.github/workflows/pages.yml`:
-
-1. uruchamia `npm run test`,
-2. buduje `dist/`,
-3. potwierdza wymagane pliki runtime,
-4. potwierdza brak `dist/data/images.json` i `dist/images/`,
-5. publikuje `dist/`.
-
-Po zmianie workflow przez web uploader trzeba upewnić się osobno, że ukryty katalog `.github/` faktycznie został zaktualizowany.
+Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfikuje runtime oraz potwierdza brak repozytoryjnego manifestu i `dist/images/`.
 
 ## Status roadmapy
 
-- V1.5.1–V1.5.5 — CLOSED.
-- V1.5.6 — finalny cleanup Supabase-only; closure dopiero po produkcyjnym deployu, finalnym SQL, upload smoke i public smoke.
-- V1.5.7 — UI/UX Cleanup & Redesign.
+- V1.5.6 — PASS / CLOSED.
+- V1.5.7A — Admin Workspace Redesign.
+- V1.5.7B — Auth Transition & UX Polish.
 - V1.6 — Multi-Mode.

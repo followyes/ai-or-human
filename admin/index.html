@@ -11,14 +11,13 @@
 </head>
 <body>
   <main class="admin-shell">
-    <section class="admin-card" aria-labelledby="admin-title">
-      <header class="admin-brand">
-        <p class="admin-eyebrow">AI OR HUMAN</p>
-        <h1 id="admin-title">Panel administratora</h1>
-      </header>
+    <section class="admin-card" id="admin-card" data-view="boot">
+      <section id="login-view" class="login-view is-hidden" aria-labelledby="login-title">
+        <header class="login-header">
+          <h1 id="login-title">Panel administratora</h1>
+          <p class="admin-copy">Zaloguj się kontem administratora.</p>
+        </header>
 
-      <section id="login-view">
-        <p class="admin-copy">Zaloguj się kontem administratora.</p>
         <form id="login-form" class="login-form" novalidate>
           <label class="field">
             <span>E-mail</span>
@@ -33,102 +32,77 @@
         </form>
       </section>
 
-      <section id="authorized-view" class="is-hidden">
-        <div class="admin-toolbar">
-          <div class="access-state">
-            <span class="access-dot" aria-hidden="true"></span>
-            <div>
-              <strong>Dostęp administratora aktywny</strong>
-              <p id="admin-email"></p>
-            </div>
-          </div>
-          <button class="admin-secondary-button compact-button" id="logout-button" type="button">Wyloguj</button>
-        </div>
+      <section id="authorized-view" class="authorized-view is-hidden" aria-labelledby="admin-title">
+        <header class="admin-header">
+          <h1 id="admin-title">Panel administratora</h1>
+          <button class="admin-secondary-button compact-button logout-button" id="logout-button" type="button">Wyloguj</button>
+        </header>
 
-        <section class="content-panel" aria-labelledby="content-heading">
-          <div class="content-heading-row">
-            <div>
-              <p class="admin-eyebrow">CONTENT</p>
+        <div class="admin-workspace">
+          <section class="content-panel workspace-panel" aria-labelledby="content-heading">
+            <div class="panel-heading">
               <h2 id="content-heading">Dodaj obrazy</h2>
             </div>
-            <p class="staging-badge is-live">PRODUKCJA · AKTYWNE</p>
-          </div>
 
-          <p class="admin-copy content-intro">
-            Wybierz kategorię, a potem przeciągnij obrazy. Źródła są przetwarzane lokalnie,
-            konwertowane do AVIF i dopiero wtedy wysyłane do Supabase.
-          </p>
+            <fieldset class="class-picker" id="class-picker">
+              <legend>Kategoria</legend>
+              <label>
+                <input type="radio" name="content-class" value="ai">
+                <span>AI</span>
+              </label>
+              <label>
+                <input type="radio" name="content-class" value="human">
+                <span>HUMAN</span>
+              </label>
+            </fieldset>
 
-          <fieldset class="class-picker" id="class-picker">
-            <legend>Kategoria</legend>
-            <label>
-              <input type="radio" name="content-class" value="ai">
-              <span>AI</span>
-            </label>
-            <label>
-              <input type="radio" name="content-class" value="human">
-              <span>HUMAN</span>
-            </label>
-          </fieldset>
+            <button class="drop-zone" id="drop-zone" type="button">
+              <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
+              <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
+              <span class="drop-zone-formats">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
+            </button>
 
-          <button class="drop-zone" id="drop-zone" type="button">
-            <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
-            <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
-            <span class="drop-zone-formats">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
-          </button>
+            <input
+              id="file-input"
+              class="visually-hidden"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.jfif,.png,.webp,.avif"
+              multiple
+            >
 
-          <input
-            id="file-input"
-            class="visually-hidden"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.jfif,.png,.webp,.avif"
-            multiple
-          >
+            <div class="queue-header is-hidden" id="queue-header">
+              <strong>Przetwarzanie</strong>
+              <span id="queue-summary"></span>
+            </div>
 
-          <p class="upload-note">
-            Cała kolejka pojawia się od razu, ale pliki są przetwarzane po kolei,
-            aby ograniczyć zużycie pamięci. JPG/PNG/WebP są konwertowane do AVIF;
-            istniejące AVIF trafiają do Storage 1:1 bez ponownej kompresji.
-          </p>
+            <div class="upload-queue" id="upload-queue" aria-live="polite"></div>
+          </section>
 
-          <div class="queue-header is-hidden" id="queue-header">
-            <strong>Przetwarzanie</strong>
-            <span id="queue-summary"></span>
-          </div>
+          <section class="inventory-panel workspace-panel" aria-labelledby="inventory-heading">
+            <div class="inventory-heading-row">
+              <h2 id="inventory-heading">Biblioteka</h2>
+              <button class="admin-secondary-button compact-button" id="inventory-refresh" type="button">Odśwież</button>
+            </div>
 
-          <div class="upload-queue" id="upload-queue" aria-live="polite"></div>
-        </section>
+            <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
+              <button type="button" data-filter="all" class="is-active">
+                <span>WSZYSTKIE</span><strong id="count-total">0</strong>
+              </button>
+              <button type="button" data-filter="ai">
+                <span>AI</span><strong id="count-ai">0</strong>
+              </button>
+              <button type="button" data-filter="human">
+                <span>HUMAN</span><strong id="count-human">0</strong>
+              </button>
+            </div>
 
-<section class="inventory-panel" aria-labelledby="inventory-heading">
-  <div class="inventory-heading-row">
-    <div>
-      <p class="admin-eyebrow">BIBLIOTEKA</p>
-      <h2 id="inventory-heading">Aktualny content</h2>
-    </div>
-    <button class="admin-secondary-button compact-button" id="inventory-refresh" type="button">
-      Odśwież
-    </button>
-  </div>
-
-  <div class="inventory-stats" id="inventory-stats" aria-live="polite">
-    <span>RAZEM <strong id="count-total">0</strong></span>
-    <span>AI <strong id="count-ai">0</strong></span>
-    <span>HUMAN <strong id="count-human">0</strong></span>
-    <span>AKTYWNE <strong id="count-active">0</strong></span>
-  </div>
-
-  <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
-    <button type="button" data-filter="all" class="is-active">WSZYSTKIE</button>
-    <button type="button" data-filter="ai">AI</button>
-    <button type="button" data-filter="human">HUMAN</button>
-  </div>
-
-  <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>
-  <div class="inventory-grid" id="inventory-grid"></div>
-</section>
+            <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>
+            <div class="inventory-grid" id="inventory-grid"></div>
+          </section>
+        </div>
       </section>
 
-      <section id="boot-view" class="boot-state is-hidden" aria-live="polite">
+      <section id="boot-view" class="boot-state" aria-live="polite">
         <span class="spinner" aria-hidden="true"></span>
         <p>Sprawdzanie sesji…</p>
       </section>

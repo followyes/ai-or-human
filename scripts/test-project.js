@@ -1782,7 +1782,29 @@ assert.ok(adminJs.includes("error instanceof AdminAuthError"), "auth refresh fai
 assert.ok(!adminJs.includes("migration"), "one-time migration UI/controller code must be removed");
 assert.ok(!adminHtml.includes("Przejście na Supabase"), "migration panel must be removed");
 assert.ok(!adminHtml.includes("Przywróć fallback repo"), "rollback control must be removed");
-assert.ok(adminHtml.includes("PRODUKCJA · AKTYWNE"), "durable upload contract must be explicit");
+assert.ok(!adminHtml.includes("PRODUKCJA · AKTYWNE"), "active publication status must not be duplicated in V1.5.7A UI");
+assert.ok(!adminHtml.includes("Dostęp administratora aktywny"), "authorized workspace must not waste space on redundant access banner");
+assert.ok(!adminHtml.includes("AI OR HUMAN"), "admin chrome must not repeat the product eyebrow");
+assert.ok(!adminHtml.includes(">CONTENT<"), "admin workspace must not retain redundant CONTENT eyebrow");
+assert.ok(!adminHtml.includes('id="count-active"'), "separate active counter must be removed");
+assert.ok(adminHtml.includes('id="count-total"'), "total count must live in the ALL filter");
+assert.ok(adminHtml.includes('id="count-ai"'), "AI count must live in the AI filter");
+assert.ok(adminHtml.includes('id="count-human"'), "HUMAN count must live in the HUMAN filter");
+assert.ok(adminHtml.indexOf('class="content-panel workspace-panel"') < adminHtml.indexOf('class="inventory-panel workspace-panel"'),
+  "desktop DOM order must keep upload before library");
+assert.ok(adminHtml.includes('class="admin-workspace"'), "authorized admin must use a dedicated workspace container");
+assert.ok(adminCss.includes('grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.58fr)'),
+  "desktop workspace must be upload-left/library-right");
+assert.ok(adminCss.includes('.inventory-grid {') && adminCss.includes('overflow-y: auto'),
+  "desktop library must own an internal scroll region");
+assert.ok(adminCss.includes('@media (max-width: 980px)'), "admin must define a stacked narrow-screen workspace");
+assert.ok(adminCss.includes('.admin-card[data-view="authorized"]'), "authorized workspace needs its own full-screen shell sizing");
+assert.ok(adminCss.includes('.admin-card[data-view="boot"]'), "boot state must not inherit authorized workspace sizing");
+assert.ok(adminJs.includes('adminCard.dataset.view = viewName'), "view state must be exposed on the admin shell for stable layout contracts");
+assert.ok(!adminJs.includes('stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY"'),
+  "per-card active publication badges must be removed");
+assert.ok(!adminJs.includes('const publicationState ='), "upload success copy must not expose active publication state");
+assert.ok(!adminJs.includes('obrazów w bibliotece.'), "redundant library total prose must be removed");
 assert.ok(!adminCss.includes(".migration-"), "migration-only CSS must be removed");
 assert.ok(adminJs.includes("sessionStorage") === false,
   "session storage handling belongs in admin-auth.js, not scattered through admin UI");

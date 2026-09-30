@@ -27,6 +27,7 @@ import {
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 
+const adminCard = document.querySelector("#admin-card");
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
 const bootView = document.querySelector("#boot-view");
@@ -36,7 +37,6 @@ const emailInput = document.querySelector("#email");
 const passwordInput = document.querySelector("#password");
 const loginButton = document.querySelector("#login-button");
 const loginStatus = document.querySelector("#login-status");
-const adminEmail = document.querySelector("#admin-email");
 const logoutButton = document.querySelector("#logout-button");
 
 const classInputs = [...document.querySelectorAll('input[name="content-class"]')];
@@ -53,7 +53,6 @@ const inventoryFilterButtons = [...document.querySelectorAll("[data-filter]")];
 const countTotal = document.querySelector("#count-total");
 const countAi = document.querySelector("#count-ai");
 const countHuman = document.querySelector("#count-human");
-const countActive = document.querySelector("#count-active");
 
 
 let currentSession = null;
@@ -74,6 +73,12 @@ function showOnly(view) {
   for (const node of [loginView, authorizedView, bootView]) {
     node.classList.toggle("is-hidden", node !== view);
   }
+
+  const viewName =
+    view === authorizedView ? "authorized" :
+    view === loginView ? "login" :
+    "boot";
+  adminCard.dataset.view = viewName;
 }
 
 function setAuthBusy(value) {
@@ -143,7 +148,6 @@ function updateInventoryStats() {
   countTotal.textContent = String(inventoryRows.length);
   countAi.textContent = String(inventoryRows.filter((row) => row.content_class === "ai").length);
   countHuman.textContent = String(inventoryRows.filter((row) => row.content_class === "human").length);
-  countActive.textContent = String(inventoryRows.filter((row) => row.is_active === true).length);
 }
 
 function filteredInventoryRows() {
@@ -215,12 +219,7 @@ function renderInventory() {
     classBadge.className = "inventory-class";
     classBadge.textContent = row.content_class.toUpperCase();
 
-    const stateBadge = document.createElement("span");
-    stateBadge.className = "inventory-state";
-    stateBadge.classList.toggle("is-active", row.is_active === true);
-    stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY";
-
-    meta.append(classBadge, stateBadge);
+    meta.append(classBadge);
 
     const name = document.createElement("p");
     name.className = "inventory-name";
@@ -251,7 +250,7 @@ async function refreshInventory({ quiet = false } = {}) {
 
     inventoryRows = [...await listGameImages({ session: currentSession })];
     renderInventory();
-    setInventoryStatus(`${inventoryRows.length} obrazów w bibliotece.`);
+    setInventoryStatus();
   } catch (error) {
     if (
       error instanceof AdminContentError &&
@@ -325,7 +324,6 @@ function showLogin(message = "") {
 
 function showAuthorized(session) {
   currentSession = session;
-  adminEmail.textContent = session.user?.email || "Administrator";
   loginStatus.textContent = "";
   setAuthBusy(false);
   showOnly(authorizedView);
@@ -487,11 +485,9 @@ async function processFile(file, contentClass, queueItem) {
     sourceHashPreflightDone: true
   });
 
-  const publicationState = result.row?.is_active ? "aktywny" : "nieaktywny";
-
   queueItem.set(
     "GOTOWE",
-    `${contentClass.toUpperCase()} · ${formatBytes(prepared.output.size)} · ${result.storagePath} · ${publicationState}`,
+    `${contentClass.toUpperCase()} · ${formatBytes(prepared.output.size)} · ${result.storagePath}`,
     "done"
   );
 
