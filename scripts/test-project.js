@@ -46,10 +46,8 @@ import {
   createStoragePath,
   createThumbnailStoragePath,
   deleteGameImage,
-  fetchPublicAvifBlob,
   findImageByHash,
   listGameImages,
-  registerInventoryThumbnail,
   registerPreparedImage
 } from "../js/admin-content.js";
 import {
@@ -1743,74 +1741,7 @@ async function testAdminInventoryPaginationAndDelete() {
     ["activity", true]
   ], "production delete failure must restore active publication state after the preview was removed");
 
-  const downloaded = await fetchPublicAvifBlob({
-    publicUrl: "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/ai/0.avif",
-    fetchImpl: async (input, options = {}) => {
-      assert.equal(String(input).endsWith("/ai/0.avif"), true);
-      assert.equal(options.cache, "no-store");
-      return {
-        ok: true,
-        status: 200,
-        async blob() {
-          return new Blob([new Uint8Array([1, 2, 3])], { type: "application/octet-stream" });
-        }
-      };
-    }
-  });
-  assert.equal(downloaded.type, "image/avif");
-  assert.equal(downloaded.size, 3);
 
-  const backfillImage = {
-    id: "44444444-4444-4444-8444-444444444444",
-    content_class: "human",
-    storage_path: "human/backfill.avif",
-    thumbnail_path: null,
-    public_url: "https://example.test/backfill.avif"
-  };
-  const inventoryPreview = {
-    blob: new Blob([new Uint8Array([8, 8])], { type: "image/avif" }),
-    size: 2,
-    width: 640,
-    height: 480
-  };
-  const backfillRequests = [];
-
-  const backfillResult = await registerInventoryThumbnail({
-    session,
-    image: backfillImage,
-    inventoryPreview,
-    config,
-    fetchImpl: async (input, options = {}) => {
-      const url = new URL(String(input));
-      backfillRequests.push({ url, options });
-
-      if (url.pathname === "/storage/v1/object/game-images/human/_previews/v1/backfill.avif") {
-        assert.equal(options.method, "POST");
-        assert.equal(options.headers["x-upsert"], "true",
-          "only resumable backfill may overwrite its deterministic derived path");
-        return makeJsonResponse({ Key: "ok" });
-      }
-
-      if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
-        assert.equal(url.searchParams.get("id"), `eq.${backfillImage.id}`);
-        assert.deepEqual(JSON.parse(options.body), {
-          thumbnail_path: "human/_previews/v1/backfill.avif"
-        });
-        return makeJsonResponse([{ ...backfillImage, thumbnail_path: "human/_previews/v1/backfill.avif" }]);
-      }
-
-      throw new Error(`Unexpected backfill request: ${url}`);
-    }
-  });
-
-  assert.equal(backfillResult.thumbnailPath, "human/_previews/v1/backfill.avif");
-  assert.deepEqual(
-    backfillRequests.map(({ url, options }) => [url.pathname, options.method]),
-    [
-      ["/storage/v1/object/game-images/human/_previews/v1/backfill.avif", "POST"],
-      ["/rest/v1/game_images", "PATCH"]
-    ]
-  );
 }
 
 
@@ -2106,24 +2037,26 @@ assert.ok(adminCss.includes('.admin-card.skip-shell-morph'), "bootstrap needs an
 assert.ok(adminCss.includes('@media (prefers-reduced-motion: reduce)'), "reduced-motion CSS fallback must remain present");
 assert.ok(!adminCss.includes('.login-view { width: 100%; }'),
   "desktop login view must not fight absolute left/right inset with width:100%");
-assert.ok(adminHtml.includes('id="inventory-optimize"'),
-  "Phase A must expose the temporary one-time library optimization action");
-assert.ok(adminHtml.includes('>Optymalizuj bibliotekę</button>'),
-  "temporary maintenance action must use non-technical operator copy");
+assert.ok(!adminHtml.includes('id="inventory-optimize"'),
+  "Phase B must remove the temporary one-time library optimization action");
+assert.ok(!adminHtml.includes('>Optymalizuj bibliotekę</button>'),
+  "Phase B must remove temporary optimization operator copy");
 assert.ok(!/thumbnail|miniatur/i.test(adminHtml),
   "normal Admin HTML must not expose internal preview terminology");
 assert.ok(adminJs.includes('image.src = row.thumbnail_public_url || row.public_url'),
   "Admin Library must prefer the small derived asset");
 assert.ok(adminJs.includes('image.src = row.public_url'),
   "Admin Library must fall back to the production original if a derived asset fails");
-assert.ok(adminJs.includes('const pending = inventoryRows.filter((row) => !row.thumbnail_path)'),
-  "temporary optimization must be resumable from missing metadata only");
-assert.ok(adminJs.includes('for (let index = 0; index < pending.length; index += 1)'),
-  "temporary optimization must process existing assets sequentially");
+assert.ok(!adminJs.includes('optimizeExistingInventory'),
+  "Phase B must remove the one-time existing-library optimization controller");
+assert.ok(!adminJs.includes('optimizationBusy'),
+  "Phase B must remove temporary optimization busy state");
+assert.ok(!adminJs.includes('registerInventoryThumbnail'),
+  "Phase B must remove the one-time backfill persistence path");
+assert.ok(!adminJs.includes('fetchPublicAvifBlob'),
+  "Phase B must remove the one-time production-original download path");
 assert.ok(adminJs.includes('createInventoryPreviewAvif(prepared.output.blob)'),
-  "new uploads must generate their small Admin asset automatically");
-assert.ok(adminJs.includes('registerInventoryThumbnail'),
-  "temporary optimization must persist its derived assets through the tested content layer");
+  "new uploads must keep generating their small Admin asset automatically");
 assert.ok(!adminJs.includes('stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY"'),
   "per-card active publication badges must be removed");
 assert.ok(!adminJs.includes('const publicationState ='), "upload success copy must not expose active publication state");
@@ -2150,10 +2083,16 @@ assert.ok(avifConverter.includes("sha256: source.sha256"), "AVIF passthrough mus
 assert.ok(avifConverter.includes("passthrough: true"), "AVIF passthrough must be explicit in prepared metadata");
 assert.ok(uploadBatchSource.includes("for (let index = 0; index < entries.length; index += 1)"), "batch runner must remain sequential");
 assert.ok(uploadBatchSource.includes("shouldAbort"), "batch runner must support explicit fatal abort only");
-assert.equal((adminContent.match(/upsert: true/g) || []).length, 1,
-  "controlled overwrite must exist only in the resumable one-time optimization path");
-assert.ok(adminContent.includes('...(upsert ? { "x-upsert": "true" } : {})'),
-  "Storage overwrite header must be opt-in rather than default");
+assert.ok(!adminContent.includes('upsert ='),
+  "Phase B must remove backfill-only Storage upsert support");
+assert.ok(!adminContent.includes('"x-upsert"'),
+  "normal production uploads must never request Storage overwrite");
+assert.ok(!adminContent.includes('updateGameImageThumbnailPath'),
+  "Phase B must remove the one-time thumbnail metadata patch helper");
+assert.ok(!adminContent.includes('fetchPublicAvifBlob'),
+  "Phase B must remove the one-time public-original downloader");
+assert.ok(!adminContent.includes('registerInventoryThumbnail'),
+  "Phase B must remove the one-time backfill registration helper");
 assert.ok(adminContent.includes('thumbnail_path'), "authenticated Admin metadata must own the derived asset path");
 assert.ok(adminContent.includes('thumbnail_public_url'), "Admin inventory normalization must expose the derived public URL");
 assert.ok(!adminContent.includes("REPAIR_"), "migration repair errors must be removed");
@@ -2214,7 +2153,7 @@ console.log("Supabase-only content source + pagination + controlled failure: PAS
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
-console.log("V1.5.7B.1 inventory preview/backfill/delete lifecycle: PASS");
+console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");
 console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");

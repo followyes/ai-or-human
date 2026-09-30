@@ -529,7 +529,6 @@ export async function uploadAvifObject({
   session,
   storagePath,
   avifBlob,
-  upsert = false,
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -554,8 +553,7 @@ export async function uploadAvifObject({
     method: "POST",
     headers: authHeaders(resolved.publishableKey, session.access_token, {
       "Content-Type": "image/avif",
-      "Cache-Control": "max-age=31536000",
-      ...(upsert ? { "x-upsert": "true" } : {})
+      "Cache-Control": "max-age=31536000"
     }),
     body: avifBlob
   });
@@ -612,114 +610,6 @@ export async function insertGameImageMetadata({
   }
 
   return rows[0];
-}
-
-export async function updateGameImageThumbnailPath({
-  session,
-  imageId,
-  thumbnailPath,
-  config = SUPABASE_PUBLIC_CONFIG,
-  fetchImpl = globalThis.fetch
-} = {}) {
-  requireSession(session);
-  requireImageId(imageId);
-
-  if (typeof thumbnailPath !== "string" || !thumbnailPath.trim()) {
-    throw new AdminContentError(
-      "THUMBNAIL_PATH_INVALID",
-      "Nieprawidłowa ścieżka obrazu biblioteki."
-    );
-  }
-
-  const resolved = resolveConfig(config);
-  const url = buildRestUrl(resolved.projectUrl, "game_images");
-  url.searchParams.set("id", `eq.${imageId}`);
-
-  const rows = await request(url, {
-    fetchImpl,
-    method: "PATCH",
-    headers: authHeaders(resolved.publishableKey, session.access_token, {
-      "Content-Type": "application/json",
-      Prefer: "return=representation"
-    }),
-    body: JSON.stringify({ thumbnail_path: thumbnailPath })
-  });
-
-  if (!Array.isArray(rows) || rows.length !== 1) {
-    throw new AdminContentError(
-      "THUMBNAIL_UPDATE_NOT_CONFIRMED",
-      "Supabase nie potwierdził optymalizacji rekordu biblioteki."
-    );
-  }
-
-  return rows[0];
-}
-
-export async function fetchPublicAvifBlob({
-  publicUrl,
-  fetchImpl = globalThis.fetch,
-  timeoutMs = CONTENT_REQUEST_TIMEOUT_MS
-} = {}) {
-  if (typeof publicUrl !== "string" || !publicUrl) {
-    throw new AdminContentError(
-      "PUBLIC_AVIF_URL_INVALID",
-      "Brak prawidłowego adresu obrazu."
-    );
-  }
-
-  if (typeof fetchImpl !== "function") {
-    throw new AdminContentError(
-      "CONTENT_FETCH_UNAVAILABLE",
-      "Przeglądarka nie udostępnia funkcji fetch()."
-    );
-  }
-
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  const timer = controller && Number.isFinite(timeoutMs) && timeoutMs > 0
-    ? setTimeout(() => controller.abort(), timeoutMs)
-    : null;
-
-  let response;
-  try {
-    response = await fetchImpl(publicUrl, {
-      method: "GET",
-      cache: "no-store",
-      ...(controller ? { signal: controller.signal } : {})
-    });
-  } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new AdminContentError(
-        "CONTENT_REQUEST_TIMEOUT",
-        "Supabase nie odpowiedział w wymaganym czasie.",
-        { cause: error }
-      );
-    }
-    throw new AdminContentError(
-      "CONTENT_NETWORK_FAILED",
-      "Nie udało się pobrać obrazu z Supabase.",
-      { cause: error }
-    );
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    throw new AdminContentError(
-      "PUBLIC_AVIF_FETCH_FAILED",
-      "Nie udało się pobrać obrazu z biblioteki.",
-      { status: response.status }
-    );
-  }
-
-  const blob = await response.blob();
-  if (!(blob instanceof Blob) || blob.size <= 0) {
-    throw new AdminContentError(
-      "PUBLIC_AVIF_BLOB_INVALID",
-      "Pobrany obraz jest nieprawidłowy."
-    );
-  }
-
-  return blob.type === "image/avif" ? blob : blob.slice(0, blob.size, "image/avif");
 }
 
 export async function removeStorageObject({
@@ -863,79 +753,6 @@ export async function registerPreparedImage({
           cause: error
         }
       );
-    }
-
-    throw error;
-  }
-}
-
-export async function registerInventoryThumbnail({
-  session,
-  image,
-  inventoryPreview,
-  config = SUPABASE_PUBLIC_CONFIG,
-  fetchImpl = globalThis.fetch
-} = {}) {
-  requireSession(session);
-
-  if (!image || typeof image.id !== "string" || typeof image.storage_path !== "string") {
-    throw new AdminContentError(
-      "THUMBNAIL_IMAGE_INVALID",
-      "Brak kompletnego rekordu obrazu do optymalizacji."
-    );
-  }
-  requireImageId(image.id);
-
-  if (!(inventoryPreview?.blob instanceof Blob) || inventoryPreview.blob.type !== "image/avif" || inventoryPreview.blob.size <= 0) {
-    throw new AdminContentError(
-      "PREPARED_PREVIEW_INVALID",
-      "Brak prawidłowego obrazu do wyświetlenia w bibliotece."
-    );
-  }
-
-  const thumbnailPath = createThumbnailStoragePath(image.storage_path);
-  let uploaded = false;
-
-  try {
-    await uploadAvifObject({
-      session,
-      storagePath: thumbnailPath,
-      avifBlob: inventoryPreview.blob,
-      upsert: true,
-      config,
-      fetchImpl
-    });
-    uploaded = true;
-
-    const row = await updateGameImageThumbnailPath({
-      session,
-      imageId: image.id,
-      thumbnailPath,
-      config,
-      fetchImpl
-    });
-
-    return Object.freeze({ thumbnailPath, row });
-  } catch (error) {
-    if (uploaded) {
-      try {
-        await removeStorageObject({
-          session,
-          storagePath: thumbnailPath,
-          config,
-          fetchImpl
-        });
-      } catch (cleanupError) {
-        throw new AdminContentError(
-          "THUMBNAIL_METADATA_FAILED_CLEANUP_FAILED",
-          "Optymalizacja nie została zapisana, a automatyczne sprzątanie Storage także się nie udało.",
-          {
-            status: error instanceof AdminContentError ? error.status : null,
-            details: { thumbnailPath, imageId: image.id, originalError: error, cleanupError },
-            cause: error
-          }
-        );
-      }
     }
 
     throw error;
