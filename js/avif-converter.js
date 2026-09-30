@@ -9,6 +9,8 @@ export const SUPPORTED_SOURCE_TYPES = Object.freeze(new Set([
 
 export const MAX_SOURCE_BYTES = 128 * 1024 * 1024;
 export const MAX_SOURCE_PIXELS = 100_000_000;
+export const INVENTORY_PREVIEW_MAX_WIDTH = 640;
+export const INVENTORY_PREVIEW_MAX_HEIGHT = 480;
 
 let encoderPromise = null;
 
@@ -104,6 +106,60 @@ async function loadAvifEncoder() {
   }
 
   return encoderPromise;
+}
+
+export function calculateInventoryPreviewGeometry(
+  sourceWidth,
+  sourceHeight,
+  {
+    maxWidth = INVENTORY_PREVIEW_MAX_WIDTH,
+    maxHeight = INVENTORY_PREVIEW_MAX_HEIGHT
+  } = {}
+) {
+  const width = Number(sourceWidth);
+  const height = Number(sourceHeight);
+  validateDimensions(width, height);
+
+  if (
+    !Number.isFinite(maxWidth) ||
+    !Number.isFinite(maxHeight) ||
+    maxWidth <= 0 ||
+    maxHeight <= 0
+  ) {
+    throw new AvifConversionError(
+      "PREVIEW_TARGET_INVALID",
+      "Nieprawidłowy rozmiar technicznego podglądu."
+    );
+  }
+
+  const targetRatio = maxWidth / maxHeight;
+  const sourceRatio = width / height;
+
+  let sourceX = 0;
+  let sourceY = 0;
+  let cropWidth = width;
+  let cropHeight = height;
+
+  if (sourceRatio > targetRatio) {
+    cropWidth = height * targetRatio;
+    sourceX = (width - cropWidth) / 2;
+  } else if (sourceRatio < targetRatio) {
+    cropHeight = width / targetRatio;
+    sourceY = (height - cropHeight) / 2;
+  }
+
+  const scale = Math.min(1, maxWidth / cropWidth, maxHeight / cropHeight);
+  const outputWidth = Math.max(1, Math.min(Math.floor(maxWidth), Math.round(cropWidth * scale)));
+  const outputHeight = Math.max(1, Math.min(Math.floor(maxHeight), Math.round(cropHeight * scale)));
+
+  return Object.freeze({
+    sourceX,
+    sourceY,
+    cropWidth,
+    cropHeight,
+    outputWidth,
+    outputHeight
+  });
 }
 
 function createCanvas(width, height) {
@@ -359,6 +415,76 @@ export async function convertSourceFileToAvif(
     throw new AvifConversionError(
       "AVIF_CONVERSION_FAILED",
       "Nie udało się przygotować obrazu do AVIF.",
+      { cause: error }
+    );
+  } finally {
+    decoded?.close?.();
+  }
+}
+
+export async function createInventoryPreviewAvif(
+  productionAvifBlob,
+  {
+    encoderLoader = loadAvifEncoder,
+    verifyOutput = true,
+    decoder = decodeSource,
+    maxWidth = INVENTORY_PREVIEW_MAX_WIDTH,
+    maxHeight = INVENTORY_PREVIEW_MAX_HEIGHT
+  } = {}
+) {
+  if (!(productionAvifBlob instanceof Blob) || productionAvifBlob.type !== "image/avif" || productionAvifBlob.size <= 0) {
+    throw new AvifConversionError(
+      "PREVIEW_SOURCE_INVALID",
+      "Nie udało się przygotować obrazu do wyświetlenia w bibliotece."
+    );
+  }
+
+  if (typeof decoder !== "function") {
+    throw new AvifConversionError(
+      "PREVIEW_DECODER_INVALID",
+      "Brak prawidłowego dekodera obrazu."
+    );
+  }
+
+  let decoded = null;
+  try {
+    decoded = await decoder(productionAvifBlob);
+    const width = Number(decoded?.width ?? decoded?.naturalWidth);
+    const height = Number(decoded?.height ?? decoded?.naturalHeight);
+    const geometry = calculateInventoryPreviewGeometry(width, height, { maxWidth, maxHeight });
+
+    const { context } = createCanvas(geometry.outputWidth, geometry.outputHeight);
+    context.drawImage(
+      decoded,
+      geometry.sourceX,
+      geometry.sourceY,
+      geometry.cropWidth,
+      geometry.cropHeight,
+      0,
+      0,
+      geometry.outputWidth,
+      geometry.outputHeight
+    );
+
+    const imageData = context.getImageData(0, 0, geometry.outputWidth, geometry.outputHeight);
+    const blob = await encodeImageDataToAvif(imageData, { encoderLoader });
+
+    if (verifyOutput) {
+      await verifyAvifBlob(blob, geometry.outputWidth, geometry.outputHeight);
+    }
+
+    return Object.freeze({
+      blob,
+      mimeType: "image/avif",
+      size: blob.size,
+      width: geometry.outputWidth,
+      height: geometry.outputHeight
+    });
+  } catch (error) {
+    if (error instanceof AvifConversionError) throw error;
+    throw new AvifConversionError(
+      "PREVIEW_CREATE_FAILED",
+      "Nie udało się przygotować obrazu do wyświetlenia w bibliotece.",
       { cause: error }
     );
   } finally {

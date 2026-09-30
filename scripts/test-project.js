@@ -44,14 +44,21 @@ import {
   AdminContentError,
   assertImageHashAvailable,
   createStoragePath,
+  createThumbnailStoragePath,
   deleteGameImage,
+  fetchPublicAvifBlob,
   findImageByHash,
   listGameImages,
+  registerInventoryThumbnail,
   registerPreparedImage
 } from "../js/admin-content.js";
 import {
   AVIF_ENCODER_MODULE_URL,
+  INVENTORY_PREVIEW_MAX_HEIGHT,
+  INVENTORY_PREVIEW_MAX_WIDTH,
+  calculateInventoryPreviewGeometry,
   convertSourceFileToAvif,
+  createInventoryPreviewAvif,
   encodeImageDataToAvif,
   formatBytes,
   inspectSourceFile,
@@ -1227,6 +1234,77 @@ async function testAvifConversionContracts() {
     globalThis.document = previousDocument;
   }
 
+  const landscapeGeometry = calculateInventoryPreviewGeometry(1600, 900);
+  assert.equal(landscapeGeometry.sourceX, 200);
+  assert.equal(landscapeGeometry.sourceY, 0);
+  assert.equal(landscapeGeometry.cropWidth, 1200);
+  assert.equal(landscapeGeometry.cropHeight, 900);
+  assert.equal(landscapeGeometry.outputWidth, INVENTORY_PREVIEW_MAX_WIDTH);
+  assert.equal(landscapeGeometry.outputHeight, INVENTORY_PREVIEW_MAX_HEIGHT);
+
+  const portraitGeometry = calculateInventoryPreviewGeometry(900, 1600);
+  assert.equal(portraitGeometry.sourceX, 0);
+  assert.equal(portraitGeometry.sourceY, 462.5);
+  assert.equal(portraitGeometry.cropWidth, 900);
+  assert.equal(portraitGeometry.cropHeight, 675);
+  assert.equal(portraitGeometry.outputWidth, 640);
+  assert.equal(portraitGeometry.outputHeight, 480);
+
+  const smallGeometry = calculateInventoryPreviewGeometry(320, 240);
+  assert.equal(smallGeometry.outputWidth, 320, "small assets must not be upscaled");
+  assert.equal(smallGeometry.outputHeight, 240, "small assets must not be upscaled");
+
+  let previewDrawArgs = null;
+  let previewDecoderClosed = 0;
+  try {
+    globalThis.document = {
+      createElement(tagName) {
+        assert.equal(tagName, "canvas");
+        return {
+          width: 0,
+          height: 0,
+          getContext() {
+            return {
+              drawImage(...args) { previewDrawArgs = args; },
+              getImageData(x, y, width, height) {
+                assert.deepEqual([x, y, width, height], [0, 0, 640, 480]);
+                return {
+                  data: new Uint8ClampedArray([0, 0, 0, 255]),
+                  width,
+                  height
+                };
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const productionAvif = new Blob([new Uint8Array([7, 7, 7])], { type: "image/avif" });
+    const preview = await createInventoryPreviewAvif(productionAvif, {
+      verifyOutput: false,
+      decoder: async () => ({
+        width: 1600,
+        height: 900,
+        close() { previewDecoderClosed += 1; }
+      }),
+      encoderLoader: async () => async (imageData) => {
+        assert.equal(imageData.width, 640);
+        assert.equal(imageData.height, 480);
+        return new Uint8Array([5, 4, 3, 2, 1]);
+      }
+    });
+
+    assert.equal(preview.width, 640);
+    assert.equal(preview.height, 480);
+    assert.equal(preview.blob.type, "image/avif");
+    assert.equal(previewDecoderClosed, 1, "preview decoder must be released");
+    assert.ok(previewDrawArgs, "preview must draw the center-cropped source");
+    assert.deepEqual(previewDrawArgs.slice(1), [200, 0, 1200, 900, 0, 0, 640, 480]);
+  } finally {
+    globalThis.document = previousDocument;
+  }
+
   assert.equal(formatBytes(1024), "1.0 KB");
   assert.ok(AVIF_ENCODER_MODULE_URL.includes("@jsquash/avif@2.1.1"));
 
@@ -1260,10 +1338,28 @@ async function testAdminContentUploadContracts() {
       height: 800
     }
   };
+  const inventoryPreview = {
+    blob: new Blob([new Uint8Array([9, 8])], { type: "image/avif" }),
+    size: 2,
+    width: 640,
+    height: 480
+  };
+
+  const originalPath = "ai/11111111-1111-4111-8111-111111111111.avif";
+  const thumbnailPath = "ai/_previews/v1/11111111-1111-4111-8111-111111111111.avif";
 
   assert.equal(
     createStoragePath("ai", { uuid: "11111111-1111-4111-8111-111111111111" }),
-    "ai/11111111-1111-4111-8111-111111111111.avif"
+    originalPath
+  );
+  assert.equal(createThumbnailStoragePath(originalPath), thumbnailPath);
+  assert.equal(
+    createThumbnailStoragePath("human/nested/asset.avif"),
+    "human/_previews/v1/nested/asset.avif"
+  );
+  assert.throws(
+    () => createThumbnailStoragePath("ai/_previews/v1/already.avif"),
+    (error) => error.code === "THUMBNAIL_PATH_SOURCE_INVALID"
   );
 
   const requests = [];
@@ -1277,24 +1373,33 @@ async function testAdminContentUploadContracts() {
       return makeJsonResponse([]);
     }
 
-    if (url.pathname === "/storage/v1/object/game-images/ai/11111111-1111-4111-8111-111111111111.avif") {
+    if (url.pathname === `/storage/v1/object/game-images/${originalPath}`) {
       assert.equal(options.method, "POST");
       assert.equal(options.headers["Content-Type"], "image/avif");
       assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.equal(options.headers["x-upsert"], undefined, "normal original upload must never upsert");
       assert.equal(options.body.type, "image/avif");
-      return makeJsonResponse({ Key: "ok" });
+      return makeJsonResponse({ Key: "original-ok" });
+    }
+
+    if (url.pathname === `/storage/v1/object/game-images/${thumbnailPath}`) {
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers["x-upsert"], undefined, "normal derived upload must never upsert");
+      assert.equal(options.body.type, "image/avif");
+      return makeJsonResponse({ Key: "preview-ok" });
     }
 
     if (url.pathname === "/rest/v1/game_images" && options.method === "POST") {
       const body = JSON.parse(options.body);
       assert.equal(body.content_class, "ai");
       assert.equal(body.storage_bucket, "game-images");
-      assert.equal(body.storage_path, "ai/11111111-1111-4111-8111-111111111111.avif");
+      assert.equal(body.storage_path, originalPath);
+      assert.equal(body.thumbnail_path, thumbnailPath);
       assert.equal(body.original_filename, "photo.jpg");
       assert.equal(body.source_sha256, "a".repeat(64));
       assert.equal(body.avif_sha256, "b".repeat(64));
       assert.equal(Object.hasOwn(body, "is_active"), false,
-        "V1.5.6 browser must not own publication state on INSERT");
+        "browser must not own publication state on INSERT");
       assert.equal(body.file_size_bytes, 3);
       return makeJsonResponse([{ id: "row-1", ...body, is_active: true }]);
     }
@@ -1306,65 +1411,134 @@ async function testAdminContentUploadContracts() {
     session,
     contentClass: "ai",
     prepared,
+    inventoryPreview,
     sourceHashPreflightDone: true,
     config,
     fetchImpl,
-    storagePathFactory: () => "ai/11111111-1111-4111-8111-111111111111.avif"
+    storagePathFactory: () => originalPath
   });
 
   assert.equal(result.row.id, "row-1");
   assert.equal(result.row.is_active, true, "permanent production upload should return an active row");
-  assert.equal(requests.length, 3, "UI-preflight path must avoid the duplicate source-hash request");
+  assert.equal(result.thumbnailPath, thumbnailPath);
+  assert.equal(requests.length, 4, "preflight + original + derived asset + metadata are required");
   const hashRequests = requests.filter(({ url, options }) =>
     url.pathname === "/rest/v1/game_images" && options.method !== "POST"
   );
   assert.equal(hashRequests.length, 1);
   assert.equal(hashRequests[0].url.searchParams.get("avif_sha256"), `eq.${"b".repeat(64)}`);
 
+  const previewFailureDeletes = [];
   await assert.rejects(
     () => registerPreparedImage({
       session,
       contentClass: "human",
       prepared: {
         ...prepared,
-        source: { ...prepared.source, sha256: "d".repeat(64) },
-        output: { ...prepared.output, sha256: "e".repeat(64) }
+        source: { ...prepared.source, sha256: "c".repeat(64) },
+        output: { ...prepared.output, sha256: "d".repeat(64) }
       },
+      inventoryPreview,
+      sourceHashPreflightDone: true,
       config,
       storagePathFactory: () => "human/22222222-2222-4222-8222-222222222222.avif",
       fetchImpl: async (input, options = {}) => {
         const url = new URL(String(input));
-
-        if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") {
-          return makeJsonResponse([]);
+        if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") return makeJsonResponse([]);
+        if (url.pathname === "/storage/v1/object/game-images/human/22222222-2222-4222-8222-222222222222.avif") {
+          return makeJsonResponse({ Key: "original-ok" });
         }
+        if (url.pathname === "/storage/v1/object/game-images/human/_previews/v1/22222222-2222-4222-8222-222222222222.avif") {
+          return makeJsonResponse({ code: "preview_upload_failed", message: "simulated" }, { status: 500 });
+        }
+        if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+          previewFailureDeletes.push(JSON.parse(options.body).prefixes[0]);
+          return makeJsonResponse([{ name: "removed" }]);
+        }
+        throw new Error(`Unexpected preview-failure request: ${url}`);
+      }
+    }),
+    (error) => error.code === "preview_upload_failed"
+  );
+  assert.deepEqual(
+    previewFailureDeletes,
+    ["human/22222222-2222-4222-8222-222222222222.avif"],
+    "failed derived upload must clean the already-written production original"
+  );
 
-        if (url.pathname.includes("/storage/v1/object/game-images/human/22222222-2222-4222-8222-222222222222.avif")) {
+  const cleanupPaths = [];
+  await assert.rejects(
+    () => registerPreparedImage({
+      session,
+      contentClass: "human",
+      prepared: {
+        ...prepared,
+        source: { ...prepared.source, sha256: "e".repeat(64) },
+        output: { ...prepared.output, sha256: "f".repeat(64) }
+      },
+      inventoryPreview,
+      sourceHashPreflightDone: true,
+      config,
+      storagePathFactory: () => "human/33333333-3333-4333-8333-333333333333.avif",
+      fetchImpl: async (input, options = {}) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") return makeJsonResponse([]);
+        if (url.pathname.startsWith("/storage/v1/object/game-images/human/") && options.method === "POST") {
           return makeJsonResponse({ Key: "ok" });
         }
-
         if (url.pathname === "/rest/v1/game_images" && options.method === "POST") {
-          return makeJsonResponse(
-            { code: "23505", message: "duplicate key" },
-            { status: 409 }
-          );
+          return makeJsonResponse({ code: "23505", message: "duplicate key" }, { status: 409 });
         }
-
         if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
-          assert.deepEqual(
-            JSON.parse(options.body),
-            { prefixes: ["human/22222222-2222-4222-8222-222222222222.avif"] }
-          );
-          return makeJsonResponse([{ name: "human/22222222-2222-4222-8222-222222222222.avif" }]);
+          cleanupPaths.push(JSON.parse(options.body).prefixes[0]);
+          return makeJsonResponse([{ name: "removed" }]);
         }
-
-        throw new Error(`Unexpected cleanup request: ${url}`);
+        throw new Error(`Unexpected metadata-failure request: ${url}`);
       }
     }),
     (error) => error.code === "23505"
   );
 
+  assert.deepEqual(cleanupPaths, [
+    "human/_previews/v1/33333333-3333-4333-8333-333333333333.avif",
+    "human/33333333-3333-4333-8333-333333333333.avif"
+  ], "metadata failure must attempt cleanup of both owned Storage objects");
 
+  const cleanupAttempted = [];
+  await assert.rejects(
+    () => registerPreparedImage({
+      session,
+      contentClass: "ai",
+      prepared: {
+        ...prepared,
+        source: { ...prepared.source, sha256: "1".repeat(64) },
+        output: { ...prepared.output, sha256: "2".repeat(64) }
+      },
+      inventoryPreview,
+      sourceHashPreflightDone: true,
+      config,
+      storagePathFactory: () => "ai/44444444-4444-4444-8444-444444444444.avif",
+      fetchImpl: async (input, options = {}) => {
+        const url = new URL(String(input));
+        if (url.pathname === "/rest/v1/game_images" && options.method !== "POST") return makeJsonResponse([]);
+        if (url.pathname.startsWith("/storage/v1/object/game-images/ai/") && options.method === "POST") return makeJsonResponse({ Key: "ok" });
+        if (url.pathname === "/rest/v1/game_images" && options.method === "POST") {
+          return makeJsonResponse({ code: "metadata_failed", message: "simulated" }, { status: 500 });
+        }
+        if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+          const storagePath = JSON.parse(options.body).prefixes[0];
+          cleanupAttempted.push(storagePath);
+          if (storagePath.includes("/_previews/")) {
+            return makeJsonResponse({ code: "cleanup_failed", message: "simulated" }, { status: 500 });
+          }
+          return makeJsonResponse([{ name: storagePath }]);
+        }
+        throw new Error(`Unexpected cleanup-failure request: ${url}`);
+      }
+    }),
+    (error) => error.code === "UPLOAD_FAILED_CLEANUP_FAILED" && error.details.cleanupFailures.length === 1
+  );
+  assert.equal(cleanupAttempted.length, 2, "cleanup must attempt the original even when derived cleanup fails first");
 }
 
 
@@ -1380,6 +1554,7 @@ async function testAdminInventoryPaginationAndDelete() {
     content_class: index % 2 ? "human" : "ai",
     storage_bucket: "game-images",
     storage_path: `${index % 2 ? "human" : "ai"}/${index}.avif`,
+    thumbnail_path: index === 0 ? "ai/_previews/v1/0.avif" : null,
     original_filename: `source-${index}.jpg`,
     source_sha256: "a".repeat(64),
     avif_sha256: "b".repeat(64),
@@ -1400,6 +1575,8 @@ async function testAdminInventoryPaginationAndDelete() {
       const url = new URL(String(input));
       assert.equal(url.pathname, "/rest/v1/game_images");
       assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.ok(url.searchParams.get("select").includes("thumbnail_path"),
+        "authenticated inventory must select derived preview metadata");
 
       const offset = Number(url.searchParams.get("offset") || 0);
       offsets.push(offset);
@@ -1415,6 +1592,11 @@ async function testAdminInventoryPaginationAndDelete() {
     inventory[0].public_url,
     "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/ai/0.avif"
   );
+  assert.equal(
+    inventory[0].thumbnail_public_url,
+    "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/ai/_previews/v1/0.avif"
+  );
+  assert.equal(inventory[1].thumbnail_public_url, null);
 
   await assert.rejects(
     () => assertImageHashAvailable({
@@ -1443,6 +1625,7 @@ async function testAdminInventoryPaginationAndDelete() {
     id: "22222222-2222-4222-8222-222222222222",
     content_class: "human",
     storage_path: "human/asset.avif",
+    thumbnail_path: null,
     original_filename: "asset.jpg",
     is_active: false
   };
@@ -1478,54 +1661,154 @@ async function testAdminInventoryPaginationAndDelete() {
     ]
   );
 
-  const activeImage = {
+  const previewImage = {
     id: "33333333-3333-4333-8333-333333333333",
     content_class: "ai",
     storage_path: "ai/active.avif",
+    thumbnail_path: "ai/_previews/v1/active.avif",
     original_filename: "active.jpg",
     is_active: true
   };
-  const activeRequests = [];
+  const previewDeleteSequence = [];
 
+  await deleteGameImage({
+    session,
+    image: previewImage,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+
+      if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
+        const body = JSON.parse(options.body);
+        previewDeleteSequence.push(["activity", body.is_active]);
+        return makeJsonResponse([{ ...previewImage, is_active: body.is_active }]);
+      }
+
+      if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
+        const storagePath = JSON.parse(options.body).prefixes[0];
+        previewDeleteSequence.push(["storage", storagePath]);
+        return makeJsonResponse([{ name: storagePath }]);
+      }
+
+      if (url.pathname === "/rest/v1/game_images" && options.method === "DELETE") {
+        previewDeleteSequence.push(["metadata", previewImage.id]);
+        return makeJsonResponse([previewImage]);
+      }
+
+      throw new Error(`Unexpected preview delete request: ${url}`);
+    }
+  });
+
+  assert.deepEqual(previewDeleteSequence, [
+    ["activity", false],
+    ["storage", "ai/_previews/v1/active.avif"],
+    ["storage", "ai/active.avif"],
+    ["metadata", previewImage.id]
+  ], "delete must remove derived asset before the production original");
+
+  const failureSequence = [];
   await assert.rejects(
     () => deleteGameImage({
       session,
-      image: activeImage,
+      image: previewImage,
       config,
       fetchImpl: async (input, options = {}) => {
         const url = new URL(String(input));
-        activeRequests.push({ url, options });
 
         if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
           const body = JSON.parse(options.body);
-          return makeJsonResponse([{ ...activeImage, is_active: body.is_active }]);
+          failureSequence.push(["activity", body.is_active]);
+          return makeJsonResponse([{ ...previewImage, is_active: body.is_active }]);
         }
 
         if (url.pathname === "/storage/v1/object/game-images" && options.method === "DELETE") {
-          return makeJsonResponse(
-            { code: "storage_failure", message: "simulated" },
-            { status: 500 }
-          );
+          const storagePath = JSON.parse(options.body).prefixes[0];
+          failureSequence.push(["storage", storagePath]);
+          if (storagePath === previewImage.storage_path) {
+            return makeJsonResponse({ code: "storage_failure", message: "simulated" }, { status: 500 });
+          }
+          return makeJsonResponse([{ name: storagePath }]);
         }
 
-        throw new Error(`Unexpected active delete request: ${url}`);
+        throw new Error(`Unexpected active delete failure request: ${url}`);
       }
     }),
     (error) => error.code === "storage_failure"
   );
 
+  assert.deepEqual(failureSequence, [
+    ["activity", false],
+    ["storage", "ai/_previews/v1/active.avif"],
+    ["storage", "ai/active.avif"],
+    ["activity", true]
+  ], "production delete failure must restore active publication state after the preview was removed");
+
+  const downloaded = await fetchPublicAvifBlob({
+    publicUrl: "https://abcdefghijklmnopqrst.supabase.co/storage/v1/object/public/game-images/ai/0.avif",
+    fetchImpl: async (input, options = {}) => {
+      assert.equal(String(input).endsWith("/ai/0.avif"), true);
+      assert.equal(options.cache, "no-store");
+      return {
+        ok: true,
+        status: 200,
+        async blob() {
+          return new Blob([new Uint8Array([1, 2, 3])], { type: "application/octet-stream" });
+        }
+      };
+    }
+  });
+  assert.equal(downloaded.type, "image/avif");
+  assert.equal(downloaded.size, 3);
+
+  const backfillImage = {
+    id: "44444444-4444-4444-8444-444444444444",
+    content_class: "human",
+    storage_path: "human/backfill.avif",
+    thumbnail_path: null,
+    public_url: "https://example.test/backfill.avif"
+  };
+  const inventoryPreview = {
+    blob: new Blob([new Uint8Array([8, 8])], { type: "image/avif" }),
+    size: 2,
+    width: 640,
+    height: 480
+  };
+  const backfillRequests = [];
+
+  const backfillResult = await registerInventoryThumbnail({
+    session,
+    image: backfillImage,
+    inventoryPreview,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      backfillRequests.push({ url, options });
+
+      if (url.pathname === "/storage/v1/object/game-images/human/_previews/v1/backfill.avif") {
+        assert.equal(options.method, "POST");
+        assert.equal(options.headers["x-upsert"], "true",
+          "only resumable backfill may overwrite its deterministic derived path");
+        return makeJsonResponse({ Key: "ok" });
+      }
+
+      if (url.pathname === "/rest/v1/game_images" && options.method === "PATCH") {
+        assert.equal(url.searchParams.get("id"), `eq.${backfillImage.id}`);
+        assert.deepEqual(JSON.parse(options.body), {
+          thumbnail_path: "human/_previews/v1/backfill.avif"
+        });
+        return makeJsonResponse([{ ...backfillImage, thumbnail_path: "human/_previews/v1/backfill.avif" }]);
+      }
+
+      throw new Error(`Unexpected backfill request: ${url}`);
+    }
+  });
+
+  assert.equal(backfillResult.thumbnailPath, "human/_previews/v1/backfill.avif");
   assert.deepEqual(
-    activeRequests.map(({ url, options }) => [
-      url.pathname,
-      options.method,
-      options.body && typeof options.body === "string"
-        ? JSON.parse(options.body).is_active
-        : null
-    ]),
+    backfillRequests.map(({ url, options }) => [url.pathname, options.method]),
     [
-      ["/rest/v1/game_images", "PATCH", false],
-      ["/storage/v1/object/game-images", "DELETE", undefined],
-      ["/rest/v1/game_images", "PATCH", true]
+      ["/storage/v1/object/game-images/human/_previews/v1/backfill.avif", "POST"],
+      ["/rest/v1/game_images", "PATCH"]
     ]
   );
 }
@@ -1679,6 +1962,8 @@ assert.ok(contentSource.includes('while (true)'));
 assert.ok(contentSource.includes('offset += rows.length'));
 assert.ok(contentSource.includes('/storage/v1/object/public/'));
 assert.ok(contentSource.includes('source: "supabase"'));
+assert.ok(!contentSource.includes('thumbnail_path'),
+  "public gameplay catalog must remain isolated from Admin-only derived assets");
 assert.ok(!contentSource.includes('source: "repository"'), "repository content source must be removed");
 assert.ok(!contentSource.includes('./data/images.json'), "repository manifest transport must be removed");
 assert.ok(!contentSource.includes('fallbackReason'), "runtime fallback state must be removed");
@@ -1819,6 +2104,26 @@ assert.ok(adminCss.includes('.admin-view {') && adminCss.includes('visibility: h
   "desktop auth views must cross-fade without relying on display:none");
 assert.ok(adminCss.includes('.admin-card.skip-shell-morph'), "bootstrap needs an explicit no-morph shell path");
 assert.ok(adminCss.includes('@media (prefers-reduced-motion: reduce)'), "reduced-motion CSS fallback must remain present");
+assert.ok(!adminCss.includes('.login-view { width: 100%; }'),
+  "desktop login view must not fight absolute left/right inset with width:100%");
+assert.ok(adminHtml.includes('id="inventory-optimize"'),
+  "Phase A must expose the temporary one-time library optimization action");
+assert.ok(adminHtml.includes('>Optymalizuj bibliotekę</button>'),
+  "temporary maintenance action must use non-technical operator copy");
+assert.ok(!/thumbnail|miniatur/i.test(adminHtml),
+  "normal Admin HTML must not expose internal preview terminology");
+assert.ok(adminJs.includes('image.src = row.thumbnail_public_url || row.public_url'),
+  "Admin Library must prefer the small derived asset");
+assert.ok(adminJs.includes('image.src = row.public_url'),
+  "Admin Library must fall back to the production original if a derived asset fails");
+assert.ok(adminJs.includes('const pending = inventoryRows.filter((row) => !row.thumbnail_path)'),
+  "temporary optimization must be resumable from missing metadata only");
+assert.ok(adminJs.includes('for (let index = 0; index < pending.length; index += 1)'),
+  "temporary optimization must process existing assets sequentially");
+assert.ok(adminJs.includes('createInventoryPreviewAvif(prepared.output.blob)'),
+  "new uploads must generate their small Admin asset automatically");
+assert.ok(adminJs.includes('registerInventoryThumbnail'),
+  "temporary optimization must persist its derived assets through the tested content layer");
 assert.ok(!adminJs.includes('stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY"'),
   "per-card active publication badges must be removed");
 assert.ok(!adminJs.includes('const publicationState ='), "upload success copy must not expose active publication state");
@@ -1845,7 +2150,12 @@ assert.ok(avifConverter.includes("sha256: source.sha256"), "AVIF passthrough mus
 assert.ok(avifConverter.includes("passthrough: true"), "AVIF passthrough must be explicit in prepared metadata");
 assert.ok(uploadBatchSource.includes("for (let index = 0; index < entries.length; index += 1)"), "batch runner must remain sequential");
 assert.ok(uploadBatchSource.includes("shouldAbort"), "batch runner must support explicit fatal abort only");
-assert.ok(!adminContent.includes('"x-upsert"'), "normal uploader must not retain migration repair upsert");
+assert.equal((adminContent.match(/upsert: true/g) || []).length, 1,
+  "controlled overwrite must exist only in the resumable one-time optimization path");
+assert.ok(adminContent.includes('...(upsert ? { "x-upsert": "true" } : {})'),
+  "Storage overwrite header must be opt-in rather than default");
+assert.ok(adminContent.includes('thumbnail_path'), "authenticated Admin metadata must own the derived asset path");
+assert.ok(adminContent.includes('thumbnail_public_url'), "Admin inventory normalization must expose the derived public URL");
 assert.ok(!adminContent.includes("REPAIR_"), "migration repair errors must be removed");
 assert.ok(!adminContent.includes("get_content_migration_status"), "migration RPC client must be removed");
 assert.ok(!adminContent.includes("cutover_external_content"), "cutover RPC client must be removed");
@@ -1902,9 +2212,9 @@ console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
-console.log("V1.5.4 AVIF conversion contracts: PASS");
-console.log("V1.5.6 production Storage + active metadata upload contracts: PASS");
-console.log("V1.5.5 inventory pagination + Delete X lifecycle: PASS");
+console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
+console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
+console.log("V1.5.7B.1 inventory preview/backfill/delete lifecycle: PASS");
 console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
 console.log("Cross-round repeats allowed + recent images deprioritized: PASS");

@@ -11,13 +11,16 @@ import {
 import {
   AdminContentError,
   deleteGameImage,
+  fetchPublicAvifBlob,
   findImageByHash,
   listGameImages,
+  registerInventoryThumbnail,
   registerPreparedImage
 } from "../js/admin-content.js";
 import {
   AvifConversionError,
   convertSourceFileToAvif,
+  createInventoryPreviewAvif,
   formatBytes,
   inspectSourceFile
 } from "../js/avif-converter.js";
@@ -49,6 +52,7 @@ const queueSummary = document.querySelector("#queue-summary");
 const uploadQueue = document.querySelector("#upload-queue");
 
 const inventoryRefreshButton = document.querySelector("#inventory-refresh");
+const inventoryOptimizeButton = document.querySelector("#inventory-optimize");
 const inventoryStatus = document.querySelector("#inventory-status");
 const inventoryGrid = document.querySelector("#inventory-grid");
 const inventoryFilterButtons = [...document.querySelectorAll("[data-filter]")];
@@ -67,6 +71,7 @@ let failedCount = 0;
 let inventoryRows = [];
 let inventoryFilter = "all";
 let inventoryBusy = false;
+let optimizationBusy = false;
 const deletingIds = new Set();
 
 
@@ -125,19 +130,33 @@ function focusViewTarget(target) {
   });
 }
 
-function setAuthBusy(value) {
-  authBusy = Boolean(value);
+function syncBusyControls() {
   loginButton.disabled = authBusy;
-  logoutButton.disabled = authBusy || uploadBusy;
   emailInput.disabled = authBusy;
   passwordInput.disabled = authBusy;
+
+  const contentMutationBusy = uploadBusy || optimizationBusy;
+  dropZone.disabled = contentMutationBusy;
+  for (const input of classInputs) input.disabled = contentMutationBusy;
+
+  logoutButton.disabled = authBusy || contentMutationBusy;
+  inventoryRefreshButton.disabled = inventoryBusy || contentMutationBusy;
+  inventoryOptimizeButton.disabled = inventoryBusy || contentMutationBusy || deletingIds.size > 0;
+}
+
+function setAuthBusy(value) {
+  authBusy = Boolean(value);
+  syncBusyControls();
 }
 
 function setUploadBusy(value) {
   uploadBusy = Boolean(value);
-  dropZone.disabled = uploadBusy;
-  for (const input of classInputs) input.disabled = uploadBusy;
-  logoutButton.disabled = authBusy || uploadBusy;
+  syncBusyControls();
+}
+
+function setOptimizationBusy(value) {
+  optimizationBusy = Boolean(value);
+  syncBusyControls();
 }
 
 function selectedContentClass() {
@@ -194,6 +213,13 @@ function updateInventoryStats() {
   countHuman.textContent = String(inventoryRows.filter((row) => row.content_class === "human").length);
 }
 
+function updateOptimizationControl() {
+  const missingCount = inventoryRows.filter((row) => !row.thumbnail_path).length;
+  inventoryOptimizeButton.classList.toggle("is-hidden", missingCount === 0 && !optimizationBusy);
+  inventoryOptimizeButton.disabled =
+    missingCount === 0 || inventoryBusy || uploadBusy || optimizationBusy || deletingIds.size > 0;
+}
+
 function filteredInventoryRows() {
   if (inventoryFilter === "all") return inventoryRows;
   return inventoryRows.filter((row) => row.content_class === inventoryFilter);
@@ -206,6 +232,7 @@ function setInventoryStatus(message = "", { error = false } = {}) {
 
 function renderInventory() {
   updateInventoryStats();
+  updateOptimizationControl();
   inventoryGrid.replaceChildren();
 
   for (const button of inventoryFilterButtons) {
@@ -235,14 +262,18 @@ function renderInventory() {
 
     const image = document.createElement("img");
     image.className = "inventory-image";
-    image.src = row.public_url;
+    image.src = row.thumbnail_public_url || row.public_url;
     image.alt = "";
     image.loading = "lazy";
     image.decoding = "async";
     image.addEventListener("error", () => {
+      if (row.thumbnail_public_url && image.src !== row.public_url) {
+        image.src = row.public_url;
+        return;
+      }
       image.removeAttribute("src");
       image.alt = "Brak podglądu";
-    }, { once: true });
+    });
     imageWrap.append(image);
 
     const deleteButton = document.createElement("button");
@@ -251,7 +282,7 @@ function renderInventory() {
     deleteButton.textContent = "×";
     deleteButton.dataset.deleteId = row.id;
     deleteButton.setAttribute("aria-label", `Usuń ${row.original_filename || "obraz"}`);
-    deleteButton.disabled = deletingIds.has(row.id);
+    deleteButton.disabled = deletingIds.has(row.id) || uploadBusy || optimizationBusy;
 
     const body = document.createElement("div");
     body.className = "inventory-body";
@@ -281,10 +312,10 @@ function renderInventory() {
 }
 
 async function refreshInventory({ quiet = false } = {}) {
-  if (inventoryBusy || !currentSession) return;
+  if (inventoryBusy || !currentSession) return false;
 
   inventoryBusy = true;
-  inventoryRefreshButton.disabled = true;
+  syncBusyControls();
 
   if (!quiet) setInventoryStatus("Ładowanie biblioteki…");
 
@@ -295,6 +326,7 @@ async function refreshInventory({ quiet = false } = {}) {
     inventoryRows = [...await listGameImages({ session: currentSession })];
     renderInventory();
     setInventoryStatus();
+    return true;
   } catch (error) {
     if (
       error instanceof AdminContentError &&
@@ -302,31 +334,34 @@ async function refreshInventory({ quiet = false } = {}) {
     ) {
       clearAdminSession();
       showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
-      return;
+      return false;
     }
 
     setInventoryStatus(
       error instanceof Error ? error.message : "Nie udało się odświeżyć biblioteki.",
       { error: true }
     );
+    return false;
   } finally {
     inventoryBusy = false;
-    inventoryRefreshButton.disabled = false;
+    syncBusyControls();
+    updateOptimizationControl();
   }
 }
 
 async function handleDelete(imageId) {
-  if (deletingIds.has(imageId) || uploadBusy) return;
+  if (deletingIds.has(imageId) || uploadBusy || optimizationBusy) return;
 
   const image = inventoryRows.find((row) => row.id === imageId);
   if (!image) return;
 
   const accepted = window.confirm(
-    `Usunąć "${image.original_filename}" z kategorii ${image.content_class.toUpperCase()}?\n\nPlik AVIF i rekord metadata zostaną usunięte.`
+    `Usunąć "${image.original_filename}" z kategorii ${image.content_class.toUpperCase()}?\n\nObraz zostanie trwale usunięty z biblioteki.`
   );
   if (!accepted) return;
 
   deletingIds.add(imageId);
+  syncBusyControls();
   renderInventory();
   setInventoryStatus(`Usuwanie ${image.original_filename}…`);
 
@@ -348,6 +383,7 @@ async function handleDelete(imageId) {
     );
   } finally {
     deletingIds.delete(imageId);
+    syncBusyControls();
     renderInventory();
     await refreshInventory({ quiet: true });
   }
@@ -362,6 +398,7 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
   loginStatus.textContent = message;
   setAuthBusy(false);
   setUploadBusy(false);
+  setOptimizationBusy(false);
   renderInventory();
   setBootVisible(false);
   setView("login", { morph });
@@ -475,11 +512,14 @@ function isSessionUploadError(error) {
   if (error instanceof AdminAuthError) return true;
 
   return error instanceof AdminContentError &&
-    (error.code === "CONTENT_SESSION_MISSING" || error.status === 401 || error.status === 403);
+    (
+      error.code === "CONTENT_SESSION_MISSING" ||
+      ((error.status === 401 || error.status === 403) && error.code !== "PUBLIC_AVIF_FETCH_FAILED")
+    );
 }
 
 
-async function refreshCurrentSessionForUpload() {
+async function refreshCurrentSessionForMutation() {
   const refreshed = await ensureFreshAdminSession({
     session: currentSession,
     marginSeconds: 180
@@ -494,7 +534,7 @@ async function refreshCurrentSessionForUpload() {
 }
 
 async function processFile(file, contentClass, queueItem) {
-  await refreshCurrentSessionForUpload();
+  await refreshCurrentSessionForMutation();
 
   queueItem.set("HASH", `${formatBytes(file.size)} · SHA-256 + kontrola duplikatu`);
 
@@ -518,6 +558,7 @@ async function processFile(file, contentClass, queueItem) {
   );
 
   const prepared = await convertSourceFileToAvif(file, { sourceInspection });
+  const inventoryPreview = await createInventoryPreviewAvif(prepared.output.blob);
 
   queueItem.set(
     "UPLOAD",
@@ -530,6 +571,7 @@ async function processFile(file, contentClass, queueItem) {
     session: currentSession,
     contentClass,
     prepared,
+    inventoryPreview,
     sourceHashPreflightDone: true
   });
 
@@ -543,7 +585,7 @@ async function processFile(file, contentClass, queueItem) {
 }
 
 async function handleFiles(fileList) {
-  if (uploadBusy) return;
+  if (uploadBusy || optimizationBusy) return;
 
   const files = [...(fileList || [])].filter((file) => file && file.size > 0);
   if (!files.length) return;
@@ -615,6 +657,75 @@ async function handleFiles(fileList) {
   }
 }
 
+async function optimizeExistingInventory() {
+  if (optimizationBusy || uploadBusy || inventoryBusy || deletingIds.size > 0 || !currentSession) return;
+
+  const pending = inventoryRows.filter((row) => !row.thumbnail_path);
+  if (!pending.length) {
+    updateOptimizationControl();
+    return;
+  }
+
+  setOptimizationBusy(true);
+  let completed = 0;
+  let failed = 0;
+  let sessionLost = false;
+
+  try {
+    currentSession = await authorizeAdminSession({ session: currentSession });
+    saveAdminSession(currentSession);
+
+    for (let index = 0; index < pending.length; index += 1) {
+      const image = pending[index];
+      setInventoryStatus(`Optymalizacja ${index + 1}/${pending.length}…`);
+
+      try {
+        currentSession = await refreshCurrentSessionForMutation();
+        const sourceBlob = await fetchPublicAvifBlob({ publicUrl: image.public_url });
+        const inventoryPreview = await createInventoryPreviewAvif(sourceBlob);
+        await registerInventoryThumbnail({
+          session: currentSession,
+          image,
+          inventoryPreview
+        });
+        completed += 1;
+      } catch (error) {
+        if (isSessionUploadError(error)) {
+          sessionLost = true;
+          clearAdminSession();
+          showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+          break;
+        }
+        failed += 1;
+      }
+    }
+  } catch (error) {
+    if (isSessionUploadError(error)) {
+      sessionLost = true;
+      clearAdminSession();
+      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+    } else {
+      setInventoryStatus(
+        error instanceof Error ? error.message : "Nie udało się zoptymalizować biblioteki.",
+        { error: true }
+      );
+    }
+  } finally {
+    setOptimizationBusy(false);
+  }
+
+  if (sessionLost || !currentSession) return;
+
+  const refreshed = await refreshInventory({ quiet: true });
+  if (!refreshed) return;
+
+  if (failed === 0) {
+    setInventoryStatus("Biblioteka zoptymalizowana.");
+  } else {
+    setInventoryStatus(`Zoptymalizowano ${completed} z ${pending.length}. Nie udało się: ${failed}.`, { error: true });
+  }
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (authBusy) return;
@@ -647,7 +758,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy) return;
+  if (authBusy || uploadBusy || optimizationBusy) return;
 
   const session = currentSession;
   setAuthBusy(true);
@@ -663,7 +774,7 @@ logoutButton.addEventListener("click", async () => {
 });
 
 dropZone.addEventListener("click", () => {
-  if (!uploadBusy) fileInput.click();
+  if (!uploadBusy && !optimizationBusy) fileInput.click();
 });
 
 fileInput.addEventListener("change", () => handleFiles(fileInput.files));
@@ -672,7 +783,7 @@ for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!uploadBusy) dropZone.classList.add("is-dragover");
+    if (!uploadBusy && !optimizationBusy) dropZone.classList.add("is-dragover");
   });
 }
 
@@ -685,9 +796,13 @@ for (const eventName of ["dragleave", "drop"]) {
 }
 
 dropZone.addEventListener("drop", (event) => {
-  if (!uploadBusy) handleFiles(event.dataTransfer?.files);
+  if (!uploadBusy && !optimizationBusy) handleFiles(event.dataTransfer?.files);
 });
 
+
+inventoryOptimizeButton.addEventListener("click", () => {
+  void optimizeExistingInventory();
+});
 
 inventoryRefreshButton.addEventListener("click", () => {
   void refreshInventory();

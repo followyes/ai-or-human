@@ -128,7 +128,6 @@ h2 {
   line-height: 1.5;
 }
 
-.login-view { width: 100%; }
 .login-header { margin-bottom: 24px; }
 .login-header .admin-copy { margin: 14px 0 0; }
 
@@ -456,6 +455,14 @@ h2 {
   gap: 16px;
 }
 
+.inventory-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .inventory-filters {
   display: flex;
   flex-wrap: wrap;
@@ -742,6 +749,7 @@ h2 {
   .queue-state { grid-column: 2; min-width: 0; text-align: left; }
 
   .inventory-heading-row { align-items: center; }
+  .inventory-actions { justify-content: flex-end; }
   .inventory-grid { grid-template-columns: 1fr; max-height: 72vh; }
 }
 

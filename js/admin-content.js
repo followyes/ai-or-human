@@ -185,9 +185,17 @@ function normalizeInventoryRow(row, projectUrl) {
     );
   }
 
+  const thumbnailPath = typeof row.thumbnail_path === "string" && row.thumbnail_path.trim()
+    ? row.thumbnail_path
+    : null;
+
   return Object.freeze({
     ...row,
-    public_url: buildPublicStorageUrl(projectUrl, row.storage_bucket, row.storage_path)
+    thumbnail_path: thumbnailPath,
+    public_url: buildPublicStorageUrl(projectUrl, row.storage_bucket, row.storage_path),
+    thumbnail_public_url: thumbnailPath
+      ? buildPublicStorageUrl(projectUrl, row.storage_bucket, thumbnailPath)
+      : null
   });
 }
 
@@ -204,6 +212,25 @@ export function createStoragePath(contentClass, {
   }
 
   return `${contentClass}/${uuid}.avif`;
+}
+
+export function createThumbnailStoragePath(storagePath) {
+  if (typeof storagePath !== "string") {
+    throw new AdminContentError(
+      "THUMBNAIL_PATH_SOURCE_INVALID",
+      "Nieprawidłowa ścieżka obrazu źródłowego."
+    );
+  }
+
+  const match = storagePath.match(/^(ai|human)\/(.+\.avif)$/i);
+  if (!match || match[2].startsWith("_previews/")) {
+    throw new AdminContentError(
+      "THUMBNAIL_PATH_SOURCE_INVALID",
+      "Nieprawidłowa ścieżka obrazu źródłowego."
+    );
+  }
+
+  return `${match[1].toLowerCase()}/_previews/v1/${match[2]}`;
 }
 
 export async function findImageByHash({
@@ -287,7 +314,7 @@ export async function listGameImages({
     const url = buildRestUrl(resolved.projectUrl, "game_images");
     url.searchParams.set(
       "select",
-      "id,content_class,storage_bucket,storage_path,original_filename,source_sha256,avif_sha256,width,height,file_size_bytes,is_active,created_at,updated_at"
+      "id,content_class,storage_bucket,storage_path,thumbnail_path,original_filename,source_sha256,avif_sha256,width,height,file_size_bytes,is_active,created_at,updated_at"
     );
     url.searchParams.set("order", "created_at.desc,id.desc");
     url.searchParams.set("limit", String(normalizedPageSize));
@@ -401,6 +428,9 @@ export async function deleteGameImage({
 
   requireImageId(image.id);
 
+  const thumbnailPath = typeof image.thumbnail_path === "string" && image.thumbnail_path.trim()
+    ? image.thumbnail_path
+    : null;
   const wasActive = image.is_active === true;
   let deactivated = false;
 
@@ -415,14 +445,7 @@ export async function deleteGameImage({
     deactivated = true;
   }
 
-  try {
-    await removeStorageObject({
-      session,
-      storagePath: image.storage_path,
-      config,
-      fetchImpl
-    });
-  } catch (storageError) {
+  const restoreActivityAfterStorageFailure = async (storageError, stage) => {
     if (deactivated) {
       try {
         await updateGameImageActivity({
@@ -437,7 +460,7 @@ export async function deleteGameImage({
           "DELETE_STORAGE_FAILED_RESTORE_FAILED",
           "Nie udało się usunąć pliku ze Storage ani przywrócić jego aktywnego statusu.",
           {
-            details: { storageError, restoreError, imageId: image.id },
+            details: { storageError, restoreError, imageId: image.id, stage },
             cause: storageError
           }
         );
@@ -445,6 +468,30 @@ export async function deleteGameImage({
     }
 
     throw storageError;
+  };
+
+  if (thumbnailPath) {
+    try {
+      await removeStorageObject({
+        session,
+        storagePath: thumbnailPath,
+        config,
+        fetchImpl
+      });
+    } catch (storageError) {
+      return restoreActivityAfterStorageFailure(storageError, "thumbnail");
+    }
+  }
+
+  try {
+    await removeStorageObject({
+      session,
+      storagePath: image.storage_path,
+      config,
+      fetchImpl
+    });
+  } catch (storageError) {
+    return restoreActivityAfterStorageFailure(storageError, "original");
   }
 
   try {
@@ -458,16 +505,18 @@ export async function deleteGameImage({
     return Object.freeze({
       id: image.id,
       storagePath: image.storage_path,
+      thumbnailPath,
       deleted
     });
   } catch (metadataError) {
     throw new AdminContentError(
       "DELETE_METADATA_FAILED_AFTER_STORAGE",
-      "Plik został usunięty ze Storage, ale rekord metadata pozostał nieaktywny. Odśwież bibliotekę i spróbuj usunąć rekord ponownie.",
+      "Pliki zostały usunięte ze Storage, ale rekord metadata pozostał nieaktywny. Odśwież bibliotekę i spróbuj usunąć rekord ponownie.",
       {
         details: {
           imageId: image.id,
           storagePath: image.storage_path,
+          thumbnailPath,
           metadataError
         },
         cause: metadataError
@@ -480,6 +529,7 @@ export async function uploadAvifObject({
   session,
   storagePath,
   avifBlob,
+  upsert = false,
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -504,7 +554,8 @@ export async function uploadAvifObject({
     method: "POST",
     headers: authHeaders(resolved.publishableKey, session.access_token, {
       "Content-Type": "image/avif",
-      "Cache-Control": "max-age=31536000"
+      "Cache-Control": "max-age=31536000",
+      ...(upsert ? { "x-upsert": "true" } : {})
     }),
     body: avifBlob
   });
@@ -514,6 +565,7 @@ export async function insertGameImageMetadata({
   session,
   contentClass,
   storagePath,
+  thumbnailPath,
   originalFilename,
   sourceSha256,
   avifSha256,
@@ -533,6 +585,7 @@ export async function insertGameImageMetadata({
     content_class: contentClass,
     storage_bucket: GAME_IMAGES_BUCKET,
     storage_path: storagePath,
+    thumbnail_path: thumbnailPath,
     original_filename: originalFilename,
     source_sha256: sourceSha256,
     avif_sha256: avifSha256,
@@ -559,6 +612,114 @@ export async function insertGameImageMetadata({
   }
 
   return rows[0];
+}
+
+export async function updateGameImageThumbnailPath({
+  session,
+  imageId,
+  thumbnailPath,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireImageId(imageId);
+
+  if (typeof thumbnailPath !== "string" || !thumbnailPath.trim()) {
+    throw new AdminContentError(
+      "THUMBNAIL_PATH_INVALID",
+      "Nieprawidłowa ścieżka obrazu biblioteki."
+    );
+  }
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "game_images");
+  url.searchParams.set("id", `eq.${imageId}`);
+
+  const rows = await request(url, {
+    fetchImpl,
+    method: "PATCH",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    }),
+    body: JSON.stringify({ thumbnail_path: thumbnailPath })
+  });
+
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new AdminContentError(
+      "THUMBNAIL_UPDATE_NOT_CONFIRMED",
+      "Supabase nie potwierdził optymalizacji rekordu biblioteki."
+    );
+  }
+
+  return rows[0];
+}
+
+export async function fetchPublicAvifBlob({
+  publicUrl,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = CONTENT_REQUEST_TIMEOUT_MS
+} = {}) {
+  if (typeof publicUrl !== "string" || !publicUrl) {
+    throw new AdminContentError(
+      "PUBLIC_AVIF_URL_INVALID",
+      "Brak prawidłowego adresu obrazu."
+    );
+  }
+
+  if (typeof fetchImpl !== "function") {
+    throw new AdminContentError(
+      "CONTENT_FETCH_UNAVAILABLE",
+      "Przeglądarka nie udostępnia funkcji fetch()."
+    );
+  }
+
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = controller && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
+  let response;
+  try {
+    response = await fetchImpl(publicUrl, {
+      method: "GET",
+      cache: "no-store",
+      ...(controller ? { signal: controller.signal } : {})
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new AdminContentError(
+        "CONTENT_REQUEST_TIMEOUT",
+        "Supabase nie odpowiedział w wymaganym czasie.",
+        { cause: error }
+      );
+    }
+    throw new AdminContentError(
+      "CONTENT_NETWORK_FAILED",
+      "Nie udało się pobrać obrazu z Supabase.",
+      { cause: error }
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    throw new AdminContentError(
+      "PUBLIC_AVIF_FETCH_FAILED",
+      "Nie udało się pobrać obrazu z biblioteki.",
+      { status: response.status }
+    );
+  }
+
+  const blob = await response.blob();
+  if (!(blob instanceof Blob) || blob.size <= 0) {
+    throw new AdminContentError(
+      "PUBLIC_AVIF_BLOB_INVALID",
+      "Pobrany obraz jest nieprawidłowy."
+    );
+  }
+
+  return blob.type === "image/avif" ? blob : blob.slice(0, blob.size, "image/avif");
 }
 
 export async function removeStorageObject({
@@ -589,6 +750,7 @@ export async function registerPreparedImage({
   session,
   contentClass,
   prepared,
+  inventoryPreview,
   sourceHashPreflightDone = false,
   config = SUPABASE_PUBLIC_CONFIG,
   fetchImpl = globalThis.fetch,
@@ -604,6 +766,12 @@ export async function registerPreparedImage({
     );
   }
 
+  if (!(inventoryPreview?.blob instanceof Blob) || inventoryPreview.blob.type !== "image/avif" || inventoryPreview.blob.size <= 0) {
+    throw new AdminContentError(
+      "PREPARED_PREVIEW_INVALID",
+      "Brak prawidłowego obrazu do wyświetlenia w bibliotece."
+    );
+  }
 
   if (!sourceHashPreflightDone) {
     await assertImageHashAvailable({
@@ -626,8 +794,9 @@ export async function registerPreparedImage({
   });
 
   const storagePath = storagePathFactory(contentClass);
-
-  let uploaded = false;
+  const thumbnailPath = createThumbnailStoragePath(storagePath);
+  let originalUploaded = false;
+  let thumbnailUploaded = false;
 
   try {
     await uploadAvifObject({
@@ -637,12 +806,22 @@ export async function registerPreparedImage({
       config,
       fetchImpl
     });
-    uploaded = true;
+    originalUploaded = true;
+
+    await uploadAvifObject({
+      session,
+      storagePath: thumbnailPath,
+      avifBlob: inventoryPreview.blob,
+      config,
+      fetchImpl
+    });
+    thumbnailUploaded = true;
 
     const row = await insertGameImageMetadata({
       session,
       contentClass,
       storagePath,
+      thumbnailPath,
       originalFilename: prepared.source.filename,
       sourceSha256: prepared.source.sha256,
       avifSha256: prepared.output.sha256,
@@ -653,22 +832,106 @@ export async function registerPreparedImage({
       fetchImpl
     });
 
-    return Object.freeze({ storagePath, row });
+    return Object.freeze({ storagePath, thumbnailPath, row });
+  } catch (error) {
+    const cleanupFailures = [];
+    const cleanupPaths = [
+      ...(thumbnailUploaded ? [thumbnailPath] : []),
+      ...(originalUploaded ? [storagePath] : [])
+    ];
+
+    for (const cleanupPath of cleanupPaths) {
+      try {
+        await removeStorageObject({
+          session,
+          storagePath: cleanupPath,
+          config,
+          fetchImpl
+        });
+      } catch (cleanupError) {
+        cleanupFailures.push({ storagePath: cleanupPath, error: cleanupError });
+      }
+    }
+
+    if (cleanupFailures.length) {
+      throw new AdminContentError(
+        "UPLOAD_FAILED_CLEANUP_FAILED",
+        "Upload nie został ukończony, a automatyczne sprzątanie Storage nie powiodło się w całości.",
+        {
+          status: error instanceof AdminContentError ? error.status : null,
+          details: { storagePath, thumbnailPath, originalError: error, cleanupFailures },
+          cause: error
+        }
+      );
+    }
+
+    throw error;
+  }
+}
+
+export async function registerInventoryThumbnail({
+  session,
+  image,
+  inventoryPreview,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+
+  if (!image || typeof image.id !== "string" || typeof image.storage_path !== "string") {
+    throw new AdminContentError(
+      "THUMBNAIL_IMAGE_INVALID",
+      "Brak kompletnego rekordu obrazu do optymalizacji."
+    );
+  }
+  requireImageId(image.id);
+
+  if (!(inventoryPreview?.blob instanceof Blob) || inventoryPreview.blob.type !== "image/avif" || inventoryPreview.blob.size <= 0) {
+    throw new AdminContentError(
+      "PREPARED_PREVIEW_INVALID",
+      "Brak prawidłowego obrazu do wyświetlenia w bibliotece."
+    );
+  }
+
+  const thumbnailPath = createThumbnailStoragePath(image.storage_path);
+  let uploaded = false;
+
+  try {
+    await uploadAvifObject({
+      session,
+      storagePath: thumbnailPath,
+      avifBlob: inventoryPreview.blob,
+      upsert: true,
+      config,
+      fetchImpl
+    });
+    uploaded = true;
+
+    const row = await updateGameImageThumbnailPath({
+      session,
+      imageId: image.id,
+      thumbnailPath,
+      config,
+      fetchImpl
+    });
+
+    return Object.freeze({ thumbnailPath, row });
   } catch (error) {
     if (uploaded) {
       try {
         await removeStorageObject({
           session,
-          storagePath,
+          storagePath: thumbnailPath,
           config,
           fetchImpl
         });
       } catch (cleanupError) {
         throw new AdminContentError(
-          "METADATA_FAILED_CLEANUP_FAILED",
-          "Zapis metadata nie powiódł się, a automatyczne sprzątanie pliku Storage także się nie udało.",
+          "THUMBNAIL_METADATA_FAILED_CLEANUP_FAILED",
+          "Optymalizacja nie została zapisana, a automatyczne sprzątanie Storage także się nie udało.",
           {
-            details: { storagePath, originalError: error, cleanupError },
+            status: error instanceof AdminContentError ? error.status : null,
+            details: { thumbnailPath, imageId: image.id, originalError: error, cleanupError },
             cause: error
           }
         );
@@ -678,4 +941,3 @@ export async function registerPreparedImage({
     throw error;
   }
 }
-
