@@ -22,7 +22,7 @@ Przed rozpoczęciem gracz wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokład
 
 Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo jest niedostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
 
-## `/admin` — V1.5.7A
+## `/admin` — V1.5.7B
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
@@ -47,7 +47,7 @@ Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji, lokalna k
 
 Biblioteka zachowuje paginację >1000, lazy loading, filtrowanie AI/HUMAN, refresh i kontrolowane usuwanie Storage + metadata. `is_active` nadal istnieje w modelu danych, ale nie jest eksponowane jako redundantny status w normalnym UI.
 
-V1.5.7A nie obejmuje jeszcze animowanego przejścia login → workspace ani wygładzenia bootstrapu `Sprawdzanie sesji…`; te elementy należą do V1.5.7B.
+V1.5.7B dodaje warstwę transition/polish bez zmiany kontraktu auth: ręczne logowanie płynnie rozszerza kartę logowania do pełnego workspace, a szybki restore zapisanej sesji pozostaje wizualnie cichy. Dopiero gdy weryfikacja sesji trwa dłużej niż krótki próg, pojawia się stan `Sprawdzanie sesji…`. Widoki nieaktywne są wyłączane z interakcji przez `inert`/`aria-hidden`, a `prefers-reduced-motion` wyłącza morph.
 
 ## Supabase
 
@@ -61,7 +61,7 @@ Kanoniczny fresh schema:
 OUTSIDE_REPO/SQL/ALL_IN_ONE.sql
 ```
 
-V1.5.7A nie zmienia schematu bazy.
+V1.5.7B nie zmienia schematu bazy.
 
 ## Build
 
@@ -81,6 +81,6 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 ## Status roadmapy
 
 - V1.5.6 — PASS / CLOSED.
-- V1.5.7A — Admin Workspace Redesign.
+- V1.5.7A — Admin Workspace Redesign — PASS/CLOSED.
 - V1.5.7B — Auth Transition & UX Polish.
 - V1.6 — Multi-Mode.

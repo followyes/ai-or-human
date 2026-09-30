@@ -1801,6 +1801,24 @@ assert.ok(adminCss.includes('@media (max-width: 980px)'), "admin must define a s
 assert.ok(adminCss.includes('.admin-card[data-view="authorized"]'), "authorized workspace needs its own full-screen shell sizing");
 assert.ok(adminCss.includes('.admin-card[data-view="boot"]'), "boot state must not inherit authorized workspace sizing");
 assert.ok(adminJs.includes('adminCard.dataset.view = viewName'), "view state must be exposed on the admin shell for stable layout contracts");
+
+assert.ok(adminHtml.includes('data-boot-visible="false"'), "bootstrap UI must start visually concealed");
+assert.ok(adminHtml.includes('aria-hidden="true" inert'), "inactive auth views must start inaccessible");
+assert.ok(adminHtml.includes('id="login-title" tabindex="-1"'), "login heading must support programmatic focus");
+assert.ok(adminHtml.includes('id="admin-title" tabindex="-1"'), "authorized heading must support programmatic focus");
+assert.ok(adminJs.includes("BOOT_REVEAL_DELAY_MS = 320"), "session bootstrap must use a delayed reveal instead of immediate flash");
+assert.ok(adminJs.includes("setBootVisible(false)"), "bootstrap presentation must support silent concealment");
+assert.ok(adminJs.includes("window.setTimeout"), "slow session verification must still expose a bounded loading state");
+assert.ok(adminJs.includes("node.inert = !active"), "inactive auth views must be removed from keyboard interaction");
+assert.ok(adminJs.includes("prefersReducedMotion"), "auth transition JS must respect reduced-motion preference");
+assert.ok(adminJs.includes("skip-shell-morph"), "fast bootstrap must be able to skip login-style shell morphing");
+assert.ok(adminJs.includes('establishAuthorizedSession(signedInSession, { morph: true, focus: true })'),
+  "successful manual login must enter the authorized workspace through the morph path");
+assert.ok(adminCss.includes('width 520ms cubic-bezier(0.22, 1, 0.36, 1)'), "desktop shell expansion must be animated");
+assert.ok(adminCss.includes('.admin-view {') && adminCss.includes('visibility: hidden'),
+  "desktop auth views must cross-fade without relying on display:none");
+assert.ok(adminCss.includes('.admin-card.skip-shell-morph'), "bootstrap needs an explicit no-morph shell path");
+assert.ok(adminCss.includes('@media (prefers-reduced-motion: reduce)'), "reduced-motion CSS fallback must remain present");
 assert.ok(!adminJs.includes('stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY"'),
   "per-card active publication badges must be removed");
 assert.ok(!adminJs.includes('const publicationState ='), "upload success copy must not expose active publication state");

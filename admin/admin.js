@@ -38,6 +38,8 @@ const passwordInput = document.querySelector("#password");
 const loginButton = document.querySelector("#login-button");
 const loginStatus = document.querySelector("#login-status");
 const logoutButton = document.querySelector("#logout-button");
+const loginTitle = document.querySelector("#login-title");
+const adminTitle = document.querySelector("#admin-title");
 
 const classInputs = [...document.querySelectorAll('input[name="content-class"]')];
 const dropZone = document.querySelector("#drop-zone");
@@ -69,16 +71,58 @@ const deletingIds = new Set();
 
 
 
-function showOnly(view) {
-  for (const node of [loginView, authorizedView, bootView]) {
-    node.classList.toggle("is-hidden", node !== view);
+const BOOT_REVEAL_DELAY_MS = 320;
+const VIEW_NODES = Object.freeze({
+  login: loginView,
+  authorized: authorizedView,
+  boot: bootView
+});
+
+function prefersReducedMotion() {
+  return typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function syncViewAccessibility(viewName) {
+  for (const [name, node] of Object.entries(VIEW_NODES)) {
+    const bootConcealed = name === "boot" && adminCard.dataset.bootVisible !== "true";
+    const active = name === viewName && !bootConcealed;
+    node.setAttribute("aria-hidden", active ? "false" : "true");
+    node.inert = !active;
+  }
+}
+
+function releaseShellTransitionSkip() {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => adminCard.classList.remove("skip-shell-morph"));
+  });
+}
+
+function setView(viewName, { morph = true } = {}) {
+  if (!VIEW_NODES[viewName]) throw new Error(`Unknown admin view: ${viewName}`);
+
+  if (!morph || prefersReducedMotion()) {
+    adminCard.classList.add("skip-shell-morph");
   }
 
-  const viewName =
-    view === authorizedView ? "authorized" :
-    view === loginView ? "login" :
-    "boot";
   adminCard.dataset.view = viewName;
+  syncViewAccessibility(viewName);
+
+  if (adminCard.classList.contains("skip-shell-morph")) {
+    releaseShellTransitionSkip();
+  }
+}
+
+function setBootVisible(value) {
+  adminCard.dataset.bootVisible = value ? "true" : "false";
+  syncViewAccessibility(adminCard.dataset.view || "boot");
+}
+
+function focusViewTarget(target) {
+  if (!target || typeof target.focus !== "function") return;
+  window.requestAnimationFrame(() => {
+    target.focus({ preventScroll: true });
+  });
 }
 
 function setAuthBusy(value) {
@@ -310,7 +354,7 @@ async function handleDelete(imageId) {
 }
 
 
-function showLogin(message = "") {
+function showLogin(message = "", { morph = true, focus = true } = {}) {
   currentSession = null;
   inventoryRows = [];
   deletingIds.clear();
@@ -319,20 +363,24 @@ function showLogin(message = "") {
   setAuthBusy(false);
   setUploadBusy(false);
   renderInventory();
-  showOnly(loginView);
+  setBootVisible(false);
+  setView("login", { morph });
+  if (focus) focusViewTarget(message ? loginTitle : emailInput);
 }
 
-function showAuthorized(session) {
+function showAuthorized(session, { morph = true, focus = false } = {}) {
   currentSession = session;
   loginStatus.textContent = "";
   setAuthBusy(false);
-  showOnly(authorizedView);
+  setBootVisible(false);
+  setView("authorized", { morph });
+  if (focus) focusViewTarget(adminTitle);
 }
 
-async function establishAuthorizedSession(session) {
+async function establishAuthorizedSession(session, options = {}) {
   const authorized = await authorizeAdminSession({ session });
   saveAdminSession(authorized);
-  showAuthorized(authorized);
+  showAuthorized(authorized, options);
   void refreshInventory();
   return authorized;
 }
@@ -582,7 +630,7 @@ form.addEventListener("submit", async (event) => {
       password: passwordInput.value
     });
 
-    await establishAuthorizedSession(signedInSession);
+    await establishAuthorizedSession(signedInSession, { morph: true, focus: true });
   } catch (error) {
     clearAdminSession();
 
@@ -663,18 +711,34 @@ async function bootstrap() {
   const saved = loadAdminSession();
 
   if (!saved) {
-    showLogin();
+    showLogin("", { morph: false, focus: true });
     return;
   }
 
   setAuthBusy(true);
-  showOnly(bootView);
+  setBootVisible(false);
+  setView("boot", { morph: false });
+
+  let bootWasRevealed = false;
+  const revealTimer = window.setTimeout(() => {
+    bootWasRevealed = true;
+    setBootVisible(true);
+  }, BOOT_REVEAL_DELAY_MS);
 
   try {
-    await establishAuthorizedSession(saved);
+    await establishAuthorizedSession(saved, {
+      morph: bootWasRevealed,
+      focus: false
+    });
   } catch {
     clearAdminSession();
-    showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+    showLogin("Sesja administratora wygasła. Zaloguj się ponownie.", {
+      morph: bootWasRevealed,
+      focus: true
+    });
+  } finally {
+    window.clearTimeout(revealTimer);
+    setBootVisible(false);
   }
 }
 

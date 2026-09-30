@@ -11,10 +11,10 @@
 </head>
 <body>
   <main class="admin-shell">
-    <section class="admin-card" id="admin-card" data-view="boot">
-      <section id="login-view" class="login-view is-hidden" aria-labelledby="login-title">
+    <section class="admin-card" id="admin-card" data-view="boot" data-boot-visible="false">
+      <section id="login-view" class="login-view admin-view" aria-labelledby="login-title" aria-hidden="true" inert>
         <header class="login-header">
-          <h1 id="login-title">Panel administratora</h1>
+          <h1 id="login-title" tabindex="-1">Panel administratora</h1>
           <p class="admin-copy">Zaloguj się kontem administratora.</p>
         </header>
 
@@ -32,9 +32,9 @@
         </form>
       </section>
 
-      <section id="authorized-view" class="authorized-view is-hidden" aria-labelledby="admin-title">
+      <section id="authorized-view" class="authorized-view admin-view" aria-labelledby="admin-title" aria-hidden="true" inert>
         <header class="admin-header">
-          <h1 id="admin-title">Panel administratora</h1>
+          <h1 id="admin-title" tabindex="-1">Panel administratora</h1>
           <button class="admin-secondary-button compact-button logout-button" id="logout-button" type="button">Wyloguj</button>
         </header>
 
@@ -102,7 +102,7 @@
         </div>
       </section>
 
-      <section id="boot-view" class="boot-state" aria-live="polite">
+      <section id="boot-view" class="boot-state admin-view" aria-live="polite" aria-hidden="true" inert>
         <span class="spinner" aria-hidden="true"></span>
         <p>Sprawdzanie sesji…</p>
       </section>
