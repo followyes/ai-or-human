@@ -52,7 +52,7 @@ const uploadQueue = document.querySelector("#upload-queue");
 
 const inventorySelectButton = document.querySelector("#inventory-select");
 const inventorySelectionActions = document.querySelector("#inventory-selection-actions");
-const inventorySelectVisibleButton = document.querySelector("#inventory-select-visible");
+const inventorySelectAllButton = document.querySelector("#inventory-select-all");
 const inventorySelectionCancelButton = document.querySelector("#inventory-selection-cancel");
 const inventoryDeleteSelectedButton = document.querySelector("#inventory-delete-selected");
 const inventoryStatus = document.querySelector("#inventory-status");
@@ -147,7 +147,7 @@ function syncBusyControls() {
 
   logoutButton.disabled = authBusy || contentInteractionBusy;
   inventorySelectButton.disabled = contentInteractionBusy;
-  inventorySelectVisibleButton.disabled = contentInteractionBusy || filteredInventoryRows().length === 0;
+  inventorySelectAllButton.disabled = contentInteractionBusy || filteredInventoryRows().length === 0;
   inventorySelectionCancelButton.disabled = contentMutationBusy;
   inventoryDeleteSelectedButton.disabled =
     contentInteractionBusy || selectedImageIds.size === 0;
@@ -1043,7 +1043,7 @@ inventorySelectButton.addEventListener("click", () => {
   renderInventory();
 });
 
-inventorySelectVisibleButton.addEventListener("click", () => {
+inventorySelectAllButton.addEventListener("click", () => {
   if (!selectionMode || uploadBusy || deleteBusy || inventoryBusy) return;
   selectedImageIds.clear();
   for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);

@@ -2049,6 +2049,10 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
 
 assert.ok(!html.toLowerCase().includes("/admin"), "public page must not link to /admin");
 assert.ok(!html.includes("Panel administratora"), "public page must not expose admin UI");
+assert.ok(/#game-image\s*\{[\s\S]*?object-fit:\s*cover;[\s\S]*?object-position:\s*center center;/m.test(css),
+  "public game images must proportionally cover the card without letterboxing");
+assert.ok(!/#game-image\s*\{[\s\S]*?object-fit:\s*contain;/m.test(css),
+  "public game image card must not use contain letterboxing");
 assert.ok(adminHtml.includes('name="email"'));
 assert.ok(adminHtml.includes('name="password"'));
 assert.ok(adminHtml.includes('autocomplete="current-password"'));
@@ -2080,8 +2084,8 @@ assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('
   "manual Library refresh control must be removed from the Admin UI");
 assert.ok(adminHtml.includes('id="inventory-select"') && adminHtml.includes('>Zaznacz</button>'),
   "Admin Library must expose selection mode instead of manual refresh");
-assert.ok(adminHtml.includes('id="inventory-select-visible"') && adminHtml.includes('Zaznacz widoczne'),
-  "selection mode must support filter-scoped visible selection");
+assert.ok(adminHtml.includes('id="inventory-select-all"') && adminHtml.includes('Zaznacz wszystkie'),
+  "selection mode must expose truthful filter-scoped select-all copy");
 assert.ok(adminHtml.includes('id="inventory-delete-selected"') && adminHtml.includes('Usuń zaznaczone (0)'),
   "selection mode must expose one count-aware bulk delete action");
 assert.ok(adminHtml.indexOf('class="content-panel workspace-panel"') < adminHtml.indexOf('class="inventory-panel workspace-panel"'),
@@ -2151,7 +2155,7 @@ assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('const 
 assert.ok(adminJs.includes('logoutButton.disabled = authBusy || contentInteractionBusy'),
   "logout must be blocked while destructive/inventory mutation work is active");
 assert.ok(adminJs.includes('selectedImageIds.clear();') && adminJs.includes('for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);'),
-  "Zaznacz widoczne must select only rows from the active filter");
+  "Zaznacz wszystkie must select all rows from the active filter");
 assert.ok(adminJs.includes('if (nextFilter !== inventoryFilter) selectedImageIds.clear();'),
   "filter changes must clear hidden destructive selections");
 assert.ok(adminJs.includes('async function handleBulkDelete()'),
@@ -2178,6 +2182,12 @@ assert.ok(!bulkDeleteSource.includes('handleDelete('),
   "bulk delete must not call the single-delete UI handler N times");
 assert.ok(adminCss.includes('.inventory-card.is-selected') && adminCss.includes('.inventory-select-control'),
   "selection mode must expose a visible non-color-only selected state");
+assert.ok(/\.inventory-card\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--danger\)/m.test(adminCss),
+  "selected cards must use the destructive red selection border");
+assert.ok(/\.inventory-card\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(163, 51, 59, 0\.24\)/m.test(adminCss),
+  "selected cards must receive a full-card translucent red overlay");
+assert.ok(/\.inventory-card\.is-selected \.inventory-select-control\s*\{[\s\S]*?background:\s*var\(--danger\)/m.test(adminCss),
+  "selected-card check control must use the destructive red treatment");
 assert.ok(adminJs.includes('card.setAttribute("aria-selected", selected ? "true" : "false")') &&
   adminJs.includes('event.key === "Enter" || event.key === " "'),
   "selection mode must expose explicit selection state and keyboard card toggling");
@@ -2307,6 +2317,7 @@ console.log("Session selection 10/20/50 unique: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
+console.log("V1.5.9 public image cover + Admin destructive-selection UX: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");

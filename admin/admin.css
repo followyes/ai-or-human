@@ -658,13 +658,23 @@ h2 {
   cursor: pointer;
 }
 
-.inventory-card.is-selection-mode:hover {
+.inventory-card.is-selection-mode:hover:not(.is-selected) {
   border-color: var(--border-strong);
 }
 
 .inventory-card.is-selected {
-  border-color: rgba(32, 39, 45, 0.52);
-  box-shadow: inset 0 0 0 2px rgba(32, 39, 45, 0.14), 0 8px 22px rgba(23, 31, 38, 0.10);
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 2px rgba(163, 51, 59, 0.34), 0 8px 22px rgba(163, 51, 59, 0.16);
+}
+
+.inventory-card.is-selected::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  background: rgba(163, 51, 59, 0.24);
+  pointer-events: none;
 }
 
 .inventory-card.is-deleting {
@@ -765,8 +775,11 @@ h2 {
 }
 
 .inventory-card.is-selected .inventory-select-control {
-  border-color: var(--text);
-  background: var(--text);
+  z-index: 3;
+  border-color: #8d2730;
+  background: var(--danger);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(163, 51, 59, 0.30);
 }
 
 .inventory-select-control:disabled {
