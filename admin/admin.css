@@ -762,13 +762,32 @@ h2 {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
+  html { scroll-behavior: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) and (min-width: 981px) {
+  .admin-card {
+    transform: none;
+    transition:
+      width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-radius 190ms ease,
+      box-shadow 190ms ease,
+      opacity 140ms ease,
+      transform 140ms ease;
   }
 
-  .admin-view { transform: none !important; }
-  .admin-card { transform: none !important; }
+  .admin-view {
+    transform: none;
+    transition:
+      opacity 150ms ease,
+      transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 170ms;
+  }
+
+  .admin-card[data-view="login"] .login-view,
+  .admin-card[data-view="authorized"] .authorized-view,
+  .admin-card[data-view="boot"][data-boot-visible="true"] .boot-state {
+    transition-delay: 40ms, 20ms, 0s;
+  }
 }

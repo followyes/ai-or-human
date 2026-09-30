@@ -78,11 +78,6 @@ const VIEW_NODES = Object.freeze({
   boot: bootView
 });
 
-function prefersReducedMotion() {
-  return typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 function syncViewAccessibility(viewName) {
   for (const [name, node] of Object.entries(VIEW_NODES)) {
     const bootConcealed = name === "boot" && adminCard.dataset.bootVisible !== "true";
@@ -101,7 +96,7 @@ function releaseShellTransitionSkip() {
 function setView(viewName, { morph = true } = {}) {
   if (!VIEW_NODES[viewName]) throw new Error(`Unknown admin view: ${viewName}`);
 
-  if (!morph || prefersReducedMotion()) {
+  if (!morph) {
     adminCard.classList.add("skip-shell-morph");
   }
 

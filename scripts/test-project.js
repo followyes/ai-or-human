@@ -2026,15 +2026,32 @@ assert.ok(adminJs.includes("BOOT_REVEAL_DELAY_MS = 320"), "session bootstrap mus
 assert.ok(adminJs.includes("setBootVisible(false)"), "bootstrap presentation must support silent concealment");
 assert.ok(adminJs.includes("window.setTimeout"), "slow session verification must still expose a bounded loading state");
 assert.ok(adminJs.includes("node.inert = !active"), "inactive auth views must be removed from keyboard interaction");
-assert.ok(adminJs.includes("prefersReducedMotion"), "auth transition JS must respect reduced-motion preference");
+assert.ok(!adminJs.includes("prefersReducedMotion"),
+  "reduced-motion preference must not route Admin auth transitions into the no-morph path");
+assert.ok(/if \(!morph\)\s*\{\s*adminCard\.classList\.add\("skip-shell-morph"\);/s.test(adminJs),
+  "morph:false must remain the sole switch for skipping shell geometry transitions");
 assert.ok(adminJs.includes("skip-shell-morph"), "fast bootstrap must be able to skip login-style shell morphing");
 assert.ok(adminJs.includes('establishAuthorizedSession(signedInSession, { morph: true, focus: true })'),
   "successful manual login must enter the authorized workspace through the morph path");
-assert.ok(adminCss.includes('width 520ms cubic-bezier(0.22, 1, 0.36, 1)'), "desktop shell expansion must be animated");
+assert.ok(adminJs.includes('showLogin("", { morph: false, focus: true })'),
+  "initial no-session bootstrap must remain a no-morph setup path");
+assert.ok(adminJs.includes("morph: bootWasRevealed"),
+  "saved-session bootstrap must only morph after the delayed boot state was actually revealed");
+assert.ok(adminCss.includes('width 520ms cubic-bezier(0.22, 1, 0.36, 1)'), "desktop shell expansion must keep the accepted normal timing");
 assert.ok(adminCss.includes('.admin-view {') && adminCss.includes('visibility: hidden'),
   "desktop auth views must cross-fade without relying on display:none");
 assert.ok(adminCss.includes('.admin-card.skip-shell-morph'), "bootstrap needs an explicit no-morph shell path");
-assert.ok(adminCss.includes('@media (prefers-reduced-motion: reduce)'), "reduced-motion CSS fallback must remain present");
+assert.ok(adminCss.includes('@media (prefers-reduced-motion: reduce) and (min-width: 981px)'),
+  "desktop reduced-motion must own a shortened shell/view profile without changing the stacked layout");
+assert.ok(adminCss.includes('width 240ms cubic-bezier(0.22, 1, 0.36, 1)') &&
+  adminCss.includes('height 240ms cubic-bezier(0.22, 1, 0.36, 1)'),
+  "reduced-motion desktop must retain a visible positive shell morph");
+assert.ok(adminCss.includes('opacity 150ms ease'),
+  "reduced-motion desktop must retain a visible shortened auth-view fade");
+assert.ok(!adminCss.includes('transition-duration: 0.01ms !important'),
+  "Admin reduced-motion must not globally collapse all transitions to an imperceptible duration");
+assert.ok(/@media \(max-width: 980px\)[\s\S]*?\.admin-view\s*\{[\s\S]*?transition:\s*none;/m.test(adminCss),
+  "<=980px stacked layout must retain its existing transition:none contract");
 assert.ok(!adminCss.includes('.login-view { width: 100%; }'),
   "desktop login view must not fight absolute left/right inset with width:100%");
 assert.ok(!adminHtml.includes('id="inventory-optimize"'),
