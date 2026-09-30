@@ -2076,6 +2076,14 @@ assert.ok(adminHtml.includes('id="storage-usage-percent"'), "Admin Library must 
 assert.ok(adminHtml.includes('id="storage-meter"') && adminHtml.includes('role="progressbar"'),
   "Admin Library must expose an accessible Storage capacity bar");
 assert.ok(adminHtml.includes('id="storage-remaining"'), "Admin Library must expose approximate remaining capacity");
+assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('>Odśwież</button>'),
+  "manual Library refresh control must be removed from the Admin UI");
+assert.ok(adminHtml.includes('id="inventory-select"') && adminHtml.includes('>Zaznacz</button>'),
+  "Admin Library must expose selection mode instead of manual refresh");
+assert.ok(adminHtml.includes('id="inventory-select-visible"') && adminHtml.includes('Zaznacz widoczne'),
+  "selection mode must support filter-scoped visible selection");
+assert.ok(adminHtml.includes('id="inventory-delete-selected"') && adminHtml.includes('Usuń zaznaczone (0)'),
+  "selection mode must expose one count-aware bulk delete action");
 assert.ok(adminHtml.indexOf('class="content-panel workspace-panel"') < adminHtml.indexOf('class="inventory-panel workspace-panel"'),
   "desktop DOM order must keep upload before library");
 assert.ok(adminHtml.includes('class="admin-workspace"'), "authorized admin must use a dedicated workspace container");
@@ -2137,7 +2145,44 @@ assert.ok(adminJs.includes('storageBytesAdded: prepared.output.size + inventoryP
 assert.ok(adminJs.includes('applyStorageUsageDelta(result?.storageBytesAdded)'),
   "capacity bar must move file-by-file only after successful upload completion");
 assert.ok(adminJs.includes('await refreshStorageUsage({ force: true })'),
-  "upload/delete/manual refresh flows need authoritative Storage reconciliation");
+  "upload/delete flows need authoritative Storage reconciliation");
+assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('const contentMutationBusy = uploadBusy || deleteBusy'),
+  "upload and delete must share one mutation lock");
+assert.ok(adminJs.includes('logoutButton.disabled = authBusy || contentInteractionBusy'),
+  "logout must be blocked while destructive/inventory mutation work is active");
+assert.ok(adminJs.includes('selectedImageIds.clear();') && adminJs.includes('for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);'),
+  "Zaznacz widoczne must select only rows from the active filter");
+assert.ok(adminJs.includes('if (nextFilter !== inventoryFilter) selectedImageIds.clear();'),
+  "filter changes must clear hidden destructive selections");
+assert.ok(adminJs.includes('async function handleBulkDelete()'),
+  "Admin Library must own an explicit bulk-delete controller");
+const bulkDeleteSource = adminJs.slice(
+  adminJs.indexOf('async function handleBulkDelete()'),
+  adminJs.indexOf('function showLogin', adminJs.indexOf('async function handleBulkDelete()'))
+);
+assert.equal((bulkDeleteSource.match(/window\.confirm\(/g) || []).length, 1,
+  "bulk delete must ask for one batch confirmation only");
+assert.ok(bulkDeleteSource.includes('for (let index = 0; index < selectedRows.length; index += 1)'),
+  "bulk delete must process selected rows sequentially");
+assert.ok(bulkDeleteSource.includes('await refreshCurrentSessionForMutation()'),
+  "bulk delete must refresh session freshness before each destructive item");
+assert.ok(bulkDeleteSource.includes('await deleteGameImage({'),
+  "bulk delete must reuse the hardened single-image delete primitive");
+assert.ok(/if \(isSessionMutationError\(error\)\) \{[\s\S]*?break;[\s\S]*?\}\s*failedIds\.add\(image\.id\);/m.test(bulkDeleteSource),
+  "ordinary item failures must continue while only auth/session loss aborts the remaining batch");
+assert.equal((bulkDeleteSource.match(/refreshInventory\(\{ quiet: true, refreshStorage: false \}\)/g) || []).length, 1,
+  "bulk delete must perform exactly one final authoritative inventory refresh");
+assert.equal((bulkDeleteSource.match(/refreshStorageUsage\(\{ force: true \}\)/g) || []).length, 1,
+  "bulk delete must perform exactly one final authoritative Storage reconciliation");
+assert.ok(!bulkDeleteSource.includes('handleDelete('),
+  "bulk delete must not call the single-delete UI handler N times");
+assert.ok(adminCss.includes('.inventory-card.is-selected') && adminCss.includes('.inventory-select-control'),
+  "selection mode must expose a visible non-color-only selected state");
+assert.ok(adminJs.includes('card.setAttribute("aria-selected", selected ? "true" : "false")') &&
+  adminJs.includes('event.key === "Enter" || event.key === " "'),
+  "selection mode must expose explicit selection state and keyboard card toggling");
+assert.ok(!adminJs.includes('inventoryRefreshButton') && !adminJs.includes('#inventory-refresh'),
+  "manual refresh listener/query must be removed, not merely hidden");
 assert.ok(adminContent.includes('rpc/get_admin_storage_usage'),
   "Storage usage must come from the protected RPC");
 assert.ok(adminCss.includes('.storage-meter-fill') && adminCss.includes('transition: width 260ms'),

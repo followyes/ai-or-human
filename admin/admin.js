@@ -50,7 +50,11 @@ const queueHeader = document.querySelector("#queue-header");
 const queueSummary = document.querySelector("#queue-summary");
 const uploadQueue = document.querySelector("#upload-queue");
 
-const inventoryRefreshButton = document.querySelector("#inventory-refresh");
+const inventorySelectButton = document.querySelector("#inventory-select");
+const inventorySelectionActions = document.querySelector("#inventory-selection-actions");
+const inventorySelectVisibleButton = document.querySelector("#inventory-select-visible");
+const inventorySelectionCancelButton = document.querySelector("#inventory-selection-cancel");
+const inventoryDeleteSelectedButton = document.querySelector("#inventory-delete-selected");
 const inventoryStatus = document.querySelector("#inventory-status");
 const inventoryGrid = document.querySelector("#inventory-grid");
 const inventoryFilterButtons = [...document.querySelectorAll("[data-filter]")];
@@ -67,6 +71,7 @@ const storageMeterFill = document.querySelector("#storage-meter-fill");
 let currentSession = null;
 let authBusy = false;
 let uploadBusy = false;
+let deleteBusy = false;
 let completedCount = 0;
 let duplicateCount = 0;
 let failedCount = 0;
@@ -76,6 +81,8 @@ let inventoryFilter = "all";
 let inventoryBusy = false;
 let storageUsage = null;
 let storageUsagePromise = null;
+let selectionMode = false;
+const selectedImageIds = new Set();
 const deletingIds = new Set();
 
 
@@ -133,12 +140,18 @@ function syncBusyControls() {
   emailInput.disabled = authBusy;
   passwordInput.disabled = authBusy;
 
-  const contentMutationBusy = uploadBusy;
-  dropZone.disabled = contentMutationBusy;
-  for (const input of classInputs) input.disabled = contentMutationBusy;
+  const contentMutationBusy = uploadBusy || deleteBusy;
+  const contentInteractionBusy = contentMutationBusy || inventoryBusy;
+  dropZone.disabled = contentInteractionBusy;
+  for (const input of classInputs) input.disabled = contentInteractionBusy;
 
-  logoutButton.disabled = authBusy || contentMutationBusy;
-  inventoryRefreshButton.disabled = inventoryBusy || contentMutationBusy;
+  logoutButton.disabled = authBusy || contentInteractionBusy;
+  inventorySelectButton.disabled = contentInteractionBusy;
+  inventorySelectVisibleButton.disabled = contentInteractionBusy || filteredInventoryRows().length === 0;
+  inventorySelectionCancelButton.disabled = contentMutationBusy;
+  inventoryDeleteSelectedButton.disabled =
+    contentInteractionBusy || selectedImageIds.size === 0;
+  for (const button of inventoryFilterButtons) button.disabled = deleteBusy || inventoryBusy;
 }
 
 function setAuthBusy(value) {
@@ -148,6 +161,11 @@ function setAuthBusy(value) {
 
 function setUploadBusy(value) {
   uploadBusy = Boolean(value);
+  syncBusyControls();
+}
+
+function setDeleteBusy(value) {
+  deleteBusy = Boolean(value);
   syncBusyControls();
 }
 
@@ -324,6 +342,41 @@ function filteredInventoryRows() {
   return inventoryRows.filter((row) => row.content_class === inventoryFilter);
 }
 
+function syncSelectionControls() {
+  inventorySelectButton.classList.toggle("is-hidden", selectionMode);
+  inventorySelectionActions.classList.toggle("is-hidden", !selectionMode);
+  inventoryDeleteSelectedButton.textContent = `Usuń zaznaczone (${selectedImageIds.size})`;
+  syncBusyControls();
+}
+
+function clearInventorySelection({ exitMode = false } = {}) {
+  selectedImageIds.clear();
+  if (exitMode) selectionMode = false;
+  syncSelectionControls();
+}
+
+function toggleInventorySelection(imageId) {
+  if (!selectionMode || deleteBusy || inventoryBusy) return;
+
+  if (selectedImageIds.has(imageId)) selectedImageIds.delete(imageId);
+  else selectedImageIds.add(imageId);
+
+  renderInventory();
+}
+
+function setCardDeletingState(imageId, value) {
+  const card = [...inventoryGrid.querySelectorAll(".inventory-card")]
+    .find((node) => node.dataset.imageId === imageId);
+  if (!card) return;
+  card.classList.toggle("is-deleting", Boolean(value));
+}
+
+function isSessionMutationError(error) {
+  if (error instanceof AdminAuthError) return true;
+  return error instanceof AdminContentError &&
+    (error.code === "CONTENT_SESSION_MISSING" || error.status === 401 || error.status === 403);
+}
+
 function setInventoryStatus(message = "", { error = false } = {}) {
   inventoryStatus.textContent = message;
   inventoryStatus.classList.toggle("is-error", Boolean(error));
@@ -332,6 +385,15 @@ function setInventoryStatus(message = "", { error = false } = {}) {
 function renderInventory() {
   updateInventoryStats();
   inventoryGrid.replaceChildren();
+  inventoryGrid.classList.toggle("is-selection-mode", selectionMode);
+
+  if (selectionMode) {
+    inventoryGrid.setAttribute("role", "listbox");
+    inventoryGrid.setAttribute("aria-multiselectable", "true");
+  } else {
+    inventoryGrid.removeAttribute("role");
+    inventoryGrid.removeAttribute("aria-multiselectable");
+  }
 
   for (const button of inventoryFilterButtons) {
     button.classList.toggle("is-active", button.dataset.filter === inventoryFilter);
@@ -346,14 +408,25 @@ function renderInventory() {
       ? "Brak obrazów w tej kategorii."
       : "Biblioteka jest pusta.";
     inventoryGrid.append(empty);
+    syncSelectionControls();
     return;
   }
 
   for (const row of rows) {
     const card = document.createElement("article");
+    const selected = selectedImageIds.has(row.id);
     card.className = "inventory-card";
     card.dataset.imageId = row.id;
     card.classList.toggle("is-deleting", deletingIds.has(row.id));
+    card.classList.toggle("is-selection-mode", selectionMode);
+    card.classList.toggle("is-selected", selected);
+
+    if (selectionMode) {
+      card.tabIndex = 0;
+      card.setAttribute("role", "option");
+      card.setAttribute("aria-selected", selected ? "true" : "false");
+      card.setAttribute("aria-label", `${selected ? "Odznacz" : "Zaznacz"} ${row.original_filename || "obraz"}`);
+    }
 
     const imageWrap = document.createElement("div");
     imageWrap.className = "inventory-image-wrap";
@@ -374,13 +447,23 @@ function renderInventory() {
     });
     imageWrap.append(image);
 
-    const deleteButton = document.createElement("button");
-    deleteButton.className = "inventory-delete";
-    deleteButton.type = "button";
-    deleteButton.textContent = "×";
-    deleteButton.dataset.deleteId = row.id;
-    deleteButton.setAttribute("aria-label", `Usuń ${row.original_filename || "obraz"}`);
-    deleteButton.disabled = deletingIds.has(row.id) || uploadBusy;
+    const actionButton = document.createElement("button");
+    actionButton.type = "button";
+
+    if (selectionMode) {
+      actionButton.className = "inventory-select-control";
+      actionButton.dataset.selectId = row.id;
+      actionButton.textContent = selected ? "✓" : "";
+      actionButton.setAttribute("aria-label", `${selected ? "Odznacz" : "Zaznacz"} ${row.original_filename || "obraz"}`);
+      actionButton.setAttribute("aria-pressed", selected ? "true" : "false");
+      actionButton.disabled = deleteBusy;
+    } else {
+      actionButton.className = "inventory-delete";
+      actionButton.textContent = "×";
+      actionButton.dataset.deleteId = row.id;
+      actionButton.setAttribute("aria-label", `Usuń ${row.original_filename || "obraz"}`);
+      actionButton.disabled = deletingIds.has(row.id) || uploadBusy || deleteBusy || inventoryBusy;
+    }
 
     const body = document.createElement("div");
     body.className = "inventory-body";
@@ -404,9 +487,11 @@ function renderInventory() {
       `${row.width}×${row.height} · ${formatBytes(row.file_size_bytes)} · ${formatInventoryDate(row.created_at)}`;
 
     body.append(meta, name, detail);
-    card.append(imageWrap, deleteButton, body);
+    card.append(imageWrap, actionButton, body);
     inventoryGrid.append(card);
   }
+
+  syncSelectionControls();
 }
 
 async function refreshInventory({ quiet = false, refreshStorage = true } = {}) {
@@ -452,7 +537,7 @@ async function refreshInventory({ quiet = false, refreshStorage = true } = {}) {
 }
 
 async function handleDelete(imageId) {
-  if (deletingIds.has(imageId) || uploadBusy) return;
+  if (deletingIds.has(imageId) || uploadBusy || deleteBusy || inventoryBusy) return;
 
   const image = inventoryRows.find((row) => row.id === imageId);
   if (!image) return;
@@ -463,9 +548,13 @@ async function handleDelete(imageId) {
   if (!accepted) return;
 
   deletingIds.add(imageId);
-  syncBusyControls();
+  setDeleteBusy(true);
   renderInventory();
   setInventoryStatus(`Usuwanie ${image.original_filename}…`);
+
+  let finalMessage = "";
+  let finalError = false;
+  let sessionFailed = false;
 
   try {
     currentSession = await authorizeAdminSession({ session: currentSession });
@@ -477,17 +566,112 @@ async function handleDelete(imageId) {
     });
 
     inventoryRows = inventoryRows.filter((row) => row.id !== imageId);
-    setInventoryStatus(`Usunięto ${image.original_filename}.`);
+    finalMessage = `Usunięto ${image.original_filename}.`;
   } catch (error) {
-    setInventoryStatus(
-      error instanceof Error ? error.message : "Nie udało się usunąć obrazu.",
-      { error: true }
-    );
+    if (isSessionMutationError(error)) {
+      sessionFailed = true;
+      clearAdminSession();
+      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+    } else {
+      finalMessage = error instanceof Error ? error.message : "Nie udało się usunąć obrazu.";
+      finalError = true;
+    }
   } finally {
     deletingIds.delete(imageId);
-    syncBusyControls();
+
+    if (!sessionFailed && currentSession) {
+      await refreshInventory({ quiet: true, refreshStorage: false });
+      if (currentSession) await refreshStorageUsage({ force: true });
+    }
+
+    setDeleteBusy(false);
     renderInventory();
-    await refreshInventory({ quiet: true });
+    if (!sessionFailed && finalMessage) setInventoryStatus(finalMessage, { error: finalError });
+  }
+}
+
+async function handleBulkDelete() {
+  if (uploadBusy || deleteBusy || inventoryBusy || selectedImageIds.size === 0) return;
+
+  const selectedRows = inventoryRows.filter((row) => selectedImageIds.has(row.id));
+  if (!selectedRows.length) {
+    clearInventorySelection({ exitMode: true });
+    renderInventory();
+    return;
+  }
+
+  const accepted = window.confirm(
+    `Usunąć ${selectedRows.length} zaznaczonych obrazów?\n\nObrazy zostaną trwale usunięte z biblioteki.`
+  );
+  if (!accepted) return;
+
+  setDeleteBusy(true);
+  let deletedCount = 0;
+  const failedIds = new Set();
+  let sessionFailed = false;
+
+  try {
+    for (let index = 0; index < selectedRows.length; index += 1) {
+      const image = selectedRows[index];
+      setInventoryStatus(`Usuwanie ${index + 1}/${selectedRows.length}…`);
+      deletingIds.add(image.id);
+      setCardDeletingState(image.id, true);
+
+      try {
+        await refreshCurrentSessionForMutation();
+
+        await deleteGameImage({
+          session: currentSession,
+          image
+        });
+
+        deletedCount += 1;
+        deletingIds.delete(image.id);
+        selectedImageIds.delete(image.id);
+        inventoryRows = inventoryRows.filter((row) => row.id !== image.id);
+        const card = [...inventoryGrid.querySelectorAll(".inventory-card")]
+          .find((node) => node.dataset.imageId === image.id);
+        card?.remove();
+        updateInventoryStats();
+        syncSelectionControls();
+      } catch (error) {
+        deletingIds.delete(image.id);
+        setCardDeletingState(image.id, false);
+
+        if (isSessionMutationError(error)) {
+          sessionFailed = true;
+          break;
+        }
+
+        failedIds.add(image.id);
+      }
+    }
+
+    if (sessionFailed) {
+      clearAdminSession();
+      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+      return;
+    }
+
+    selectedImageIds.clear();
+    for (const imageId of failedIds) selectedImageIds.add(imageId);
+    selectionMode = failedIds.size > 0;
+
+    await refreshInventory({ quiet: true, refreshStorage: false });
+    if (currentSession) await refreshStorageUsage({ force: true });
+
+    if (failedIds.size > 0) {
+      setInventoryStatus(
+        `Usunięto ${deletedCount} z ${selectedRows.length}. Nie udało się usunąć ${failedIds.size}.`,
+        { error: true }
+      );
+    } else {
+      setInventoryStatus(`Usunięto ${deletedCount} ${deletedCount === 1 ? "obraz" : "obrazów"}.`);
+    }
+  } finally {
+    deletingIds.clear();
+    setDeleteBusy(false);
+    renderInventory();
   }
 }
 
@@ -495,13 +679,16 @@ async function handleDelete(imageId) {
 function showLogin(message = "", { morph = true, focus = true } = {}) {
   currentSession = null;
   inventoryRows = [];
+  selectionMode = false;
+  selectedImageIds.clear();
   deletingIds.clear();
+  deleteBusy = false;
   clearStorageUsage();
   passwordInput.value = "";
   loginStatus.textContent = message;
   setAuthBusy(false);
   setUploadBusy(false);
-    renderInventory();
+  renderInventory();
   setBootVisible(false);
   setView("login", { morph });
   if (focus) focusViewTarget(message ? loginTitle : emailInput);
@@ -691,7 +878,7 @@ async function processFile(file, contentClass, queueItem) {
 }
 
 async function handleFiles(fileList) {
-  if (uploadBusy) return;
+  if (uploadBusy || deleteBusy || inventoryBusy) return;
 
   const files = [...(fileList || [])].filter((file) => file && file.size > 0);
   if (!files.length) return;
@@ -806,7 +993,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy) return;
+  if (authBusy || uploadBusy || deleteBusy || inventoryBusy) return;
 
   const session = currentSession;
   setAuthBusy(true);
@@ -822,7 +1009,7 @@ logoutButton.addEventListener("click", async () => {
 });
 
 dropZone.addEventListener("click", () => {
-  if (!uploadBusy) fileInput.click();
+  if (!uploadBusy && !deleteBusy && !inventoryBusy) fileInput.click();
 });
 
 fileInput.addEventListener("change", () => handleFiles(fileInput.files));
@@ -831,7 +1018,7 @@ for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!uploadBusy) dropZone.classList.add("is-dragover");
+    if (!uploadBusy && !deleteBusy && !inventoryBusy) dropZone.classList.add("is-dragover");
   });
 }
 
@@ -844,25 +1031,65 @@ for (const eventName of ["dragleave", "drop"]) {
 }
 
 dropZone.addEventListener("drop", (event) => {
-  if (!uploadBusy) handleFiles(event.dataTransfer?.files);
+  if (!uploadBusy && !deleteBusy && !inventoryBusy) handleFiles(event.dataTransfer?.files);
 });
 
 
-inventoryRefreshButton.addEventListener("click", () => {
-  void refreshInventory();
+inventorySelectButton.addEventListener("click", () => {
+  if (uploadBusy || deleteBusy || inventoryBusy) return;
+  selectionMode = true;
+  selectedImageIds.clear();
+  setInventoryStatus();
+  renderInventory();
+});
+
+inventorySelectVisibleButton.addEventListener("click", () => {
+  if (!selectionMode || uploadBusy || deleteBusy || inventoryBusy) return;
+  selectedImageIds.clear();
+  for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);
+  renderInventory();
+});
+
+inventorySelectionCancelButton.addEventListener("click", () => {
+  if (deleteBusy) return;
+  clearInventorySelection({ exitMode: true });
+  setInventoryStatus();
+  renderInventory();
+});
+
+inventoryDeleteSelectedButton.addEventListener("click", () => {
+  void handleBulkDelete();
 });
 
 for (const button of inventoryFilterButtons) {
   button.addEventListener("click", () => {
-    inventoryFilter = button.dataset.filter || "all";
+    if (deleteBusy || inventoryBusy) return;
+    const nextFilter = button.dataset.filter || "all";
+    if (nextFilter !== inventoryFilter) selectedImageIds.clear();
+    inventoryFilter = nextFilter;
     renderInventory();
   });
 }
 
 inventoryGrid.addEventListener("click", (event) => {
+  if (selectionMode) {
+    const card = event.target.closest("[data-image-id]");
+    if (!card) return;
+    toggleInventorySelection(card.dataset.imageId);
+    return;
+  }
+
   const button = event.target.closest("[data-delete-id]");
   if (!button) return;
   void handleDelete(button.dataset.deleteId);
+});
+
+inventoryGrid.addEventListener("keydown", (event) => {
+  if (!selectionMode || deleteBusy) return;
+  if (event.target?.classList?.contains("inventory-card") && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    toggleInventorySelection(event.target.dataset.imageId);
+  }
 });
 
 
