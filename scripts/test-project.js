@@ -2144,6 +2144,12 @@ assert.ok(adminCss.includes('.storage-meter-fill') && adminCss.includes('transit
   "Storage percentage bar must animate visible usage changes");
 assert.ok(adminCss.includes('.storage-meter.is-warning') && adminCss.includes('.storage-meter.is-critical'),
   "Storage meter must expose warning/critical visual states");
+assert.ok(/\.storage-meter-fill\s*\{[\s\S]*?background:\s*var\(--success\)/m.test(adminCss),
+  "Storage meter default fill must be green");
+assert.ok(adminJs.includes('if (percent >= 90) storageMeter.classList.add("is-critical")'),
+  "Storage meter must become critical at 90 percent");
+assert.ok(adminJs.includes('else if (percent >= 70) storageMeter.classList.add("is-warning")'),
+  "Storage meter must become warning at 70 percent");
 assert.ok(adminCss.includes('.inventory-toolbar'),
   "filters and Storage capacity meter must share a responsive Library toolbar");
 assert.ok(adminJs.includes('image.src = row.thumbnail_public_url || row.public_url'),

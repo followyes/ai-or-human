@@ -237,8 +237,8 @@ function renderStorageUsage() {
     `${formattedPercent}% wykorzystane, ${formatBytes(storageUsage.remainingBytes)} wolne`
   );
 
-  if (percent > 90) storageMeter.classList.add("is-critical");
-  else if (percent >= 80) storageMeter.classList.add("is-warning");
+  if (percent >= 90) storageMeter.classList.add("is-critical");
+  else if (percent >= 70) storageMeter.classList.add("is-warning");
 }
 
 function clearStorageUsage() {
