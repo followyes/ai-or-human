@@ -140,6 +140,44 @@ function buildRestUrl(projectUrl, table) {
   return new URL(`/rest/v1/${table}`, `${projectUrl}/`);
 }
 
+
+function normalizeStorageUsagePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new AdminContentError(
+      "STORAGE_USAGE_RESPONSE_INVALID",
+      "Supabase zwrócił nieprawidłowe dane wykorzystania Storage."
+    );
+  }
+
+  const usedBytes = Number(payload.used_bytes);
+  const quotaBytes = Number(payload.quota_bytes);
+  const remainingBytes = Number(payload.remaining_bytes);
+  const usagePercent = Number(payload.usage_percent);
+
+  if (
+    !Number.isFinite(usedBytes) ||
+    !Number.isFinite(quotaBytes) ||
+    !Number.isFinite(remainingBytes) ||
+    !Number.isFinite(usagePercent) ||
+    usedBytes < 0 ||
+    quotaBytes <= 0 ||
+    remainingBytes < 0 ||
+    usagePercent < 0
+  ) {
+    throw new AdminContentError(
+      "STORAGE_USAGE_RESPONSE_INVALID",
+      "Supabase zwrócił nieprawidłowe dane wykorzystania Storage."
+    );
+  }
+
+  return Object.freeze({
+    usedBytes: Math.round(usedBytes),
+    quotaBytes: Math.round(quotaBytes),
+    remainingBytes: Math.round(remainingBytes),
+    usagePercent
+  });
+}
+
 function encodeStoragePath(path) {
   return path
     .split("/")
@@ -293,6 +331,28 @@ export async function assertImageHashAvailable({
     duplicateMessage(existing, requestedClass, kind),
     { details: existing }
   );
+}
+
+export async function getAdminStorageUsage({
+  session,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "rpc/get_admin_storage_usage");
+
+  const payload = await request(url, {
+    fetchImpl,
+    method: "POST",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json"
+    }),
+    body: "{}"
+  });
+
+  return normalizeStorageUsagePayload(payload);
 }
 
 export async function listGameImages({

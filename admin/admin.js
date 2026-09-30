@@ -12,6 +12,7 @@ import {
   AdminContentError,
   deleteGameImage,
   findImageByHash,
+  getAdminStorageUsage,
   listGameImages,
   registerPreparedImage
 } from "../js/admin-content.js";
@@ -56,6 +57,11 @@ const inventoryFilterButtons = [...document.querySelectorAll("[data-filter]")];
 const countTotal = document.querySelector("#count-total");
 const countAi = document.querySelector("#count-ai");
 const countHuman = document.querySelector("#count-human");
+const storageUsageValue = document.querySelector("#storage-usage-value");
+const storageUsagePercent = document.querySelector("#storage-usage-percent");
+const storageRemaining = document.querySelector("#storage-remaining");
+const storageMeter = document.querySelector("#storage-meter");
+const storageMeterFill = document.querySelector("#storage-meter-fill");
 
 
 let currentSession = null;
@@ -68,6 +74,8 @@ let failedCount = 0;
 let inventoryRows = [];
 let inventoryFilter = "all";
 let inventoryBusy = false;
+let storageUsage = null;
+let storageUsagePromise = null;
 const deletingIds = new Set();
 
 
@@ -181,6 +189,120 @@ function isDuplicateError(error) {
     (error.code === "SOURCE_DUPLICATE" || error.code === "AVIF_DUPLICATE");
 }
 
+function buildStorageUsageState(usedBytes, quotaBytes) {
+  const used = Math.max(0, Math.round(Number(usedBytes) || 0));
+  const quota = Math.max(1, Math.round(Number(quotaBytes) || 0));
+  const remaining = Math.max(quota - used, 0);
+  const percentage = (used / quota) * 100;
+
+  return Object.freeze({
+    usedBytes: used,
+    quotaBytes: quota,
+    remainingBytes: remaining,
+    usagePercent: percentage
+  });
+}
+
+function renderStorageUsage() {
+  storageMeter.classList.remove("is-warning", "is-critical");
+
+  if (!storageUsage) {
+    storageUsageValue.textContent = "—";
+    storageUsagePercent.textContent = "—";
+    storageRemaining.textContent = "—";
+    storageMeterFill.style.width = "0%";
+    storageMeter.removeAttribute("aria-valuenow");
+    storageMeter.setAttribute("aria-valuetext", "Dane wykorzystania Storage są niedostępne");
+    return;
+  }
+
+  const percent = Math.max(0, storageUsage.usagePercent);
+  const clampedPercent = Math.min(percent, 100);
+  const formattedPercent = new Intl.NumberFormat("pl-PL", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(percent);
+
+  storageUsageValue.textContent =
+    `${formatBytes(storageUsage.usedBytes)} / ${formatBytes(storageUsage.quotaBytes)}`;
+  storageUsagePercent.textContent = `${formattedPercent}%`;
+  storageRemaining.textContent =
+    storageUsage.remainingBytes > 0
+      ? `≈${formatBytes(storageUsage.remainingBytes)} wolne`
+      : "Brak wolnego miejsca w limicie";
+  storageMeterFill.style.width = `${clampedPercent}%`;
+  storageMeter.setAttribute("aria-valuenow", String(Math.round(clampedPercent)));
+  storageMeter.setAttribute(
+    "aria-valuetext",
+    `${formattedPercent}% wykorzystane, ${formatBytes(storageUsage.remainingBytes)} wolne`
+  );
+
+  if (percent > 90) storageMeter.classList.add("is-critical");
+  else if (percent >= 80) storageMeter.classList.add("is-warning");
+}
+
+function clearStorageUsage() {
+  storageUsage = null;
+  renderStorageUsage();
+}
+
+function applyStorageUsageDelta(bytes) {
+  if (!storageUsage) return false;
+
+  const delta = Math.max(0, Math.round(Number(bytes) || 0));
+  if (!delta) return false;
+
+  storageUsage = buildStorageUsageState(
+    storageUsage.usedBytes + delta,
+    storageUsage.quotaBytes
+  );
+  renderStorageUsage();
+  return true;
+}
+
+async function refreshStorageUsage({ force = false } = {}) {
+  if (!currentSession) {
+    clearStorageUsage();
+    return false;
+  }
+
+  if (storageUsagePromise) {
+    await storageUsagePromise;
+    if (!force) return Boolean(storageUsage);
+  }
+
+  const run = (async () => {
+    try {
+      const usage = await getAdminStorageUsage({
+        session: currentSession
+      });
+      storageUsage = buildStorageUsageState(usage.usedBytes, usage.quotaBytes);
+      renderStorageUsage();
+      return true;
+    } catch (error) {
+      if (
+        error instanceof AdminContentError &&
+        (error.code === "CONTENT_SESSION_MISSING" || error.status === 401)
+      ) {
+        clearAdminSession();
+        showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+        return false;
+      }
+
+      clearStorageUsage();
+      return false;
+    }
+  })();
+
+  storageUsagePromise = run;
+
+  try {
+    return await run;
+  } finally {
+    if (storageUsagePromise === run) storageUsagePromise = null;
+  }
+}
+
 function formatInventoryDate(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "—";
@@ -287,7 +409,7 @@ function renderInventory() {
   }
 }
 
-async function refreshInventory({ quiet = false } = {}) {
+async function refreshInventory({ quiet = false, refreshStorage = true } = {}) {
   if (inventoryBusy || !currentSession) return false;
 
   inventoryBusy = true;
@@ -302,6 +424,11 @@ async function refreshInventory({ quiet = false } = {}) {
     inventoryRows = [...await listGameImages({ session: currentSession })];
     renderInventory();
     setInventoryStatus();
+
+    if (refreshStorage && currentSession) {
+      await refreshStorageUsage({ force: true });
+    }
+
     return true;
   } catch (error) {
     if (
@@ -321,7 +448,7 @@ async function refreshInventory({ quiet = false } = {}) {
   } finally {
     inventoryBusy = false;
     syncBusyControls();
-    }
+  }
 }
 
 async function handleDelete(imageId) {
@@ -369,6 +496,7 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
   currentSession = null;
   inventoryRows = [];
   deletingIds.clear();
+  clearStorageUsage();
   passwordInput.value = "";
   loginStatus.textContent = message;
   setAuthBusy(false);
@@ -555,7 +683,11 @@ async function processFile(file, contentClass, queueItem) {
     "done"
   );
 
-  return Object.freeze({ kind: "uploaded", row: result.row });
+  return Object.freeze({
+    kind: "uploaded",
+    row: result.row,
+    storageBytesAdded: prepared.output.size + inventoryPreview.blob.size
+  });
 }
 
 async function handleFiles(fileList) {
@@ -595,10 +727,18 @@ async function handleFiles(fileList) {
     currentSession = await authorizeAdminSession({ session: currentSession });
     saveAdminSession(currentSession);
 
+    // Start optimistic file-by-file movement only from an authoritative baseline.
+    // A meter failure must never block the uploader; in that case the final
+    // reconciliation can recover the UI after the batch.
+    if (!storageUsage) {
+      await refreshStorageUsage();
+    }
+
     const batchResult = await runSequentialUploadBatch(queueEntries, {
       processEntry: ({ file, queueItem }) => processFile(file, contentClass, queueItem),
-      onSuccess: () => {
+      onSuccess: ({ result }) => {
         completedCount += 1;
+        applyStorageUsageDelta(result?.storageBytesAdded);
         updateQueueSummary(files.length);
       },
       onFailure: ({ entry, error }) => {
@@ -625,8 +765,11 @@ async function handleFiles(fileList) {
     fileInput.value = "";
     updateQueueSummary(files.length);
 
-    if (completedCount > 0 && currentSession) {
-      await refreshInventory({ quiet: true });
+    if (currentSession) {
+      if (completedCount > 0) {
+        await refreshInventory({ quiet: true, refreshStorage: false });
+      }
+      await refreshStorageUsage({ force: true });
     }
   }
 }

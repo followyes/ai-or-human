@@ -86,16 +86,38 @@
               </div>
             </div>
 
-            <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
-              <button type="button" data-filter="all" class="is-active">
-                <span>WSZYSTKIE</span><strong id="count-total">0</strong>
-              </button>
-              <button type="button" data-filter="ai">
-                <span>AI</span><strong id="count-ai">0</strong>
-              </button>
-              <button type="button" data-filter="human">
-                <span>HUMAN</span><strong id="count-human">0</strong>
-              </button>
+            <div class="inventory-toolbar">
+              <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
+                <button type="button" data-filter="all" class="is-active">
+                  <span>WSZYSTKIE</span><strong id="count-total">0</strong>
+                </button>
+                <button type="button" data-filter="ai">
+                  <span>AI</span><strong id="count-ai">0</strong>
+                </button>
+                <button type="button" data-filter="human">
+                  <span>HUMAN</span><strong id="count-human">0</strong>
+                </button>
+              </div>
+
+              <div class="storage-capacity" aria-live="polite">
+                <div class="storage-capacity-heading">
+                  <span>Storage</span>
+                  <span id="storage-usage-value">—</span>
+                  <strong id="storage-usage-percent">—</strong>
+                </div>
+                <div
+                  class="storage-meter"
+                  id="storage-meter"
+                  role="progressbar"
+                  aria-label="Wykorzystanie Storage"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuetext="Dane wykorzystania Storage są niedostępne"
+                >
+                  <span class="storage-meter-fill" id="storage-meter-fill"></span>
+                </div>
+                <span class="storage-remaining" id="storage-remaining">—</span>
+              </div>
             </div>
 
             <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>

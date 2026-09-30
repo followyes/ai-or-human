@@ -47,6 +47,7 @@ import {
   createThumbnailStoragePath,
   deleteGameImage,
   findImageByHash,
+  getAdminStorageUsage,
   listGameImages,
   registerPreparedImage
 } from "../js/admin-content.js";
@@ -1304,6 +1305,7 @@ async function testAvifConversionContracts() {
   }
 
   assert.equal(formatBytes(1024), "1.0 KB");
+  assert.equal(formatBytes(1024 ** 3), "1.00 GB");
   assert.ok(AVIF_ENCODER_MODULE_URL.includes("@jsquash/avif@2.1.1"));
 
   const bad = new Blob([new Uint8Array([1])], { type: "text/plain" });
@@ -1311,6 +1313,69 @@ async function testAvifConversionContracts() {
   assert.throws(
     () => validateSourceFile(bad),
     (error) => error.code === "SOURCE_TYPE_UNSUPPORTED"
+  );
+}
+
+async function testAdminStorageUsageContract() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+  const session = { access_token: "admin-access-token" };
+
+  let requestCount = 0;
+  const usage = await getAdminStorageUsage({
+    session,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      requestCount += 1;
+      const url = new URL(String(input));
+      assert.equal(url.pathname, "/rest/v1/rpc/get_admin_storage_usage");
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.equal(options.headers.apikey, config.publishableKey);
+      assert.equal(options.headers["Content-Type"], "application/json");
+      assert.equal(options.body, "{}");
+      return makeJsonResponse({
+        used_bytes: 268435456,
+        quota_bytes: 1073741824,
+        remaining_bytes: 805306368,
+        usage_percent: 25
+      });
+    }
+  });
+
+  assert.equal(requestCount, 1);
+  assert.deepEqual(usage, {
+    usedBytes: 268435456,
+    quotaBytes: 1073741824,
+    remainingBytes: 805306368,
+    usagePercent: 25
+  });
+
+  await assert.rejects(
+    () => getAdminStorageUsage({
+      session,
+      config,
+      fetchImpl: async () => makeJsonResponse({
+        used_bytes: "broken",
+        quota_bytes: 1073741824,
+        remaining_bytes: 0,
+        usage_percent: 0
+      })
+    }),
+    (error) => error instanceof AdminContentError && error.code === "STORAGE_USAGE_RESPONSE_INVALID"
+  );
+
+  await assert.rejects(
+    () => getAdminStorageUsage({
+      session: null,
+      config,
+      fetchImpl: async () => {
+        throw new Error("must not fetch");
+      }
+    }),
+    (error) => error instanceof AdminContentError && error.code === "CONTENT_SESSION_MISSING"
   );
 }
 
@@ -2006,6 +2071,11 @@ assert.ok(!adminHtml.includes('id="count-active"'), "separate active counter mus
 assert.ok(adminHtml.includes('id="count-total"'), "total count must live in the ALL filter");
 assert.ok(adminHtml.includes('id="count-ai"'), "AI count must live in the AI filter");
 assert.ok(adminHtml.includes('id="count-human"'), "HUMAN count must live in the HUMAN filter");
+assert.ok(adminHtml.includes('id="storage-usage-value"'), "Admin Library must expose current Storage usage");
+assert.ok(adminHtml.includes('id="storage-usage-percent"'), "Admin Library must expose Storage percentage");
+assert.ok(adminHtml.includes('id="storage-meter"') && adminHtml.includes('role="progressbar"'),
+  "Admin Library must expose an accessible Storage capacity bar");
+assert.ok(adminHtml.includes('id="storage-remaining"'), "Admin Library must expose approximate remaining capacity");
 assert.ok(adminHtml.indexOf('class="content-panel workspace-panel"') < adminHtml.indexOf('class="inventory-panel workspace-panel"'),
   "desktop DOM order must keep upload before library");
 assert.ok(adminHtml.includes('class="admin-workspace"'), "authorized admin must use a dedicated workspace container");
@@ -2060,6 +2130,22 @@ assert.ok(!adminHtml.includes('>Optymalizuj bibliotekę</button>'),
   "Phase B must remove temporary optimization operator copy");
 assert.ok(!/thumbnail|miniatur/i.test(adminHtml),
   "normal Admin HTML must not expose internal preview terminology");
+assert.ok(adminJs.includes('getAdminStorageUsage'),
+  "Admin workspace must request protected live Storage usage");
+assert.ok(adminJs.includes('storageBytesAdded: prepared.output.size + inventoryPreview.blob.size'),
+  "successful uploads must report exact original + derived Storage bytes");
+assert.ok(adminJs.includes('applyStorageUsageDelta(result?.storageBytesAdded)'),
+  "capacity bar must move file-by-file only after successful upload completion");
+assert.ok(adminJs.includes('await refreshStorageUsage({ force: true })'),
+  "upload/delete/manual refresh flows need authoritative Storage reconciliation");
+assert.ok(adminContent.includes('rpc/get_admin_storage_usage'),
+  "Storage usage must come from the protected RPC");
+assert.ok(adminCss.includes('.storage-meter-fill') && adminCss.includes('transition: width 260ms'),
+  "Storage percentage bar must animate visible usage changes");
+assert.ok(adminCss.includes('.storage-meter.is-warning') && adminCss.includes('.storage-meter.is-critical'),
+  "Storage meter must expose warning/critical visual states");
+assert.ok(adminCss.includes('.inventory-toolbar'),
+  "filters and Storage capacity meter must share a responsive Library toolbar");
 assert.ok(adminJs.includes('image.src = row.thumbnail_public_url || row.public_url'),
   "Admin Library must prefer the small derived asset");
 assert.ok(adminJs.includes('image.src = row.public_url'),
@@ -2152,6 +2238,7 @@ await testRoundSelector();
 await testExternalContentSource();
 await testAdminAuthContract();
 await testAvifConversionContracts();
+await testAdminStorageUsageContract();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
 await testSequentialUploadBatchContinuity();
@@ -2168,6 +2255,7 @@ console.log("Dynamic preloader 10/20/50: PASS");
 console.log("Session selection 10/20/50 unique: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
+console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");

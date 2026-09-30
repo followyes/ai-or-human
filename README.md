@@ -23,7 +23,7 @@ Przed rozpoczęciem gracz wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokład
 
 Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo jest niedostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
 
-## `/admin` — V1.5.7B.1
+## `/admin` — V1.5.8
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
@@ -43,6 +43,8 @@ Desktop admin działa jako pełnoekranowy workspace:
 ```
 
 Na węższych ekranach upload i biblioteka układają się pionowo.
+
+V1.5.8 dodaje do nagłówka Biblioteki kompaktowy wskaźnik pojemności Storage: aktualne zużycie, skonfigurowany limit, procent, przybliżone wolne miejsce i pasek wykorzystania. Aktualne bajty są pobierane przez Admin-only RPC z `storage.objects`, a limit jest przechowywany prywatnie po stronie SQL. Dla obecnej organizacji skonfigurowano potwierdzony plan Free: 1 GiB. Podczas sekwencyjnego uploadu licznik aktualizuje się po każdym poprawnie zapisanym obrazie o dokładny rozmiar pełnego AVIF-a i jego zasobu bibliotecznego, a po całej partii wykonywana jest autorytatywna synchronizacja z Supabase. Delete i ręczne `Odśwież` również uzgadniają wskaźnik z rzeczywistym Storage.
 
 Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji dla gotowych AVIF, lokalna konwersja JPG/PNG/WebP, sekwencyjny batch, duplikaty SHA-256, kontynuacja po zwykłym błędzie pliku oraz fatalny abort po rzeczywistej utracie sesji. V1.5.7B.1 automatycznie tworzy również mały pochodny AVIF używany tylko przez Bibliotekę Admina. Nie zmienia to produkcyjnego obrazu ani publicznej gry.
 
@@ -64,12 +66,14 @@ Kanoniczny fresh schema:
 OUTSIDE_REPO/SQL/ALL_IN_ONE.sql
 ```
 
-V1.5.7B.1 dodaje nullable `thumbnail_path` wyłącznie do autoryzowanego modelu Admina. Anonimowy katalog publicznej gry nadal nie ma dostępu do tej kolumny.
+V1.5.7B.1 dodał nullable `thumbnail_path` wyłącznie do autoryzowanego modelu Admina. Anonimowy katalog publicznej gry nadal nie ma dostępu do tej kolumny.
+
+V1.5.8 dodaje prywatną konfigurację pojemności i `public.get_admin_storage_usage()`. RPC jest wykonywalne tylko przez `authenticated` i dodatkowo wymaga aktywnego `private.is_admin()`. Frontend nie zawiera Management API tokena ani innego sekretu.
 
 Migracja obecnego wdrożenia:
 
 ```text
-OUTSIDE_REPO/SQL/V1_5_7B_1.sql
+OUTSIDE_REPO/SQL/V1_5_8.sql
 ```
 
 ## Build
@@ -89,8 +93,8 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 
 ## Status roadmapy
 
-- V1.5.6 — PASS / CLOSED.
+- V1.5.6 — PASS/CLOSED.
 - V1.5.7A — Admin Workspace Redesign — PASS/CLOSED.
-- V1.5.7B — Auth Transition & UX Polish — production smoke wykrył corrective.
-- V1.5.7B.1 — login corrective + optimized Admin Library pipeline — Phase A production backfill PASS; Phase B local QA PASS / final repo deploy + smoke pending.
-- V1.6 — Multi-Mode.
+- V1.5.7B + V1.5.7B.1 Library Optimization + Admin Motion Corrective — PASS/CLOSED.
+- V1.5.8 — Admin Storage Capacity Indicator — implementation/local QA stage; production SQL + deploy + smoke required before closure.
+- V1.6 — Multi-Mode, dopiero po zamknięciu V1.5.8.
