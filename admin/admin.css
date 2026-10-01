@@ -738,10 +738,10 @@ h2 {
   height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(32, 39, 45, 0.18);
+  border: 2px solid rgba(163, 51, 59, 0.56);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--danger);
   cursor: pointer;
   font-size: 1.12rem;
   font-weight: 800;
@@ -751,7 +751,8 @@ h2 {
 
 .inventory-delete:hover,
 .inventory-delete:focus-visible {
-  border-color: rgba(163, 51, 59, 0.35);
+  border-color: var(--danger);
+  background: rgba(163, 51, 59, 0.10);
   color: var(--danger);
 }
 
@@ -776,9 +777,9 @@ h2 {
 
 .inventory-card.is-selected .inventory-select-control {
   z-index: 3;
-  border-color: #8d2730;
-  background: var(--danger);
-  color: #ffffff;
+  border-color: var(--danger);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--danger);
   box-shadow: 0 6px 16px rgba(163, 51, 59, 0.30);
 }
 

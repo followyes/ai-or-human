@@ -453,7 +453,7 @@ function renderInventory() {
     if (selectionMode) {
       actionButton.className = "inventory-select-control";
       actionButton.dataset.selectId = row.id;
-      actionButton.textContent = selected ? "✓" : "";
+      actionButton.textContent = selected ? "×" : "";
       actionButton.setAttribute("aria-label", `${selected ? "Odznacz" : "Zaznacz"} ${row.original_filename || "obraz"}`);
       actionButton.setAttribute("aria-pressed", selected ? "true" : "false");
       actionButton.disabled = deleteBusy;

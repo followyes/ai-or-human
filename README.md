@@ -25,7 +25,7 @@ Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo
 
 V1.5.9 zmienia także prezentację obrazów w publicznej grze: pełny oryginał nadal jest źródłem obrazu, ale karta renderuje go przez `object-fit: cover` i centralne kadrowanie. Poziome obrazy proporcjonalnie wypełniają kartę bez białych pasów; nadmiar jest przycinany zamiast rozciągania obrazu. Swipe, preload, losowanie i klasyfikacja pozostają bez zmian.
 
-## `/admin` — V1.5.9
+## `/admin` — V1.5.9.1
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
@@ -50,7 +50,7 @@ V1.5.8 dodaje do nagłówka Biblioteki kompaktowy wskaźnik pojemności Storage:
 
 Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji dla gotowych AVIF, lokalna konwersja JPG/PNG/WebP, sekwencyjny batch, duplikaty SHA-256, kontynuacja po zwykłym błędzie pliku oraz fatalny abort po rzeczywistej utracie sesji. V1.5.7B.1 automatycznie tworzy również mały pochodny AVIF używany tylko przez Bibliotekę Admina. Nie zmienia to produkcyjnego obrazu ani publicznej gry.
 
-Biblioteka zachowuje paginację >1000, lazy loading, filtrowanie AI/HUMAN i kontrolowane usuwanie Storage + metadata. Kafelki preferują mały zasób biblioteczny i mają jednorazowy fallback do pełnego obrazu. Poza szybkim pojedynczym `×` panel ma tryb `Zaznacz`: można zaznaczyć dowolne karty albo użyć `Zaznacz wszystkie` dla całego aktualnego filtra i usunąć je po jednym potwierdzeniu. V1.5.9 wzmacnia destrukcyjne zaznaczenie czerwonym obramowaniem, pełnokafelkowym półprzezroczystym czerwonym overlayem i czerwonym checkiem, aby wybór był jednoznaczny. Bulk delete działa sekwencyjnie i dla każdego rekordu wykorzystuje ten sam hardened `deleteGameImage()`; zwykły błąd jednego obrazu nie zatrzymuje reszty, a utrata sesji zatrzymuje batch. Ręczny przycisk `Odśwież` został usunięty jako zbędny — synchronizacja pozostaje automatyczna po wejściu, uploadzie i delete. Usunięcie rekordu sprząta oba należące do niego obiekty. `is_active` nadal istnieje w modelu danych, ale nie jest eksponowane jako redundantny status w normalnym UI.
+Biblioteka zachowuje paginację >1000, lazy loading, filtrowanie AI/HUMAN i kontrolowane usuwanie Storage + metadata. Kafelki preferują mały zasób biblioteczny i mają jednorazowy fallback do pełnego obrazu. Poza szybkim pojedynczym `×` panel ma tryb `Zaznacz`: można zaznaczyć dowolne karty albo użyć `Zaznacz wszystkie` dla całego aktualnego filtra i usunąć je po jednym potwierdzeniu. V1.5.9 wzmacnia destrukcyjne zaznaczenie czerwonym obramowaniem i pełnokafelkowym półprzezroczystym czerwonym overlayem. V1.5.9.1 ujednolica destrukcyjne markery: pojedynczy delete ma stale czerwony `×`, a zaznaczony element bulk-select pokazuje czerwony `×` zamiast ptaszka. Bulk delete działa sekwencyjnie i dla każdego rekordu wykorzystuje ten sam hardened `deleteGameImage()`; zwykły błąd jednego obrazu nie zatrzymuje reszty, a utrata sesji zatrzymuje batch. Ręczny przycisk `Odśwież` został usunięty jako zbędny — synchronizacja pozostaje automatyczna po wejściu, uploadzie i delete. Usunięcie rekordu sprząta oba należące do niego obiekty. `is_active` nadal istnieje w modelu danych, ale nie jest eksponowane jako redundantny status w normalnym UI.
 
 Produkcja została uzupełniona o małe zasoby biblioteczne dla istniejącego katalogu. Jednorazowa akcja backfillu została usunięta po zerowym postchecku; normalny panel zawiera wyłącznie stały workflow uploadu, biblioteki, zaznaczania i usuwania. Panel nie opisuje technicznych szczegółów generowania zasobu pochodnego.
 
@@ -99,5 +99,6 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.7A — Admin Workspace Redesign — PASS/CLOSED.
 - V1.5.7B + V1.5.7B.1 Library Optimization + Admin Motion Corrective — PASS/CLOSED.
 - V1.5.8 — Admin Storage Capacity Indicator + Library Bulk Delete UX — PASS/CLOSED.
-- V1.5.9 — Public Image Fit + Admin Selection UX — LOCAL QA PASS / READY FOR DEPLOY / PRODUCTION SMOKE PENDING.
-- V1.6 — Multi-Mode, po zamknięciu V1.5.9.
+- V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
+- V1.5.9.1 — Admin Delete Marker Consistency Corrective — LOCAL QA PASS / READY FOR DEPLOY / PRODUCTION SMOKE PENDING.
+- V1.6 — Multi-Mode, po zamknięciu V1.5.9.1.

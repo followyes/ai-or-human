@@ -2186,8 +2186,12 @@ assert.ok(/\.inventory-card\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--dang
   "selected cards must use the destructive red selection border");
 assert.ok(/\.inventory-card\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(163, 51, 59, 0\.24\)/m.test(adminCss),
   "selected cards must receive a full-card translucent red overlay");
-assert.ok(/\.inventory-card\.is-selected \.inventory-select-control\s*\{[\s\S]*?background:\s*var\(--danger\)/m.test(adminCss),
-  "selected-card check control must use the destructive red treatment");
+assert.ok(/\.inventory-card\.is-selected \.inventory-select-control\s*\{[\s\S]*?border-color:\s*var\(--danger\)[\s\S]*?color:\s*var\(--danger\)/m.test(adminCss),
+  "selected-card remove mark must use the destructive red treatment");
+assert.ok(adminJs.includes('actionButton.textContent = selected ? "×" : "";'),
+  "bulk selection must use a destructive x mark instead of a confirmation check");
+assert.ok(/\.inventory-delete\s*\{[\s\S]*?border:\s*2px solid rgba\(163, 51, 59, 0\.56\)[\s\S]*?color:\s*var\(--danger\)/m.test(adminCss),
+  "single-image delete x must be permanently visible in the destructive red treatment");
 assert.ok(adminJs.includes('card.setAttribute("aria-selected", selected ? "true" : "false")') &&
   adminJs.includes('event.key === "Enter" || event.key === " "'),
   "selection mode must expose explicit selection state and keyboard card toggling");
@@ -2317,7 +2321,7 @@ console.log("Session selection 10/20/50 unique: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
-console.log("V1.5.9 public image cover + Admin destructive-selection UX: PASS");
+console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");
