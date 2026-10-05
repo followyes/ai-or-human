@@ -71,6 +71,7 @@ import {
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
+import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -2043,6 +2044,132 @@ async function testDeleteDrainCoordinatorLifecycle() {
   }
 }
 
+
+async function testUploadPreparationWorkerClientLifecycle() {
+  class FakeWorker {
+    constructor() {
+      this.listeners = new Map();
+      this.messages = [];
+      this.terminated = false;
+    }
+
+    addEventListener(type, callback) {
+      const callbacks = this.listeners.get(type) || [];
+      callbacks.push(callback);
+      this.listeners.set(type, callbacks);
+    }
+
+    postMessage(message) {
+      if (this.terminated) throw new Error("worker terminated");
+      this.messages.push(message);
+    }
+
+    emit(type, data = null) {
+      for (const callback of this.listeners.get(type) || []) {
+        callback(type === "message" ? { data } : { error: data });
+      }
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+
+  const workers = [];
+  const client = new UploadPreparationWorkerClient({
+    workerFactory: () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      return worker;
+    }
+  });
+
+  const first = client.inspect({ name: "a.jpg" });
+  const second = client.inspect({ name: "b.jpg" });
+  assert.equal(workers.length, 1, "one client authority must reuse exactly one live worker");
+
+  const firstMessage = workers[0].messages[0];
+  const secondMessage = workers[0].messages[1];
+  assert.notEqual(firstMessage.requestId, secondMessage.requestId,
+    "each worker request must own a unique job id");
+
+  workers[0].emit("message", {
+    requestId: secondMessage.requestId,
+    ok: true,
+    value: { filename: "b.jpg", mimeType: "image/jpeg", size: 2, sha256: "b".repeat(64) }
+  });
+  workers[0].emit("message", {
+    requestId: firstMessage.requestId,
+    ok: true,
+    value: { filename: "a.jpg", mimeType: "image/jpeg", size: 1, sha256: "a".repeat(64) }
+  });
+
+  assert.equal((await first).filename, "a.jpg",
+    "out-of-order worker replies must resolve the correct request");
+  assert.equal((await second).filename, "b.jpg",
+    "job ids must prevent cross-wired image results");
+
+  const sourceFile = new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" });
+  const sourceInspection = {
+    filename: "source.jpg",
+    mimeType: "image/jpeg",
+    size: sourceFile.size,
+    sha256: "c".repeat(64)
+  };
+  const preparedPromise = client.prepare(sourceFile, sourceInspection);
+  const prepareMessage = workers[0].messages.at(-1);
+  const outputBuffer = new Uint8Array([4, 5, 6]).buffer;
+  const previewBuffer = new Uint8Array([7, 8]).buffer;
+  workers[0].emit("message", {
+    requestId: prepareMessage.requestId,
+    ok: true,
+    value: {
+      source: sourceInspection,
+      output: {
+        buffer: outputBuffer,
+        mimeType: "image/avif",
+        size: outputBuffer.byteLength,
+        sha256: "d".repeat(64),
+        width: 100,
+        height: 80,
+        passthrough: false
+      },
+      preview: {
+        buffer: previewBuffer,
+        mimeType: "image/avif",
+        size: previewBuffer.byteLength,
+        width: 64,
+        height: 48
+      }
+    }
+  });
+  const prepared = await preparedPromise;
+  assert.equal(prepared.prepared.output.blob.type, "image/avif");
+  assert.equal(prepared.prepared.output.blob.size, 3);
+  assert.equal(prepared.inventoryPreview.blob.size, 2);
+
+  const crashPromise = client.inspect({ name: "crash.jpg" });
+  workers[0].emit("error", new Error("simulated worker crash"));
+  await assert.rejects(crashPromise,
+    (error) => error?.code === "UPLOAD_WORKER_CRASHED",
+    "worker crash must fail the current entry explicitly");
+
+  const recoveryPromise = client.inspect({ name: "recovery.jpg" });
+  assert.equal(workers.length, 2,
+    "a request after worker failure must create a fresh preparation worker");
+  const recoveryMessage = workers[1].messages[0];
+  workers[1].emit("message", {
+    requestId: recoveryMessage.requestId,
+    ok: true,
+    value: { filename: "recovery.jpg", mimeType: "image/jpeg", size: 1, sha256: "e".repeat(64) }
+  });
+  assert.equal((await recoveryPromise).filename, "recovery.jpg");
+
+  client.terminate();
+  assert.equal(workers[1].terminated, true,
+    "batch closeout must be able to release the worker/WASM heap explicitly");
+}
+
 async function testSequentialUploadBatchContinuity() {
   const seen = [];
   const success = [];
@@ -2108,13 +2235,18 @@ async function testSequentialUploadBatchContinuity() {
   let releaseCommitOne;
   const commitOneGate = new Promise((resolve) => { releaseCommitOne = resolve; });
   let preparedTwo = false;
+  let activePreparations = 0;
+  let maxActivePreparations = 0;
 
   const pipelinedPromise = runPipelinedUploadBatch([1, 2], {
     prepareEntry: async (entry) => {
+      activePreparations += 1;
+      maxActivePreparations = Math.max(maxActivePreparations, activePreparations);
       pipelineEvents.push(`prepare:${entry}:start`);
       await Promise.resolve();
       pipelineEvents.push(`prepare:${entry}:done`);
       if (entry === 2) preparedTwo = true;
+      activePreparations -= 1;
       return entry * 10;
     },
     commitEntry: async ({ entry, prepared }) => {
@@ -2132,6 +2264,8 @@ async function testSequentialUploadBatchContinuity() {
   const pipelined = await pipelinedPromise;
   assert.equal(pipelined.aborted, false);
   assert.equal(pipelined.processed, 2);
+  assert.equal(maxActivePreparations, 1,
+    "bounded pipeline must never run two heavy preparation jobs at once");
   assert.ok(
     pipelineEvents.indexOf("prepare:2:done") < pipelineEvents.indexOf("commit:1:done"),
     "prepare N+1 must finish without waiting for commit N"
@@ -2160,6 +2294,8 @@ async function testSupabaseOnlyBuild() {
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "content-source.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-worker-client.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-preparation-worker.js")));
 
   await assert.rejects(() => fs.stat(path.join(tempRoot, "dist", "data", "images.json")),
     (error) => error?.code === "ENOENT");
@@ -2188,6 +2324,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   const adminContent = await fs.readFile(path.join(projectRoot, "js", "admin-content.js"), "utf8");
   const avifConverter = await fs.readFile(path.join(projectRoot, "js", "avif-converter.js"), "utf8");
   const uploadBatchSource = await fs.readFile(path.join(projectRoot, "js", "upload-batch.js"), "utf8");
+  const uploadWorkerClientSource = await fs.readFile(path.join(projectRoot, "js", "upload-worker-client.js"), "utf8");
+  const uploadPreparationWorkerSource = await fs.readFile(path.join(projectRoot, "js", "upload-preparation-worker.js"), "utf8");
   const deleteQueueSource = await fs.readFile(path.join(projectRoot, "js", "delete-queue.js"), "utf8");
   const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
@@ -2559,8 +2697,41 @@ assert.ok(!adminJs.includes('registerInventoryThumbnail'),
   "Phase B must remove the one-time backfill persistence path");
 assert.ok(!adminJs.includes('fetchPublicAvifBlob'),
   "Phase B must remove the one-time production-original download path");
-assert.ok(adminJs.includes('createInventoryPreviewAvif(prepared.output.blob)'),
-  "new uploads must keep generating their small Admin asset automatically");
+assert.ok(adminJs.includes('const uploadPreparationWorker = new UploadPreparationWorkerClient()'),
+  "Admin must own exactly one upload preparation Worker authority");
+assert.ok(adminJs.includes('uploadPreparationWorker.inspect(file)') && adminJs.includes('uploadPreparationWorker.prepare(file, sourceInspection)'),
+  "source hash and heavy image preparation must cross the Worker boundary");
+assert.ok(!adminJs.includes('convertSourceFileToAvif') && !adminJs.includes('createInventoryPreviewAvif'),
+  "Admin main thread must not directly execute full-resolution AVIF conversion or preview generation");
+assert.ok(adminJs.includes('uploadPreparationWorker.terminate()'),
+  "batch closeout must release the preparation Worker and its WASM/canvas memory");
+assert.ok(uploadWorkerClientSource.includes('new Worker(new URL("./upload-preparation-worker.js", import.meta.url)') &&
+  uploadWorkerClientSource.includes('type: "module"'),
+  "upload preparation must use a same-origin module Worker");
+assert.ok(uploadWorkerClientSource.includes('requestId') && uploadWorkerClientSource.includes('this.pending = new Map()'),
+  "Worker client must correlate responses by explicit job id");
+assert.ok(uploadPreparationWorkerSource.includes('new OffscreenCanvas') && uploadPreparationWorkerSource.includes('createImageBitmap'),
+  "heavy image decode/canvas work must execute in the preparation Worker");
+assert.ok(uploadPreparationWorkerSource.includes('encodeImageDataToAvif'),
+  "AVIF WASM encoding authority must execute from the Worker module");
+assert.ok(uploadPreparationWorkerSource.includes('encodePreviewFromDecoded(decoded, width, height)') &&
+  uploadPreparationWorkerSource.includes('captureProductionPixels(decoded, width, height)'),
+  "preview and production pixels must be derived from the same source decode");
+assert.ok(
+  uploadPreparationWorkerSource.indexOf('decoded.close?.();') >
+    uploadPreparationWorkerSource.indexOf('captureProductionPixels(decoded, width, height)') &&
+  uploadPreparationWorkerSource.indexOf('encodeProductionPixels(productionPixels, width, height)') >
+    uploadPreparationWorkerSource.indexOf('decoded.close?.();'),
+  "source bitmap must be released before full-resolution AVIF encode begins"
+);
+assert.ok(!uploadPreparationWorkerSource.includes('createInventoryPreviewAvif') &&
+  !uploadPreparationWorkerSource.includes('document.createElement') &&
+  !uploadPreparationWorkerSource.includes('new Image('),
+  "Worker preparation must not re-decode production AVIF solely for preview or depend on DOM image APIs");
+assert.ok(uploadPreparationWorkerSource.includes('releaseCanvas(canvas)') && uploadPreparationWorkerSource.includes('decoded.close?.()'),
+  "Worker must explicitly release full-resolution canvas and bitmap ownership");
+assert.ok(uploadPreparationWorkerSource.includes('prepared.transfer') && uploadPreparationWorkerSource.includes('self.postMessage('),
+  "prepared buffers must cross the Worker boundary via a transfer list");
 assert.ok(!adminJs.includes('stateBadge.textContent = row.is_active ? "AKTYWNY" : "NIEAKTYWNY"'),
   "per-card active publication badges must be removed");
 assert.ok(!adminJs.includes('const publicationState ='), "upload success copy must not expose active publication state");
@@ -2648,6 +2819,7 @@ await testAdminStorageUsageContract();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
 await testDeleteDrainCoordinatorLifecycle();
+await testUploadPreparationWorkerClientLifecycle();
 await testSequentialUploadBatchContinuity();
 await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
@@ -2667,6 +2839,7 @@ console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
 console.log("V1.5.9.3.1 Admin delete-marker + mobile grid corrective: PASS");
 console.log("V1.5.9.3.2 Stable Library status slot corrective: PASS");
 console.log("V1.5.9.4 Delete drain-until-quiescent temporal lifecycle: PASS");
+console.log("V1.5.9.5 Upload Worker protocol + recovery + main-thread isolation: PASS");
 console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");

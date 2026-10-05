@@ -25,7 +25,7 @@ Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo
 
 V1.5.9 zmienia także prezentację obrazów w publicznej grze: pełny oryginał nadal jest źródłem obrazu, ale karta renderuje go przez `object-fit: cover` i centralne kadrowanie. Poziome obrazy proporcjonalnie wypełniają kartę bez białych pasów; nadmiar jest przycinany zamiast rozciągania obrazu. Swipe, preload, losowanie i klasyfikacja pozostają bez zmian.
 
-## `/admin` — V1.5.9.4
+## `/admin` — V1.5.9.5
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
@@ -48,7 +48,7 @@ Na węższych ekranach upload i biblioteka układają się pionowo.
 
 V1.5.8 dodaje do nagłówka Biblioteki kompaktowy wskaźnik pojemności Storage: aktualne zużycie, skonfigurowany limit, procent, przybliżone wolne miejsce i pasek wykorzystania. Pasek jest zielony poniżej 70%, pomarańczowy od 70% i czerwony od 90% wykorzystania. Aktualne bajty są pobierane przez Admin-only RPC z `storage.objects`, a limit jest przechowywany prywatnie po stronie SQL. Dla obecnej organizacji skonfigurowano potwierdzony plan Free: 1 GiB. Podczas batch uploadu licznik aktualizuje się po każdym poprawnie zapisanym obrazie o dokładny rozmiar pełnego AVIF-a i jego zasobu bibliotecznego, a po całej partii wykonywana jest autorytatywna synchronizacja z Supabase. Po operacjach usuwania wskaźnik również jest uzgadniany z rzeczywistym Storage.
 
-Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji dla gotowych AVIF, lokalna konwersja JPG/PNG/WebP, duplikaty SHA-256, kontynuacja po zwykłym błędzie pliku oraz fatalny abort po rzeczywistej utracie sesji. V1.5.9.3 przyspiesza batch przez ograniczony pipeline `1 prepare + 1 commit`: w danym momencie wykonywane jest najwyżej jedno ciężkie przygotowanie/dekodowanie/AVIF, ale przygotowanie następnego obrazu może nakładać się na sieciowy commit poprzedniego. Dwa ciężkie encode'y nie biegną równolegle. Odświeżenie sesji dla nakładających się etapów jest single-flight. V1.5.7B.1 automatycznie tworzy również mały pochodny AVIF używany tylko przez Bibliotekę Admina. Nie zmienia to produkcyjnego obrazu ani publicznej gry.
+Uploader zachowuje trwałe kontrakty V1.5.6: AVIF 1:1 bez rekompresji dla gotowych AVIF, lokalna konwersja JPG/PNG/WebP, duplikaty SHA-256, kontynuacja po zwykłym błędzie pliku oraz fatalny abort po rzeczywistej utracie sesji. V1.5.9.3 zachowuje ograniczony pipeline `1 prepare + 1 commit`: w danym momencie wykonywane jest najwyżej jedno ciężkie przygotowanie obrazu, ale przygotowanie następnego może nakładać się na sieciowy commit poprzedniego. V1.5.9.5 przenosi source SHA/decode/canvas/AVIF preparation do dedykowanego module Web Workera, więc pełnowymiarowy `getImageData()` i jSquash AVIF encode nie wykonują się już na głównym wątku panelu. Production AVIF i mały zasób Biblioteki powstają z jednego decode źródła; nie ma już dodatkowego dekodowania gotowego production AVIF wyłącznie po to, aby stworzyć preview. Worker jawnie zwalnia `ImageBitmap` i full-resolution canvas przed dalszym encode/verification oraz jest terminowany po zakończeniu batcha, aby duży heap WASM/canvas nie pozostawał między partiami. Pipeline nadal dopuszcza maksymalnie jedno prepare + jeden network commit, a dwa ciężkie encode'y nie biegną równolegle. Odświeżenie sesji dla nakładających się etapów pozostaje single-flight. V1.5.7B.1 automatycznie tworzy mały pochodny AVIF używany tylko przez Bibliotekę Admina; nie zmienia to produkcyjnego obrazu ani publicznej gry.
 
 V1.5.9.2 dodaje twardy gate kategorii przed wejściem plików do uploadu. Dopóki operator nie wybierze `AI` albo `HUMAN`, klik/tap nie otwiera pickera/galerii, ukryty `file-input` pozostaje natywnie `disabled`, a drag&drop nie aktywuje dropzone ani nie przekazuje plików do kolejki. Dropzone nadal przechwytuje drag/drop i blokuje domyślne otwieranie pliku przez przeglądarkę. Po wyborze kategorii upload odblokowuje się natychmiast; późny guard w `handleFiles()` zostaje jako defense-in-depth. Wybrana kategoria pozostaje aktywna po zakończeniu batcha tak jak wcześniej.
 
@@ -109,5 +109,6 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9.3 — Admin Mutation Queue + Upload Pipeline Corrective — superseded before production closure by V1.5.9.3.1.
 - V1.5.9.3.1 — Delete Marker + Mobile Library Grid Corrective — superseded before production closure by V1.5.9.3.2.
 - V1.5.9.3.2 — Stable Library Status Slot Corrective — superseded before production closure by V1.5.9.4 after deep delete-lifecycle audit.
-- V1.5.9.4 — Delete Drain-Until-Quiescent Corrective — LOCAL QA PASS / READY FOR DEPLOY / PRODUCTION SMOKE PENDING.
-- V1.6 — Multi-Mode, po zamknięciu V1.5.9.4.
+- V1.5.9.4 — Delete Drain-Until-Quiescent Corrective — superseded before production closure by V1.5.9.5; delete lifecycle contracts preserved.
+- V1.5.9.5 — Upload Worker / Main-Thread Isolation Corrective — LOCAL QA PASS / READY FOR DEPLOY / PRODUCTION SMOKE PENDING.
+- V1.6 — Multi-Mode, po zamknięciu V1.5.9.5.

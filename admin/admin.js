@@ -18,10 +18,7 @@ import {
 } from "../js/admin-content.js";
 import {
   AvifConversionError,
-  convertSourceFileToAvif,
-  createInventoryPreviewAvif,
-  formatBytes,
-  inspectSourceFile
+  formatBytes
 } from "../js/avif-converter.js";
 import {
   promoteQueueItem,
@@ -29,6 +26,7 @@ import {
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
+import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 
 const adminCard = document.querySelector("#admin-card");
 const loginView = document.querySelector("#login-view");
@@ -87,6 +85,7 @@ const selectedImageIds = new Set();
 const deletingIds = new Set();
 let singleDeleteStats = createSingleDeleteStats();
 let sessionRefreshPromise = null;
+const uploadPreparationWorker = new UploadPreparationWorkerClient();
 
 
 const BOOT_REVEAL_DELAY_MS = 320;
@@ -937,7 +936,7 @@ async function prepareFile(file, contentClass, queueItem) {
 
   queueItem.set("HASH", `${formatBytes(file.size)} · SHA-256 + kontrola duplikatu`);
 
-  const sourceInspection = await inspectSourceFile(file);
+  const sourceInspection = await uploadPreparationWorker.inspect(file);
   const existingSource = await findImageByHash({
     session: currentSession,
     field: "source_sha256",
@@ -956,10 +955,7 @@ async function prepareFile(file, contentClass, queueItem) {
       : `${formatBytes(file.size)} · dekodowanie + konwersja`
   );
 
-  const prepared = await convertSourceFileToAvif(file, { sourceInspection });
-  const inventoryPreview = await createInventoryPreviewAvif(prepared.output.blob);
-
-  return Object.freeze({ prepared, inventoryPreview });
+  return uploadPreparationWorker.prepare(file, sourceInspection);
 }
 
 async function commitPreparedFile({ prepared, inventoryPreview }, contentClass, queueItem) {
@@ -1065,6 +1061,10 @@ async function handleFiles(fileList) {
       return;
     }
   } finally {
+    // A batch never owns more than one preparation Worker. Terminate it after
+    // the bounded prepare/commit pipeline settles so large WASM/canvas heaps
+    // cannot remain resident between batches. The next batch recreates it lazily.
+    uploadPreparationWorker.terminate();
     setUploadBusy(false);
     fileInput.value = "";
     updateQueueSummary(files.length);
