@@ -45,11 +45,13 @@ import {
   assertImageHashAvailable,
   createStoragePath,
   createThumbnailStoragePath,
+  copyStorageObject,
   deleteGameImage,
   findImageByHash,
   getAdminStorageUsage,
   listGameImages,
-  registerPreparedImage
+  registerPreparedImage,
+  updateGameImageMoveMetadata
 } from "../js/admin-content.js";
 import {
   AVIF_ENCODER_MODULE_URL,
@@ -71,6 +73,7 @@ import {
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
+import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -1815,6 +1818,268 @@ async function testAdminInventoryPaginationAndDelete() {
 
 
 
+async function testContentClassMoveLifecycle() {
+  const config = {
+    projectUrl: "https://abcdefghijklmnopqrst.supabase.co",
+    publishableKey: "sb_publishable_test_public_key"
+  };
+  const session = { access_token: "admin-access-token" };
+  const image = Object.freeze({
+    id: "44444444-4444-4444-8444-444444444444",
+    content_class: "ai",
+    storage_bucket: "game-images",
+    storage_path: "ai/44444444-4444-4444-8444-444444444444.avif",
+    thumbnail_path: "ai/_previews/v1/44444444-4444-4444-8444-444444444444.avif",
+    original_filename: "source.jpg",
+    source_sha256: "a".repeat(64),
+    avif_sha256: "b".repeat(64),
+    width: 4032,
+    height: 3024,
+    file_size_bytes: 1234567,
+    is_active: true,
+    created_at: "2026-10-01T12:00:00Z"
+  });
+
+  const paths = deriveMovePaths(image, "human");
+  assert.deepEqual(paths, {
+    sourceClass: "ai",
+    targetClass: "human",
+    sourceStoragePath: image.storage_path,
+    targetStoragePath: "human/44444444-4444-4444-8444-444444444444.avif",
+    sourceThumbnailPath: image.thumbnail_path,
+    targetThumbnailPath: "human/_previews/v1/44444444-4444-4444-8444-444444444444.avif",
+    noop: false
+  });
+  assert.equal(deriveMovePaths(image, "ai").noop, true, "same-class move must be a no-op");
+  assert.throws(
+    () => deriveMovePaths({ ...image, storage_path: "human/wrong.avif" }, "human"),
+    (error) => error.code === "MOVE_SOURCE_PATH_CLASS_MISMATCH"
+  );
+
+  const copyRequests = [];
+  await copyStorageObject({
+    session,
+    sourcePath: image.storage_path,
+    destinationPath: paths.targetStoragePath,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      copyRequests.push({ url, options });
+      assert.equal(url.pathname, "/storage/v1/object/copy");
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.Authorization, "Bearer admin-access-token");
+      assert.deepEqual(JSON.parse(options.body), {
+        bucketId: "game-images",
+        sourceKey: image.storage_path,
+        destinationKey: paths.targetStoragePath,
+        copyMetadata: true
+      });
+      return makeJsonResponse({ Key: paths.targetStoragePath });
+    }
+  });
+  assert.equal(copyRequests.length, 1);
+
+  const metadataRequests = [];
+  const committedRow = await updateGameImageMoveMetadata({
+    session,
+    image,
+    targetClass: "human",
+    targetStoragePath: paths.targetStoragePath,
+    targetThumbnailPath: paths.targetThumbnailPath,
+    config,
+    fetchImpl: async (input, options = {}) => {
+      const url = new URL(String(input));
+      metadataRequests.push({ url, options });
+      assert.equal(url.pathname, "/rest/v1/game_images");
+      assert.equal(options.method, "PATCH");
+      assert.equal(url.searchParams.get("id"), `eq.${image.id}`);
+      assert.equal(url.searchParams.get("content_class"), "eq.ai");
+      assert.equal(url.searchParams.get("storage_path"), `eq.${image.storage_path}`);
+      assert.equal(url.searchParams.get("thumbnail_path"), `eq.${image.thumbnail_path}`);
+      const body = JSON.parse(options.body);
+      assert.deepEqual(body, {
+        content_class: "human",
+        storage_path: paths.targetStoragePath,
+        thumbnail_path: paths.targetThumbnailPath
+      }, "move metadata commit must change only class + canonical paths");
+      return makeJsonResponse([{ ...image, ...body }]);
+    }
+  });
+  assert.equal(committedRow.content_class, "human");
+  assert.equal(metadataRequests.length, 1);
+
+  const successSequence = [];
+  const successResult = await moveGameImageToClass({
+    session,
+    image,
+    targetClass: "human",
+    copyObject: async ({ sourcePath, destinationPath }) => {
+      successSequence.push(["copy", sourcePath, destinationPath]);
+    },
+    commitMetadata: async ({ targetClass, targetStoragePath, targetThumbnailPath }) => {
+      successSequence.push(["commit", targetClass, targetStoragePath, targetThumbnailPath]);
+      return { ...image, content_class: targetClass, storage_path: targetStoragePath, thumbnail_path: targetThumbnailPath };
+    },
+    removeObject: async ({ storagePath }) => {
+      successSequence.push(["remove", storagePath]);
+    }
+  });
+  assert.equal(successResult.kind, "moved");
+  assert.equal(successResult.cleanupWarnings.length, 0);
+  assert.deepEqual(successSequence, [
+    ["copy", image.storage_path, paths.targetStoragePath],
+    ["copy", image.thumbnail_path, paths.targetThumbnailPath],
+    ["commit", "human", paths.targetStoragePath, paths.targetThumbnailPath],
+    ["remove", image.thumbnail_path],
+    ["remove", image.storage_path]
+  ], "move must copy both assets, commit metadata once, then clean old assets");
+
+  let sameClassCalls = 0;
+  const noopResult = await moveGameImageToClass({
+    session,
+    image,
+    targetClass: "ai",
+    copyObject: async () => { sameClassCalls += 1; },
+    commitMetadata: async () => { sameClassCalls += 1; },
+    removeObject: async () => { sameClassCalls += 1; }
+  });
+  assert.equal(noopResult.kind, "noop");
+  assert.equal(sameClassCalls, 0, "same-class request must not touch Storage or metadata");
+
+  let commitCalledAfterOriginalFailure = false;
+  await assert.rejects(
+    () => moveGameImageToClass({
+      session,
+      image,
+      targetClass: "human",
+      copyObject: async () => {
+        throw new AdminContentError("TARGET_EXISTS", "simulated", { status: 409 });
+      },
+      commitMetadata: async () => { commitCalledAfterOriginalFailure = true; },
+      removeObject: async () => {}
+    }),
+    (error) => error.code === "TARGET_EXISTS"
+  );
+  assert.equal(commitCalledAfterOriginalFailure, false, "destination collision must fail closed before metadata commit");
+
+  const previewFailureCleanup = [];
+  let previewCopyCount = 0;
+  await assert.rejects(
+    () => moveGameImageToClass({
+      session,
+      image,
+      targetClass: "human",
+      copyObject: async () => {
+        previewCopyCount += 1;
+        if (previewCopyCount === 2) throw new AdminContentError("PREVIEW_COPY_FAILED", "simulated");
+      },
+      commitMetadata: async () => {
+        throw new Error("commit must not run");
+      },
+      removeObject: async ({ storagePath }) => previewFailureCleanup.push(storagePath)
+    }),
+    (error) => error.code === "PREVIEW_COPY_FAILED"
+  );
+  assert.deepEqual(previewFailureCleanup, [paths.targetStoragePath],
+    "preview copy failure must roll back the already-created target original");
+
+  const commitFailureCleanup = [];
+  await assert.rejects(
+    () => moveGameImageToClass({
+      session,
+      image,
+      targetClass: "human",
+      copyObject: async () => {},
+      commitMetadata: async () => {
+        throw new AdminContentError("MOVE_METADATA_STALE", "simulated");
+      },
+      removeObject: async ({ storagePath }) => commitFailureCleanup.push(storagePath)
+    }),
+    (error) => error.code === "MOVE_METADATA_STALE"
+  );
+  assert.deepEqual(commitFailureCleanup, [paths.targetThumbnailPath, paths.targetStoragePath],
+    "failed optimistic metadata switch must roll back both target copies");
+
+  let precommitCleanupCalls = 0;
+  await assert.rejects(
+    () => moveGameImageToClass({
+      session,
+      image,
+      targetClass: "human",
+      copyObject: async () => {},
+      commitMetadata: async () => {
+        throw new AdminContentError("MOVE_METADATA_STALE", "simulated stale metadata");
+      },
+      removeObject: async () => {
+        precommitCleanupCalls += 1;
+        if (precommitCleanupCalls === 1) {
+          throw new AdminContentError("CONTENT_HTTP_ERROR", "session expired during rollback", { status: 401 });
+        }
+      }
+    }),
+    (error) => error.code === "MOVE_PRECOMMIT_FAILED_CLEANUP_FAILED" && error.status === 401,
+    "auth/session loss during pre-commit rollback must remain fatal to the remaining batch"
+  );
+
+  const cleanupWarningResult = await moveGameImageToClass({
+    session,
+    image,
+    targetClass: "human",
+    copyObject: async () => {},
+    commitMetadata: async ({ targetClass, targetStoragePath, targetThumbnailPath }) => ({
+      ...image,
+      content_class: targetClass,
+      storage_path: targetStoragePath,
+      thumbnail_path: targetThumbnailPath
+    }),
+    removeObject: async ({ storagePath }) => {
+      if (storagePath === image.thumbnail_path) throw new AdminContentError("CLEANUP_FAILED", "simulated");
+    }
+  });
+  assert.equal(cleanupWarningResult.kind, "moved");
+  assert.equal(cleanupWarningResult.cleanupWarnings.length, 1,
+    "cleanup failure after canonical commit must be a warning, not a rollback");
+
+  const batchItems = [
+    image,
+    { ...image, id: "55555555-5555-4555-8555-555555555555", storage_path: "ai/55555555-5555-4555-8555-555555555555.avif", thumbnail_path: "ai/_previews/v1/55555555-5555-4555-8555-555555555555.avif" },
+    { ...image, id: "66666666-6666-4666-8666-666666666666", content_class: "human", storage_path: "human/66666666-6666-4666-8666-666666666666.avif", thumbnail_path: "human/_previews/v1/66666666-6666-4666-8666-666666666666.avif" }
+  ];
+  let activeMoves = 0;
+  let maxActiveMoves = 0;
+  const batchAttempts = [];
+  const batchResult = await runSequentialMoveBatch(batchItems, "human", {
+    moveItem: async (item) => {
+      batchAttempts.push(item.id);
+      activeMoves += 1;
+      maxActiveMoves = Math.max(maxActiveMoves, activeMoves);
+      await Promise.resolve();
+      activeMoves -= 1;
+      if (item.id.startsWith("55555555")) throw new AdminContentError("MOVE_FAILED", "simulated");
+      return { kind: "moved", cleanupWarnings: [] };
+    },
+    shouldAbort: () => false
+  });
+  assert.equal(maxActiveMoves, 1, "bulk move must remain strictly sequential per image");
+  assert.equal(batchResult.attemptedCount, 2);
+  assert.equal(batchResult.movedCount, 1);
+  assert.equal(batchResult.failedCount, 1);
+  assert.equal(batchResult.skippedCount, 1, "rows already in target class must be skipped without work");
+  assert.deepEqual(batchAttempts, [batchItems[0].id, batchItems[1].id]);
+
+  let fatalAttempts = 0;
+  const fatalResult = await runSequentialMoveBatch(batchItems, "human", {
+    moveItem: async () => {
+      fatalAttempts += 1;
+      throw new AdminContentError("CONTENT_SESSION_MISSING", "expired", { status: 401 });
+    },
+    shouldAbort: (error) => error instanceof AdminContentError && error.status === 401
+  });
+  assert.equal(fatalResult.aborted, true);
+  assert.equal(fatalAttempts, 1, "fatal auth/session loss must abort the remaining move batch");
+}
+
+
 async function testDeleteDrainCoordinatorLifecycle() {
   const deferred = () => {
     let resolve;
@@ -2327,6 +2592,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   const uploadWorkerClientSource = await fs.readFile(path.join(projectRoot, "js", "upload-worker-client.js"), "utf8");
   const uploadPreparationWorkerSource = await fs.readFile(path.join(projectRoot, "js", "upload-preparation-worker.js"), "utf8");
   const deleteQueueSource = await fs.readFile(path.join(projectRoot, "js", "delete-queue.js"), "utf8");
+  const contentClassMoveSource = await fs.readFile(path.join(projectRoot, "js", "content-class-move.js"), "utf8");
   const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -2486,11 +2752,16 @@ assert.ok(adminHtml.includes('id="storage-meter"') && adminHtml.includes('role="
 assert.ok(adminHtml.includes('id="storage-remaining"'), "Admin Library must expose approximate remaining capacity");
 assert.ok(adminHtml.includes('id="drop-zone"') && adminHtml.includes('aria-disabled="true"'),
   "Admin upload drop zone must start category-locked");
+assert.ok(adminHtml.includes('<span class="drop-zone-title">Wybierz kategorię</span>') &&
+  adminHtml.includes('drop-zone-copy is-hidden') && adminHtml.includes('drop-zone-formats is-hidden'),
+  "locked drop zone must show only the short Wybierz kategorię prompt");
+assert.ok(adminJs.includes('dropZoneTitle.textContent = categorySelected ? "Przeciągnij zdjęcia tutaj" : "Wybierz kategorię"'),
+  "choosing AI/HUMAN must restore the normal upload prompt without changing drop-zone geometry");
 assert.ok(/id="file-input"[\s\S]*?multiple[\s\S]*?disabled/m.test(adminHtml),
   "native file input must start disabled until AI/HUMAN is selected");
 assert.ok(adminJs.includes('function uploadEntryReady()'),
   "all upload-entry paths must share one category/busy readiness authority");
-assert.ok(adminJs.includes('Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !inventoryBusy'),
+assert.ok(adminJs.includes('Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !moveBusy && !inventoryBusy'),
   "upload-entry readiness must require a category and an idle content workspace");
 assert.ok(adminJs.includes('dropZone.classList.toggle("is-category-locked", !categorySelected)'),
   "drop zone visual lock must track category selection");
@@ -2514,12 +2785,20 @@ assert.ok(!adminCss.includes('.inventory-status:empty'),
   "empty Library status must not collapse its reserved layout slot");
 assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('>Odśwież</button>'),
   "manual Library refresh control must be removed from the Admin UI");
-assert.ok(adminHtml.includes('id="inventory-select"') && adminHtml.includes('>Zaznacz</button>'),
-  "Admin Library must expose selection mode instead of manual refresh");
-assert.ok(adminHtml.includes('id="inventory-select-all"') && adminHtml.includes('Zaznacz wszystkie'),
-  "selection mode must expose truthful filter-scoped select-all copy");
-assert.ok(adminHtml.includes('id="inventory-delete-selected"') && adminHtml.includes('Usuń zaznaczone (0)'),
-  "selection mode must expose one count-aware bulk delete action");
+assert.ok(adminHtml.includes('id="inventory-move"') && adminHtml.includes('>Przenieś</button>') &&
+  adminHtml.includes('id="inventory-delete-many"') && adminHtml.includes('>Usuń wiele</button>'),
+  "Library idle state must expose separate move and bulk-delete entry actions");
+assert.ok(adminHtml.includes('id="inventory-delete-actions"') &&
+  adminHtml.includes('id="inventory-delete-select-all"') &&
+  adminHtml.includes('id="inventory-delete-selected"'),
+  "delete mode must own a physically separate destructive action group");
+assert.ok(adminHtml.includes('id="inventory-move-actions"') &&
+  adminHtml.includes('id="inventory-move-select-all"') &&
+  adminHtml.includes('id="inventory-move-to-ai"') &&
+  adminHtml.includes('id="inventory-move-to-human"'),
+  "move mode must own a physically separate non-destructive action group");
+assert.ok(!adminHtml.includes('id="inventory-select"'),
+  "generic Zaznacz entry must be removed so operation intent is chosen before selection");
 assert.ok(adminHtml.indexOf('class="content-panel workspace-panel"') < adminHtml.indexOf('class="inventory-panel workspace-panel"'),
   "desktop DOM order must keep upload before library");
 assert.ok(adminHtml.includes('class="admin-workspace"'), "authorized admin must use a dedicated workspace container");
@@ -2582,8 +2861,8 @@ assert.ok(adminJs.includes('applyStorageUsageDelta(result?.storageBytesAdded)'),
   "capacity bar must move file-by-file only after successful upload completion");
 assert.ok(adminJs.includes('await refreshStorageUsage({ force: true })'),
   "upload/delete flows need authoritative Storage reconciliation");
-assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('const contentMutationBusy = uploadBusy || deleteBusy'),
-  "upload and delete must remain mutually exclusive at workspace level");
+assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('let moveBusy = false') && adminJs.includes('const contentMutationBusy = uploadBusy || deleteBusy || moveBusy'),
+  "upload, delete and move must remain mutually exclusive at workspace level");
 assert.ok(adminJs.includes('new DeleteDrainCoordinator({') && adminJs.includes('singleDeleteCoordinator.enqueue(image)'),
   "single-image deletes must be owned by the tested drain-until-quiescent coordinator");
 assert.ok(deleteQueueSource.includes('await this.reconcile()') &&
@@ -2605,10 +2884,10 @@ const singleDeleteHandlerSource = adminJs.slice(
   adminJs.indexOf('async function handleDelete(imageId)'),
   adminJs.indexOf('async function handleBulkDelete()')
 );
-assert.ok(!singleDeleteHandlerSource.includes('if (selectionMode || deletingIds.has(imageId) || uploadBusy || inventoryBusy || deleteBusy)'),
+assert.ok(!singleDeleteHandlerSource.includes('|| deleteBusy ||') && singleDeleteHandlerSource.includes('inventoryActionMode !== "idle"'),
   "active single-delete worker must not reject additional confirmed single-delete enqueue");
-assert.ok(adminJs.includes('actionButton.disabled = deletingIds.has(row.id) || uploadBusy || inventoryBusy;'),
-  "other single-delete controls must remain clickable while the delete worker itself is active");
+assert.ok(adminJs.includes('actionButton.disabled = deletingIds.has(row.id) || uploadBusy || moveBusy || inventoryBusy;'),
+  "other single-delete controls must remain clickable while the delete worker itself is active, but move/upload/refresh must exclude them");
 assert.ok(adminJs.includes('logoutButton.disabled = authBusy || contentInteractionBusy'),
   "logout must be blocked while destructive/inventory mutation work is active");
 assert.ok(adminJs.includes('selectedImageIds.clear();') && adminJs.includes('for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);'),
@@ -2619,7 +2898,7 @@ assert.ok(adminJs.includes('async function handleBulkDelete()'),
   "Admin Library must own an explicit bulk-delete controller");
 const bulkDeleteSource = adminJs.slice(
   adminJs.indexOf('async function handleBulkDelete()'),
-  adminJs.indexOf('function showLogin', adminJs.indexOf('async function handleBulkDelete()'))
+  adminJs.indexOf('async function handleBulkMove', adminJs.indexOf('async function handleBulkDelete()'))
 );
 assert.equal((bulkDeleteSource.match(/window\.confirm\(/g) || []).length, 1,
   "bulk delete must ask for one batch confirmation only");
@@ -2637,18 +2916,59 @@ assert.equal((bulkDeleteSource.match(/refreshStorageUsage\(\{ force: true \}\)/g
   "bulk delete must perform exactly one final authoritative Storage reconciliation");
 assert.ok(!bulkDeleteSource.includes('handleDelete('),
   "bulk delete must not call the single-delete UI handler N times");
-assert.ok(adminCss.includes('.inventory-card.is-selected') && adminCss.includes('.inventory-select-control'),
-  "selection mode must expose a visible non-color-only selected state");
-assert.ok(/\.inventory-card\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--danger\)/m.test(adminCss),
-  "selected cards must use the destructive red selection border");
-assert.ok(/\.inventory-card\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(163, 51, 59, 0\.24\)/m.test(adminCss),
-  "selected cards must receive a full-card translucent red overlay");
+const bulkMoveSource = adminJs.slice(
+  adminJs.indexOf('async function handleBulkMove(targetClass)'),
+  adminJs.indexOf('function showLogin', adminJs.indexOf('async function handleBulkMove(targetClass)'))
+);
+assert.ok(adminJs.includes('let inventoryActionMode = "idle"') &&
+  adminJs.includes('inventoryActionMode = mode'),
+  "multi-action authority must use explicit idle/move/delete modes rather than one generic selection boolean");
+assert.ok(bulkMoveSource.includes('runSequentialMoveBatch(selectedRows, targetClass') &&
+  bulkMoveSource.includes('moveGameImageToClass({'),
+  "bulk move must use the tested sequential copy/commit/cleanup authority");
+assert.ok(!bulkMoveSource.includes('deleteGameImage(') && !bulkMoveSource.includes('uploadPreparationWorker'),
+  "move must not reuse destructive delete or AVIF upload-worker paths");
+assert.equal((bulkMoveSource.match(/refreshInventory\(\{ quiet: true, refreshStorage: false \}\)/g) || []).length, 1,
+  "move batch must perform exactly one final authoritative inventory refresh");
+assert.equal((bulkMoveSource.match(/refreshStorageUsage\(\{ force: true \}\)/g) || []).length, 1,
+  "move batch must perform exactly one final authoritative Storage reconciliation");
+assert.ok(contentClassMoveSource.includes('copyObject({') &&
+  contentClassMoveSource.includes('commitMetadata({') &&
+  contentClassMoveSource.indexOf('commitMetadata({') > contentClassMoveSource.indexOf('copyObject({'),
+  "move lifecycle must copy target objects before switching canonical metadata");
+assert.ok(contentClassMoveSource.includes('cleanupWarnings') &&
+  contentClassMoveSource.includes('MOVE_PRECOMMIT_FAILED_CLEANUP_FAILED'),
+  "move lifecycle must distinguish pre-commit rollback failure from safe post-commit cleanup warnings");
+assert.ok(contentClassMoveSource.includes('cleanupSessionFailure') &&
+  contentClassMoveSource.includes('cleanupError.status === 401') &&
+  contentClassMoveSource.includes('cleanupError.status === 403'),
+  "move rollback cleanup must preserve fatal auth/session status for the batch abort policy");
+assert.ok(bulkMoveSource.includes('if (!currentSession) return;'),
+  "move final reconciliation must stop cleanly if refreshInventory logs the admin out");
+assert.ok(adminContent.includes('/storage/v1/object/copy') &&
+  adminContent.includes('destinationKey') &&
+  adminContent.includes('copyMetadata: true'),
+  "Storage move preparation must use server-side copy rather than browser download/re-upload");
+assert.ok(adminContent.includes('url.searchParams.set("content_class", `eq.${image.content_class}`)') &&
+  adminContent.includes('url.searchParams.set("storage_path", `eq.${image.storage_path}`)') &&
+  adminContent.includes('url.searchParams.set("thumbnail_path", sourceThumbnail ? `eq.${sourceThumbnail}` : "is.null")'),
+  "canonical metadata switch must use optimistic source class/path matching");
+assert.ok(adminCss.includes('.inventory-card.is-delete-mode.is-selected') &&
+  adminCss.includes('.inventory-card.is-move-mode.is-selected') && adminCss.includes('.inventory-select-control'),
+  "delete and move modes must expose distinct selected-card visual contracts");
+assert.ok(/\.inventory-card\.is-delete-mode\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--danger\)/m.test(adminCss),
+  "delete selection must remain destructive red");
+assert.ok(/\.inventory-card\.is-delete-mode\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(163, 51, 59, 0\.24\)/m.test(adminCss),
+  "delete selection must retain the full-card red overlay");
+assert.ok(/\.inventory-card\.is-move-mode\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--move\)/m.test(adminCss) &&
+  /\.inventory-card\.is-move-mode\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(217, 119, 6, 0\.24\)/m.test(adminCss),
+  "move selection must be orange and visually distinct from delete mode");
 assert.ok(adminJs.includes('function createDeleteMarkerIcon()') &&
   adminJs.includes('circle.classList.add("delete-marker-circle")') &&
   adminJs.includes('cross.classList.add("delete-marker-x")'),
   "delete controls must render a reusable SVG marker with a circle and cross");
-assert.ok(adminJs.includes('if (selected) actionButton.append(createDeleteMarkerIcon());'),
-  "bulk selection must show the SVG destructive marker on selected cards");
+assert.ok(adminJs.includes('inventoryActionMode === "move" ? createMoveMarkerIcon() : createDeleteMarkerIcon()'),
+  "selected cards must render an orange move marker in move mode and the destructive marker in delete mode");
 assert.ok(adminJs.includes('actionButton.append(createDeleteMarkerIcon());'),
   "single-image delete must show the same SVG destructive marker");
 assert.ok(/\.delete-marker-circle\s*\{[\s\S]*?fill:\s*var\(--danger\)/m.test(adminCss) &&
@@ -2658,10 +2978,13 @@ assert.ok(/\.inventory-delete,\s*\n\.inventory-select-control\s*\{[\s\S]*?border
   "delete/select hit areas must be visually transparent so the SVG is the only destructive circle");
 assert.ok(/\.inventory-delete,\s*\n\.inventory-select-control\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/m.test(adminCss),
   "delete/select hit area must be 44x44px for reliable mouse/touch activation");
-assert.ok(/\.delete-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
-  "visible destructive SVG must be 34x34px");
-assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-delete,\s*\n\s*\.inventory-select-control\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;[\s\S]*?\.delete-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
-  "mobile two-column cards must keep the same 44px target and 34px SVG");
+assert.ok(/\.delete-marker-icon,\s*\n\.move-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
+  "visible delete and move SVG markers must be 34x34px");
+assert.ok(/\.move-marker-circle\s*\{[\s\S]*?fill:\s*var\(--move\)/m.test(adminCss) &&
+  /\.move-marker-arrow\s*\{[\s\S]*?stroke:\s*#ffffff/m.test(adminCss),
+  "move marker must use an orange filled circle with a white transfer glyph");
+assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-delete,\s*\n\s*\.inventory-select-control\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;[\s\S]*?\.delete-marker-icon,\s*\n\s*\.move-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
+  "mobile two-column cards must keep the same 44px target and 34px delete/move SVGs");
 assert.ok(/\.inventory-card\.is-selected \.inventory-select-control::before\s*\{[\s\S]*?display:\s*none;/m.test(adminCss),
   "selected bulk cards must suppress the neutral selector ring behind the destructive SVG");
 assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/m.test(adminCss),
@@ -2818,6 +3141,7 @@ await testAvifConversionContracts();
 await testAdminStorageUsageContract();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
+await testContentClassMoveLifecycle();
 await testDeleteDrainCoordinatorLifecycle();
 await testUploadPreparationWorkerClientLifecycle();
 await testSequentialUploadBatchContinuity();
@@ -2840,6 +3164,7 @@ console.log("V1.5.9.3.1 Admin delete-marker + mobile grid corrective: PASS");
 console.log("V1.5.9.3.2 Stable Library status slot corrective: PASS");
 console.log("V1.5.9.4 Delete drain-until-quiescent temporal lifecycle: PASS");
 console.log("V1.5.9.5 Upload Worker protocol + recovery + main-thread isolation: PASS");
+console.log("V1.5.9.6 Admin move copy/commit/cleanup lifecycle + separate modes: PASS");
 console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");

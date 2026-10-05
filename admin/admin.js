@@ -26,6 +26,7 @@ import {
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
+import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 
 const adminCard = document.querySelector("#admin-card");
@@ -44,16 +45,26 @@ const adminTitle = document.querySelector("#admin-title");
 
 const classInputs = [...document.querySelectorAll('input[name="content-class"]')];
 const dropZone = document.querySelector("#drop-zone");
+const dropZoneTitle = dropZone.querySelector(".drop-zone-title");
+const dropZoneCopy = dropZone.querySelector(".drop-zone-copy");
+const dropZoneFormats = dropZone.querySelector(".drop-zone-formats");
 const fileInput = document.querySelector("#file-input");
 const queueHeader = document.querySelector("#queue-header");
 const queueSummary = document.querySelector("#queue-summary");
 const uploadQueue = document.querySelector("#upload-queue");
 
-const inventorySelectButton = document.querySelector("#inventory-select");
-const inventorySelectionActions = document.querySelector("#inventory-selection-actions");
-const inventorySelectAllButton = document.querySelector("#inventory-select-all");
-const inventorySelectionCancelButton = document.querySelector("#inventory-selection-cancel");
+const inventoryIdleActions = document.querySelector("#inventory-idle-actions");
+const inventoryMoveButton = document.querySelector("#inventory-move");
+const inventoryDeleteManyButton = document.querySelector("#inventory-delete-many");
+const inventoryDeleteActions = document.querySelector("#inventory-delete-actions");
+const inventoryDeleteSelectAllButton = document.querySelector("#inventory-delete-select-all");
+const inventoryDeleteCancelButton = document.querySelector("#inventory-delete-cancel");
 const inventoryDeleteSelectedButton = document.querySelector("#inventory-delete-selected");
+const inventoryMoveActions = document.querySelector("#inventory-move-actions");
+const inventoryMoveSelectAllButton = document.querySelector("#inventory-move-select-all");
+const inventoryMoveCancelButton = document.querySelector("#inventory-move-cancel");
+const inventoryMoveToAiButton = document.querySelector("#inventory-move-to-ai");
+const inventoryMoveToHumanButton = document.querySelector("#inventory-move-to-human");
 const inventoryStatus = document.querySelector("#inventory-status");
 const inventoryGrid = document.querySelector("#inventory-grid");
 const inventoryFilterButtons = [...document.querySelectorAll("[data-filter]")];
@@ -71,6 +82,7 @@ let currentSession = null;
 let authBusy = false;
 let uploadBusy = false;
 let deleteBusy = false;
+let moveBusy = false;
 let completedCount = 0;
 let duplicateCount = 0;
 let failedCount = 0;
@@ -80,7 +92,7 @@ let inventoryFilter = "all";
 let inventoryBusy = false;
 let storageUsage = null;
 let storageUsagePromise = null;
-let selectionMode = false;
+let inventoryActionMode = "idle";
 const selectedImageIds = new Set();
 const deletingIds = new Set();
 let singleDeleteStats = createSingleDeleteStats();
@@ -146,7 +158,19 @@ function focusViewTarget(target) {
 }
 
 function uploadEntryReady() {
-  return Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !inventoryBusy;
+  return Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !moveBusy && !inventoryBusy;
+}
+
+function selectedMoveCount(targetClass) {
+  return inventoryRows.filter(
+    (row) => selectedImageIds.has(row.id) && row.content_class !== targetClass
+  ).length;
+}
+
+function syncDropZonePrompt(categorySelected) {
+  dropZoneTitle.textContent = categorySelected ? "Przeciągnij zdjęcia tutaj" : "Wybierz kategorię";
+  dropZoneCopy.classList.toggle("is-hidden", !categorySelected);
+  dropZoneFormats.classList.toggle("is-hidden", !categorySelected);
 }
 
 function syncBusyControls() {
@@ -154,9 +178,10 @@ function syncBusyControls() {
   emailInput.disabled = authBusy;
   passwordInput.disabled = authBusy;
 
-  const contentMutationBusy = uploadBusy || deleteBusy;
+  const contentMutationBusy = uploadBusy || deleteBusy || moveBusy;
   const contentInteractionBusy = contentMutationBusy || inventoryBusy;
   const categorySelected = Boolean(selectedContentClass());
+  syncDropZonePrompt(categorySelected);
   dropZone.disabled = contentInteractionBusy;
   dropZone.classList.toggle("is-category-locked", !categorySelected);
   dropZone.setAttribute("aria-disabled", contentInteractionBusy || !categorySelected ? "true" : "false");
@@ -164,14 +189,28 @@ function syncBusyControls() {
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
   logoutButton.disabled = authBusy || contentInteractionBusy;
-  inventorySelectButton.disabled = contentInteractionBusy;
-  inventorySelectAllButton.disabled = contentInteractionBusy || filteredInventoryRows().length === 0;
-  inventorySelectionCancelButton.disabled = contentMutationBusy;
+  const noVisibleRows = filteredInventoryRows().length === 0;
+  inventoryMoveButton.disabled = contentInteractionBusy || noVisibleRows;
+  inventoryDeleteManyButton.disabled = contentInteractionBusy || noVisibleRows;
+  inventoryDeleteSelectAllButton.disabled =
+    contentInteractionBusy || inventoryActionMode !== "delete" || filteredInventoryRows().length === 0;
+  inventoryMoveSelectAllButton.disabled =
+    contentInteractionBusy || inventoryActionMode !== "move" || filteredInventoryRows().length === 0;
+  inventoryDeleteCancelButton.disabled = contentMutationBusy;
+  inventoryMoveCancelButton.disabled = contentMutationBusy;
   inventoryDeleteSelectedButton.disabled =
-    contentInteractionBusy || selectedImageIds.size === 0;
-  for (const button of inventoryFilterButtons) button.disabled = deleteBusy || inventoryBusy;
+    contentInteractionBusy || inventoryActionMode !== "delete" || selectedImageIds.size === 0;
+  inventoryMoveToAiButton.disabled =
+    contentInteractionBusy || inventoryActionMode !== "move" || selectedMoveCount("ai") === 0;
+  inventoryMoveToHumanButton.disabled =
+    contentInteractionBusy || inventoryActionMode !== "move" || selectedMoveCount("human") === 0;
+
+  for (const button of inventoryFilterButtons) button.disabled = deleteBusy || moveBusy || inventoryBusy;
   for (const button of inventoryGrid.querySelectorAll("[data-delete-id]")) {
-    button.disabled = deletingIds.has(button.dataset.deleteId) || uploadBusy || inventoryBusy;
+    button.disabled = deletingIds.has(button.dataset.deleteId) || uploadBusy || moveBusy || inventoryBusy;
+  }
+  for (const button of inventoryGrid.querySelectorAll("[data-select-id]")) {
+    button.disabled = contentInteractionBusy;
   }
 }
 
@@ -187,6 +226,11 @@ function setUploadBusy(value) {
 
 function setDeleteBusy(value) {
   deleteBusy = Boolean(value);
+  syncBusyControls();
+}
+
+function setMoveBusy(value) {
+  moveBusy = Boolean(value);
   syncBusyControls();
 }
 
@@ -364,20 +408,40 @@ function filteredInventoryRows() {
 }
 
 function syncSelectionControls() {
-  inventorySelectButton.classList.toggle("is-hidden", selectionMode);
-  inventorySelectionActions.classList.toggle("is-hidden", !selectionMode);
+  const moveMode = inventoryActionMode === "move";
+  const deleteMode = inventoryActionMode === "delete";
+  const idleMode = inventoryActionMode === "idle";
+
+  inventoryIdleActions.classList.toggle("is-hidden", !idleMode);
+  inventoryDeleteActions.classList.toggle("is-hidden", !deleteMode);
+  inventoryMoveActions.classList.toggle("is-hidden", !moveMode);
+
   inventoryDeleteSelectedButton.textContent = `Usuń zaznaczone (${selectedImageIds.size})`;
+  inventoryMoveToAiButton.textContent = `Przenieś do AI (${selectedMoveCount("ai")})`;
+  inventoryMoveToHumanButton.textContent = `Przenieś do HUMAN (${selectedMoveCount("human")})`;
+
+  inventoryMoveToAiButton.classList.toggle("is-hidden", moveMode && inventoryFilter === "ai");
+  inventoryMoveToHumanButton.classList.toggle("is-hidden", moveMode && inventoryFilter === "human");
+
   syncBusyControls();
 }
 
 function clearInventorySelection({ exitMode = false } = {}) {
   selectedImageIds.clear();
-  if (exitMode) selectionMode = false;
+  if (exitMode) inventoryActionMode = "idle";
   syncSelectionControls();
 }
 
+function setInventoryActionMode(mode) {
+  if (!["idle", "move", "delete"].includes(mode)) throw new Error(`Unknown inventory action mode: ${mode}`);
+  inventoryActionMode = mode;
+  selectedImageIds.clear();
+  setInventoryStatus();
+  renderInventory();
+}
+
 function toggleInventorySelection(imageId) {
-  if (!selectionMode || deleteBusy || inventoryBusy) return;
+  if (inventoryActionMode === "idle" || deleteBusy || moveBusy || inventoryBusy) return;
 
   if (selectedImageIds.has(imageId)) selectedImageIds.delete(imageId);
   else selectedImageIds.add(imageId);
@@ -425,12 +489,38 @@ function createDeleteMarkerIcon() {
   return svg;
 }
 
+function createMoveMarkerIcon() {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.classList.add("move-marker-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const circle = document.createElementNS(namespace, "circle");
+  circle.classList.add("move-marker-circle");
+  circle.setAttribute("cx", "12");
+  circle.setAttribute("cy", "12");
+  circle.setAttribute("r", "10");
+
+  const arrows = document.createElementNS(namespace, "path");
+  arrows.classList.add("move-marker-arrow");
+  arrows.setAttribute("d", "M7.2 9h9.1m0 0-2.4-2.4M16.3 9l-2.4 2.4M16.8 15H7.7m0 0 2.4-2.4M7.7 15l2.4 2.4");
+
+  svg.append(circle, arrows);
+  return svg;
+}
+
 function renderInventory() {
   updateInventoryStats();
   inventoryGrid.replaceChildren();
-  inventoryGrid.classList.toggle("is-selection-mode", selectionMode);
 
-  if (selectionMode) {
+  const actionModeActive = inventoryActionMode !== "idle";
+  inventoryGrid.classList.toggle("is-selection-mode", actionModeActive);
+  inventoryGrid.classList.toggle("is-delete-mode", inventoryActionMode === "delete");
+  inventoryGrid.classList.toggle("is-move-mode", inventoryActionMode === "move");
+
+  if (actionModeActive) {
     inventoryGrid.setAttribute("role", "listbox");
     inventoryGrid.setAttribute("aria-multiselectable", "true");
   } else {
@@ -461,10 +551,12 @@ function renderInventory() {
     card.className = "inventory-card";
     card.dataset.imageId = row.id;
     card.classList.toggle("is-deleting", deletingIds.has(row.id));
-    card.classList.toggle("is-selection-mode", selectionMode);
+    card.classList.toggle("is-selection-mode", actionModeActive);
+    card.classList.toggle("is-delete-mode", inventoryActionMode === "delete");
+    card.classList.toggle("is-move-mode", inventoryActionMode === "move");
     card.classList.toggle("is-selected", selected);
 
-    if (selectionMode) {
+    if (actionModeActive) {
       card.tabIndex = 0;
       card.setAttribute("role", "option");
       card.setAttribute("aria-selected", selected ? "true" : "false");
@@ -493,19 +585,23 @@ function renderInventory() {
     const actionButton = document.createElement("button");
     actionButton.type = "button";
 
-    if (selectionMode) {
+    if (actionModeActive) {
       actionButton.className = "inventory-select-control";
       actionButton.dataset.selectId = row.id;
-      if (selected) actionButton.append(createDeleteMarkerIcon());
+      if (selected) {
+        actionButton.append(
+          inventoryActionMode === "move" ? createMoveMarkerIcon() : createDeleteMarkerIcon()
+        );
+      }
       actionButton.setAttribute("aria-label", `${selected ? "Odznacz" : "Zaznacz"} ${row.original_filename || "obraz"}`);
       actionButton.setAttribute("aria-pressed", selected ? "true" : "false");
-      actionButton.disabled = deleteBusy;
+      actionButton.disabled = deleteBusy || moveBusy;
     } else {
       actionButton.className = "inventory-delete";
       actionButton.append(createDeleteMarkerIcon());
       actionButton.dataset.deleteId = row.id;
       actionButton.setAttribute("aria-label", `Usuń ${row.original_filename || "obraz"}`);
-      actionButton.disabled = deletingIds.has(row.id) || uploadBusy || inventoryBusy;
+      actionButton.disabled = deletingIds.has(row.id) || uploadBusy || moveBusy || inventoryBusy;
     }
 
     const body = document.createElement("div");
@@ -661,7 +757,7 @@ const singleDeleteCoordinator = new DeleteDrainCoordinator({
 });
 
 async function handleDelete(imageId) {
-  if (selectionMode || deletingIds.has(imageId) || uploadBusy || inventoryBusy) return;
+  if (inventoryActionMode !== "idle" || deletingIds.has(imageId) || uploadBusy || moveBusy || inventoryBusy) return;
 
   const image = inventoryRows.find((row) => row.id === imageId);
   if (!image) return;
@@ -689,7 +785,7 @@ async function handleDelete(imageId) {
 }
 
 async function handleBulkDelete() {
-  if (uploadBusy || deleteBusy || inventoryBusy || selectedImageIds.size === 0) return;
+  if (inventoryActionMode !== "delete" || uploadBusy || deleteBusy || moveBusy || inventoryBusy || selectedImageIds.size === 0) return;
 
   const selectedRows = inventoryRows.filter((row) => selectedImageIds.has(row.id));
   if (!selectedRows.length) {
@@ -753,7 +849,7 @@ async function handleBulkDelete() {
 
     selectedImageIds.clear();
     for (const imageId of failedIds) selectedImageIds.add(imageId);
-    selectionMode = failedIds.size > 0;
+    inventoryActionMode = failedIds.size > 0 ? "delete" : "idle";
 
     await refreshInventory({ quiet: true, refreshStorage: false });
     if (currentSession) await refreshStorageUsage({ force: true });
@@ -774,13 +870,84 @@ async function handleBulkDelete() {
 }
 
 
+async function handleBulkMove(targetClass) {
+  if (
+    inventoryActionMode !== "move" ||
+    uploadBusy ||
+    deleteBusy ||
+    moveBusy ||
+    inventoryBusy ||
+    selectedImageIds.size === 0
+  ) return;
+
+  const selectedRows = inventoryRows.filter((row) => selectedImageIds.has(row.id));
+  const eligibleRows = selectedRows.filter((row) => row.content_class !== targetClass);
+  if (!eligibleRows.length) return;
+
+  setMoveBusy(true);
+  const failedIds = new Set();
+
+  try {
+    const result = await runSequentialMoveBatch(selectedRows, targetClass, {
+      moveItem: async (image, destinationClass) => {
+        await refreshCurrentSessionForMutation();
+        return moveGameImageToClass({
+          session: currentSession,
+          image,
+          targetClass: destinationClass
+        });
+      },
+      onItemStart: ({ index, total }) => {
+        setInventoryStatus(`Przenoszenie ${index + 1}/${total} do ${targetClass.toUpperCase()}…`);
+      },
+      onItemSuccess: ({ image }) => {
+        selectedImageIds.delete(image.id);
+      },
+      onItemFailure: ({ image }) => {
+        failedIds.add(image.id);
+      },
+      shouldAbort: (error) => isSessionMutationError(error)
+    });
+
+    if (result.aborted) {
+      clearAdminSession();
+      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+      return;
+    }
+
+    selectedImageIds.clear();
+    for (const imageId of failedIds) selectedImageIds.add(imageId);
+    inventoryActionMode = failedIds.size > 0 ? "move" : "idle";
+
+    await refreshInventory({ quiet: true, refreshStorage: false });
+    if (!currentSession) return;
+    await refreshStorageUsage({ force: true });
+
+    const warningCount = result.cleanupWarnings.length;
+    if (result.failedCount > 0 || warningCount > 0) {
+      const parts = [`Przeniesiono ${result.movedCount} z ${result.attemptedCount}.`];
+      if (result.failedCount > 0) parts.push(`Nie udało się przenieść ${result.failedCount}.`);
+      if (warningCount > 0) parts.push(`Nie udało się posprzątać ${warningCount} starych plików.`);
+      setInventoryStatus(parts.join(" "), { error: true });
+    } else {
+      setInventoryStatus(
+        `Przeniesiono ${result.movedCount} ${result.movedCount === 1 ? "obraz" : "obrazów"} do ${targetClass.toUpperCase()}.`
+      );
+    }
+  } finally {
+    setMoveBusy(false);
+    renderInventory();
+  }
+}
+
 function showLogin(message = "", { morph = true, focus = true } = {}) {
   currentSession = null;
   inventoryRows = [];
-  selectionMode = false;
+  inventoryActionMode = "idle";
   selectedImageIds.clear();
   deletingIds.clear();
   deleteBusy = false;
+  moveBusy = false;
   clearStorageUsage();
   passwordInput.value = "";
   loginStatus.textContent = message;
@@ -990,7 +1157,7 @@ async function commitPreparedFile({ prepared, inventoryPreview }, contentClass, 
 }
 
 async function handleFiles(fileList) {
-  if (uploadBusy || deleteBusy || inventoryBusy) return;
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
 
   const files = [...(fileList || [])].filter((file) => file && file.size > 0);
   if (!files.length) return;
@@ -1110,7 +1277,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy || deleteBusy || inventoryBusy) return;
+  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
 
   const session = currentSession;
   setAuthBusy(true);
@@ -1162,23 +1329,39 @@ dropZone.addEventListener("drop", (event) => {
 });
 
 
-inventorySelectButton.addEventListener("click", () => {
-  if (uploadBusy || deleteBusy || inventoryBusy) return;
-  selectionMode = true;
-  selectedImageIds.clear();
-  setInventoryStatus();
-  renderInventory();
+inventoryMoveButton.addEventListener("click", () => {
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  setInventoryActionMode("move");
 });
 
-inventorySelectAllButton.addEventListener("click", () => {
-  if (!selectionMode || uploadBusy || deleteBusy || inventoryBusy) return;
+inventoryDeleteManyButton.addEventListener("click", () => {
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  setInventoryActionMode("delete");
+});
+
+inventoryDeleteSelectAllButton.addEventListener("click", () => {
+  if (inventoryActionMode !== "delete" || uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
   selectedImageIds.clear();
   for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);
   renderInventory();
 });
 
-inventorySelectionCancelButton.addEventListener("click", () => {
-  if (deleteBusy) return;
+inventoryMoveSelectAllButton.addEventListener("click", () => {
+  if (inventoryActionMode !== "move" || uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  selectedImageIds.clear();
+  for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);
+  renderInventory();
+});
+
+inventoryDeleteCancelButton.addEventListener("click", () => {
+  if (deleteBusy || moveBusy) return;
+  clearInventorySelection({ exitMode: true });
+  setInventoryStatus();
+  renderInventory();
+});
+
+inventoryMoveCancelButton.addEventListener("click", () => {
+  if (deleteBusy || moveBusy) return;
   clearInventorySelection({ exitMode: true });
   setInventoryStatus();
   renderInventory();
@@ -1188,9 +1371,17 @@ inventoryDeleteSelectedButton.addEventListener("click", () => {
   void handleBulkDelete();
 });
 
+inventoryMoveToAiButton.addEventListener("click", () => {
+  void handleBulkMove("ai");
+});
+
+inventoryMoveToHumanButton.addEventListener("click", () => {
+  void handleBulkMove("human");
+});
+
 for (const button of inventoryFilterButtons) {
   button.addEventListener("click", () => {
-    if (deleteBusy || inventoryBusy) return;
+    if (deleteBusy || moveBusy || inventoryBusy) return;
     const nextFilter = button.dataset.filter || "all";
     if (nextFilter !== inventoryFilter) selectedImageIds.clear();
     inventoryFilter = nextFilter;
@@ -1199,7 +1390,7 @@ for (const button of inventoryFilterButtons) {
 }
 
 inventoryGrid.addEventListener("click", (event) => {
-  if (selectionMode) {
+  if (inventoryActionMode !== "idle") {
     const card = event.target.closest("[data-image-id]");
     if (!card) return;
     toggleInventorySelection(card.dataset.imageId);
@@ -1212,7 +1403,7 @@ inventoryGrid.addEventListener("click", (event) => {
 });
 
 inventoryGrid.addEventListener("keydown", (event) => {
-  if (!selectionMode || deleteBusy) return;
+  if (inventoryActionMode === "idle" || deleteBusy || moveBusy) return;
   if (event.target?.classList?.contains("inventory-card") && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
     toggleInventorySelection(event.target.dataset.imageId);

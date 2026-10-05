@@ -11,6 +11,7 @@
   --success: #138a4b;
   --danger: #a3333b;
   --warning: #a16a10;
+  --move: #d97706;
   font-family: "Segoe UI", sans-serif;
 }
 
@@ -497,12 +498,24 @@ h2 {
   gap: 8px;
 }
 
+.inventory-idle-actions,
 .inventory-selection-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.move-button {
+  border-color: rgba(217, 119, 6, 0.38);
+  color: #9a5805;
+}
+
+.move-button:hover:not(:disabled),
+.move-button:focus-visible {
+  border-color: var(--move);
+  background: rgba(217, 119, 6, 0.08);
 }
 
 .inventory-toolbar {
@@ -683,19 +696,32 @@ h2 {
   border-color: var(--border-strong);
 }
 
-.inventory-card.is-selected {
+.inventory-card.is-delete-mode.is-selected {
   border-color: var(--danger);
   box-shadow: inset 0 0 0 2px rgba(163, 51, 59, 0.34), 0 8px 22px rgba(163, 51, 59, 0.16);
 }
 
-.inventory-card.is-selected::after {
+.inventory-card.is-move-mode.is-selected {
+  border-color: var(--move);
+  box-shadow: inset 0 0 0 2px rgba(217, 119, 6, 0.34), 0 8px 22px rgba(217, 119, 6, 0.16);
+}
+
+.inventory-card.is-delete-mode.is-selected::after,
+.inventory-card.is-move-mode.is-selected::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 2;
   border-radius: inherit;
-  background: rgba(163, 51, 59, 0.24);
   pointer-events: none;
+}
+
+.inventory-card.is-delete-mode.is-selected::after {
+  background: rgba(163, 51, 59, 0.24);
+}
+
+.inventory-card.is-move-mode.is-selected::after {
+  background: rgba(217, 119, 6, 0.24);
 }
 
 .inventory-card.is-deleting {
@@ -769,8 +795,13 @@ h2 {
 }
 
 .inventory-delete:focus-visible,
-.inventory-select-control:focus-visible {
+.inventory-card.is-delete-mode .inventory-select-control:focus-visible {
   outline: 2px solid rgba(163, 51, 59, 0.72);
+  outline-offset: 1px;
+}
+
+.inventory-card.is-move-mode .inventory-select-control:focus-visible {
+  outline: 2px solid rgba(217, 119, 6, 0.78);
   outline-offset: 1px;
 }
 
@@ -792,7 +823,8 @@ h2 {
   display: none;
 }
 
-.delete-marker-icon {
+.delete-marker-icon,
+.move-marker-icon {
   width: 34px;
   height: 34px;
   display: block;
@@ -802,9 +834,14 @@ h2 {
 }
 
 .inventory-delete:hover .delete-marker-icon,
-.inventory-select-control:hover .delete-marker-icon {
+.inventory-card.is-delete-mode .inventory-select-control:hover .delete-marker-icon {
   transform: scale(1.06);
   filter: drop-shadow(0 4px 9px rgba(163, 51, 59, 0.32));
+}
+
+.inventory-card.is-move-mode .inventory-select-control:hover .move-marker-icon {
+  transform: scale(1.06);
+  filter: drop-shadow(0 4px 9px rgba(217, 119, 6, 0.32));
 }
 
 .delete-marker-circle {
@@ -816,6 +853,18 @@ h2 {
   stroke: #ffffff;
   stroke-width: 2.2;
   stroke-linecap: round;
+}
+
+.move-marker-circle {
+  fill: var(--move);
+}
+
+.move-marker-arrow {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .inventory-select-control:disabled {
@@ -983,7 +1032,8 @@ h2 {
   .inventory-detail { font-size: 0.61rem; line-height: 1.35; overflow-wrap: anywhere; }
   .inventory-delete,
   .inventory-select-control { top: 5px; right: 5px; width: 44px; height: 44px; }
-  .delete-marker-icon { width: 34px; height: 34px; }
+  .delete-marker-icon,
+  .move-marker-icon { width: 34px; height: 34px; }
   .inventory-select-control::before { width: 24px; height: 24px; }
 }
 

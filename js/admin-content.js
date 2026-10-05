@@ -672,6 +672,99 @@ export async function insertGameImageMetadata({
   return rows[0];
 }
 
+export async function copyStorageObject({
+  session,
+  sourcePath,
+  destinationPath,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+
+  if (typeof sourcePath !== "string" || !sourcePath || typeof destinationPath !== "string" || !destinationPath) {
+    throw new AdminContentError("STORAGE_COPY_PATH_INVALID", "Nieprawidłowa ścieżka kopiowania Storage.");
+  }
+  if (sourcePath === destinationPath) {
+    throw new AdminContentError("STORAGE_COPY_SAME_PATH", "Źródło i cel kopiowania Storage są identyczne.");
+  }
+
+  const resolved = resolveConfig(config);
+  const url = new URL("/storage/v1/object/copy", `${resolved.projectUrl}/`);
+
+  return request(url, {
+    fetchImpl,
+    method: "POST",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json"
+    }),
+    body: JSON.stringify({
+      bucketId: GAME_IMAGES_BUCKET,
+      sourceKey: sourcePath,
+      destinationKey: destinationPath,
+      copyMetadata: true
+    })
+  });
+}
+
+export async function updateGameImageMoveMetadata({
+  session,
+  image,
+  targetClass,
+  targetStoragePath,
+  targetThumbnailPath,
+  config = SUPABASE_PUBLIC_CONFIG,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  requireSession(session);
+  requireContentClass(targetClass);
+
+  if (!image || typeof image.id !== "string") {
+    throw new AdminContentError("MOVE_METADATA_IMAGE_INVALID", "Brak rekordu obrazu do aktualizacji.");
+  }
+  requireImageId(image.id);
+
+  if (typeof image.content_class !== "string" || typeof image.storage_path !== "string") {
+    throw new AdminContentError("MOVE_METADATA_SOURCE_INVALID", "Brak aktualnej kategorii lub ścieżki obrazu.");
+  }
+  if (typeof targetStoragePath !== "string" || !targetStoragePath) {
+    throw new AdminContentError("MOVE_METADATA_TARGET_INVALID", "Brak docelowej ścieżki obrazu.");
+  }
+
+  const resolved = resolveConfig(config);
+  const url = buildRestUrl(resolved.projectUrl, "game_images");
+  url.searchParams.set("id", `eq.${image.id}`);
+  url.searchParams.set("content_class", `eq.${image.content_class}`);
+  url.searchParams.set("storage_path", `eq.${image.storage_path}`);
+
+  const sourceThumbnail = typeof image.thumbnail_path === "string" && image.thumbnail_path.trim()
+    ? image.thumbnail_path
+    : null;
+  url.searchParams.set("thumbnail_path", sourceThumbnail ? `eq.${sourceThumbnail}` : "is.null");
+
+  const rows = await request(url, {
+    fetchImpl,
+    method: "PATCH",
+    headers: authHeaders(resolved.publishableKey, session.access_token, {
+      "Content-Type": "application/json",
+      Prefer: "return=representation"
+    }),
+    body: JSON.stringify({
+      content_class: targetClass,
+      storage_path: targetStoragePath,
+      thumbnail_path: targetThumbnailPath
+    })
+  });
+
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    throw new AdminContentError(
+      "MOVE_METADATA_STALE",
+      "Rekord obrazu zmienił się w innym miejscu. Odśwież bibliotekę i spróbuj ponownie."
+    );
+  }
+
+  return rows[0];
+}
+
 export async function removeStorageObject({
   session,
   storagePath,

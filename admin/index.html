@@ -57,9 +57,9 @@
             </fieldset>
 
             <button class="drop-zone is-category-locked" id="drop-zone" type="button" aria-disabled="true">
-              <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
-              <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
-              <span class="drop-zone-formats">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
+              <span class="drop-zone-title">Wybierz kategorię</span>
+              <span class="drop-zone-copy is-hidden">albo kliknij, aby wybrać pliki</span>
+              <span class="drop-zone-formats is-hidden">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
             </button>
 
             <input
@@ -83,11 +83,20 @@
             <div class="inventory-heading-row">
               <h2 id="inventory-heading">Biblioteka</h2>
               <div class="inventory-actions">
-                <button class="admin-secondary-button compact-button" id="inventory-select" type="button">Zaznacz</button>
-                <div class="inventory-selection-actions is-hidden" id="inventory-selection-actions">
-                  <button class="admin-secondary-button compact-button" id="inventory-select-all" type="button">Zaznacz wszystkie</button>
-                  <button class="admin-secondary-button compact-button" id="inventory-selection-cancel" type="button">Anuluj</button>
+                <div class="inventory-idle-actions" id="inventory-idle-actions">
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move" type="button">Przenieś</button>
+                  <button class="admin-secondary-button compact-button danger-button" id="inventory-delete-many" type="button">Usuń wiele</button>
+                </div>
+                <div class="inventory-selection-actions is-hidden" id="inventory-delete-actions">
+                  <button class="admin-secondary-button compact-button" id="inventory-delete-select-all" type="button">Zaznacz wszystkie</button>
+                  <button class="admin-secondary-button compact-button" id="inventory-delete-cancel" type="button">Anuluj</button>
                   <button class="admin-secondary-button compact-button danger-button" id="inventory-delete-selected" type="button" disabled>Usuń zaznaczone (0)</button>
+                </div>
+                <div class="inventory-selection-actions is-hidden" id="inventory-move-actions">
+                  <button class="admin-secondary-button compact-button" id="inventory-move-select-all" type="button">Zaznacz wszystkie</button>
+                  <button class="admin-secondary-button compact-button" id="inventory-move-cancel" type="button">Anuluj</button>
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move-to-ai" type="button" disabled>Przenieś do AI (0)</button>
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move-to-human" type="button" disabled>Przenieś do HUMAN (0)</button>
                 </div>
               </div>
             </div>
