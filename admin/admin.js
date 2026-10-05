@@ -25,7 +25,7 @@ import {
 } from "../js/avif-converter.js";
 import {
   promoteQueueItem,
-  runSequentialUploadBatch,
+  runPipelinedUploadBatch,
   summarizeUploadBatch
 } from "../js/upload-batch.js";
 
@@ -84,6 +84,9 @@ let storageUsagePromise = null;
 let selectionMode = false;
 const selectedImageIds = new Set();
 const deletingIds = new Set();
+const singleDeleteQueue = [];
+let singleDeleteWorkerPromise = null;
+let sessionRefreshPromise = null;
 
 
 const BOOT_REVEAL_DELAY_MS = 320;
@@ -160,6 +163,9 @@ function syncBusyControls() {
   inventoryDeleteSelectedButton.disabled =
     contentInteractionBusy || selectedImageIds.size === 0;
   for (const button of inventoryFilterButtons) button.disabled = deleteBusy || inventoryBusy;
+  for (const button of inventoryGrid.querySelectorAll("[data-delete-id]")) {
+    button.disabled = deletingIds.has(button.dataset.deleteId) || uploadBusy || inventoryBusy;
+  }
 }
 
 function setAuthBusy(value) {
@@ -390,6 +396,28 @@ function setInventoryStatus(message = "", { error = false } = {}) {
   inventoryStatus.classList.toggle("is-error", Boolean(error));
 }
 
+function createDeleteMarkerIcon() {
+  const namespace = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(namespace, "svg");
+  svg.classList.add("delete-marker-icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const circle = document.createElementNS(namespace, "circle");
+  circle.classList.add("delete-marker-circle");
+  circle.setAttribute("cx", "12");
+  circle.setAttribute("cy", "12");
+  circle.setAttribute("r", "10");
+
+  const cross = document.createElementNS(namespace, "path");
+  cross.classList.add("delete-marker-x");
+  cross.setAttribute("d", "M8.5 8.5 15.5 15.5 M15.5 8.5 8.5 15.5");
+
+  svg.append(circle, cross);
+  return svg;
+}
+
 function renderInventory() {
   updateInventoryStats();
   inventoryGrid.replaceChildren();
@@ -461,16 +489,16 @@ function renderInventory() {
     if (selectionMode) {
       actionButton.className = "inventory-select-control";
       actionButton.dataset.selectId = row.id;
-      actionButton.textContent = selected ? "×" : "";
+      if (selected) actionButton.append(createDeleteMarkerIcon());
       actionButton.setAttribute("aria-label", `${selected ? "Odznacz" : "Zaznacz"} ${row.original_filename || "obraz"}`);
       actionButton.setAttribute("aria-pressed", selected ? "true" : "false");
       actionButton.disabled = deleteBusy;
     } else {
       actionButton.className = "inventory-delete";
-      actionButton.textContent = "×";
+      actionButton.append(createDeleteMarkerIcon());
       actionButton.dataset.deleteId = row.id;
       actionButton.setAttribute("aria-label", `Usuń ${row.original_filename || "obraz"}`);
-      actionButton.disabled = deletingIds.has(row.id) || uploadBusy || deleteBusy || inventoryBusy;
+      actionButton.disabled = deletingIds.has(row.id) || uploadBusy || inventoryBusy;
     }
 
     const body = document.createElement("div");
@@ -545,7 +573,7 @@ async function refreshInventory({ quiet = false, refreshStorage = true } = {}) {
 }
 
 async function handleDelete(imageId) {
-  if (deletingIds.has(imageId) || uploadBusy || deleteBusy || inventoryBusy) return;
+  if (selectionMode || deletingIds.has(imageId) || uploadBusy || inventoryBusy) return;
 
   const image = inventoryRows.find((row) => row.id === imageId);
   if (!image) return;
@@ -556,45 +584,82 @@ async function handleDelete(imageId) {
   if (!accepted) return;
 
   deletingIds.add(imageId);
-  setDeleteBusy(true);
+  singleDeleteQueue.push(image);
   renderInventory();
-  setInventoryStatus(`Usuwanie ${image.original_filename}…`);
+  setInventoryStatus(
+    singleDeleteQueue.length > 1 || deleteBusy
+      ? `Dodano ${image.original_filename} do kolejki usuwania.`
+      : `Usuwanie ${image.original_filename}…`
+  );
 
-  let finalMessage = "";
-  let finalError = false;
+  if (!singleDeleteWorkerPromise) {
+    singleDeleteWorkerPromise = drainSingleDeleteQueue();
+  }
+}
+
+async function drainSingleDeleteQueue() {
+  setDeleteBusy(true);
+  let deletedCount = 0;
+  let failedCount = 0;
   let sessionFailed = false;
 
   try {
-    currentSession = await authorizeAdminSession({ session: currentSession });
-    saveAdminSession(currentSession);
+    while (singleDeleteQueue.length > 0) {
+      const image = singleDeleteQueue.shift();
+      if (!image) continue;
 
-    await deleteGameImage({
-      session: currentSession,
-      image
-    });
+      setInventoryStatus(
+        singleDeleteQueue.length > 0
+          ? `Usuwanie ${image.original_filename}… · ${singleDeleteQueue.length} w kolejce`
+          : `Usuwanie ${image.original_filename}…`
+      );
 
-    inventoryRows = inventoryRows.filter((row) => row.id !== imageId);
-    finalMessage = `Usunięto ${image.original_filename}.`;
-  } catch (error) {
-    if (isSessionMutationError(error)) {
-      sessionFailed = true;
+      try {
+        await refreshCurrentSessionForMutation();
+        await deleteGameImage({
+          session: currentSession,
+          image
+        });
+
+        deletedCount += 1;
+        selectedImageIds.delete(image.id);
+        inventoryRows = inventoryRows.filter((row) => row.id !== image.id);
+      } catch (error) {
+        if (isSessionMutationError(error)) {
+          sessionFailed = true;
+          break;
+        }
+        failedCount += 1;
+      } finally {
+        deletingIds.delete(image.id);
+        renderInventory();
+      }
+    }
+
+    if (sessionFailed) {
+      for (const queued of singleDeleteQueue.splice(0)) deletingIds.delete(queued.id);
       clearAdminSession();
       showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
-    } else {
-      finalMessage = error instanceof Error ? error.message : "Nie udało się usunąć obrazu.";
-      finalError = true;
+      return;
     }
-  } finally {
-    deletingIds.delete(imageId);
 
-    if (!sessionFailed && currentSession) {
+    if (currentSession) {
       await refreshInventory({ quiet: true, refreshStorage: false });
       if (currentSession) await refreshStorageUsage({ force: true });
     }
 
+    if (failedCount > 0) {
+      setInventoryStatus(
+        `Usunięto ${deletedCount}. Nie udało się usunąć ${failedCount}.`,
+        { error: true }
+      );
+    } else if (deletedCount > 0) {
+      setInventoryStatus(`Usunięto ${deletedCount} ${deletedCount === 1 ? "obraz" : "obrazów"}.`);
+    }
+  } finally {
     setDeleteBusy(false);
+    singleDeleteWorkerPromise = null;
     renderInventory();
-    if (!sessionFailed && finalMessage) setInventoryStatus(finalMessage, { error: finalError });
   }
 }
 
@@ -690,6 +755,7 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
   selectionMode = false;
   selectedImageIds.clear();
   deletingIds.clear();
+  singleDeleteQueue.splice(0);
   deleteBusy = false;
   clearStorageUsage();
   passwordInput.value = "";
@@ -817,20 +883,31 @@ function isSessionUploadError(error) {
 
 
 async function refreshCurrentSessionForMutation() {
-  const refreshed = await ensureFreshAdminSession({
-    session: currentSession,
-    marginSeconds: 180
-  });
+  if (!sessionRefreshPromise) {
+    sessionRefreshPromise = (async () => {
+      const refreshed = await ensureFreshAdminSession({
+        session: currentSession,
+        marginSeconds: 180
+      });
 
-  if (refreshed !== currentSession) {
-    currentSession = refreshed;
-    saveAdminSession(currentSession);
+      if (refreshed !== currentSession) {
+        currentSession = refreshed;
+        saveAdminSession(currentSession);
+      }
+
+      return currentSession;
+    })();
   }
 
-  return currentSession;
+  const activeRefresh = sessionRefreshPromise;
+  try {
+    return await activeRefresh;
+  } finally {
+    if (sessionRefreshPromise === activeRefresh) sessionRefreshPromise = null;
+  }
 }
 
-async function processFile(file, contentClass, queueItem) {
+async function prepareFile(file, contentClass, queueItem) {
   await refreshCurrentSessionForMutation();
 
   queueItem.set("HASH", `${formatBytes(file.size)} · SHA-256 + kontrola duplikatu`);
@@ -856,6 +933,12 @@ async function processFile(file, contentClass, queueItem) {
 
   const prepared = await convertSourceFileToAvif(file, { sourceInspection });
   const inventoryPreview = await createInventoryPreviewAvif(prepared.output.blob);
+
+  return Object.freeze({ prepared, inventoryPreview });
+}
+
+async function commitPreparedFile({ prepared, inventoryPreview }, contentClass, queueItem) {
+  await refreshCurrentSessionForMutation();
 
   queueItem.set(
     "UPLOAD",
@@ -929,8 +1012,9 @@ async function handleFiles(fileList) {
       await refreshStorageUsage();
     }
 
-    const batchResult = await runSequentialUploadBatch(queueEntries, {
-      processEntry: ({ file, queueItem }) => processFile(file, contentClass, queueItem),
+    const batchResult = await runPipelinedUploadBatch(queueEntries, {
+      prepareEntry: ({ file, queueItem }) => prepareFile(file, contentClass, queueItem),
+      commitEntry: ({ entry, prepared }) => commitPreparedFile(prepared, contentClass, entry.queueItem),
       onSuccess: ({ result }) => {
         completedCount += 1;
         applyStorageUsageDelta(result?.storageBytesAdded);

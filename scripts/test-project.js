@@ -66,6 +66,7 @@ import {
 } from "../js/avif-converter.js";
 import {
   promoteQueueItem,
+  runPipelinedUploadBatch,
   runSequentialUploadBatch,
   summarizeUploadBatch
 } from "../js/upload-batch.js";
@@ -1871,6 +1872,39 @@ async function testSequentialUploadBatchContinuity() {
   assert.deepEqual(abortedSeen, [1, 2]);
   assert.equal(aborted.aborted, true);
   assert.equal(aborted.remaining, 1);
+
+  const pipelineEvents = [];
+  let releaseCommitOne;
+  const commitOneGate = new Promise((resolve) => { releaseCommitOne = resolve; });
+  let preparedTwo = false;
+
+  const pipelinedPromise = runPipelinedUploadBatch([1, 2], {
+    prepareEntry: async (entry) => {
+      pipelineEvents.push(`prepare:${entry}:start`);
+      await Promise.resolve();
+      pipelineEvents.push(`prepare:${entry}:done`);
+      if (entry === 2) preparedTwo = true;
+      return entry * 10;
+    },
+    commitEntry: async ({ entry, prepared }) => {
+      pipelineEvents.push(`commit:${entry}:start:${prepared}`);
+      if (entry === 1) await commitOneGate;
+      pipelineEvents.push(`commit:${entry}:done`);
+      return prepared + 1;
+    }
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(preparedTwo, true,
+    "next image preparation must overlap the previous network commit");
+  releaseCommitOne();
+  const pipelined = await pipelinedPromise;
+  assert.equal(pipelined.aborted, false);
+  assert.equal(pipelined.processed, 2);
+  assert.ok(
+    pipelineEvents.indexOf("prepare:2:done") < pipelineEvents.indexOf("commit:1:done"),
+    "prepare N+1 must finish without waiting for commit N"
+  );
 }
 
 async function testSupabaseOnlyBuild() {
@@ -2175,7 +2209,13 @@ assert.ok(adminJs.includes('applyStorageUsageDelta(result?.storageBytesAdded)'),
 assert.ok(adminJs.includes('await refreshStorageUsage({ force: true })'),
   "upload/delete flows need authoritative Storage reconciliation");
 assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('const contentMutationBusy = uploadBusy || deleteBusy'),
-  "upload and delete must share one mutation lock");
+  "upload and delete must remain mutually exclusive at workspace level");
+assert.ok(adminJs.includes('const singleDeleteQueue = []') && adminJs.includes('async function drainSingleDeleteQueue()'),
+  "single-image deletes must use an explicit serial queue");
+assert.ok(adminJs.includes('singleDeleteQueue.push(image)') && adminJs.includes('while (singleDeleteQueue.length > 0)'),
+  "additional delete clicks must queue while the current delete is running");
+assert.ok(adminJs.includes('actionButton.disabled = deletingIds.has(row.id) || uploadBusy || inventoryBusy;'),
+  "other single-delete controls must remain clickable while a queued delete is active");
 assert.ok(adminJs.includes('logoutButton.disabled = authBusy || contentInteractionBusy'),
   "logout must be blocked while destructive/inventory mutation work is active");
 assert.ok(adminJs.includes('selectedImageIds.clear();') && adminJs.includes('for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);'),
@@ -2210,12 +2250,17 @@ assert.ok(/\.inventory-card\.is-selected\s*\{[\s\S]*?border-color:\s*var\(--dang
   "selected cards must use the destructive red selection border");
 assert.ok(/\.inventory-card\.is-selected::after\s*\{[\s\S]*?background:\s*rgba\(163, 51, 59, 0\.24\)/m.test(adminCss),
   "selected cards must receive a full-card translucent red overlay");
-assert.ok(/\.inventory-card\.is-selected \.inventory-select-control\s*\{[\s\S]*?border-color:\s*var\(--danger\)[\s\S]*?color:\s*var\(--danger\)/m.test(adminCss),
-  "selected-card remove mark must use the destructive red treatment");
-assert.ok(adminJs.includes('actionButton.textContent = selected ? "×" : "";'),
-  "bulk selection must use a destructive x mark instead of a confirmation check");
-assert.ok(/\.inventory-delete\s*\{[\s\S]*?border:\s*2px solid rgba\(163, 51, 59, 0\.56\)[\s\S]*?color:\s*var\(--danger\)/m.test(adminCss),
-  "single-image delete x must be permanently visible in the destructive red treatment");
+assert.ok(adminJs.includes('function createDeleteMarkerIcon()') &&
+  adminJs.includes('circle.classList.add("delete-marker-circle")') &&
+  adminJs.includes('cross.classList.add("delete-marker-x")'),
+  "delete controls must render a reusable SVG marker with a circle and cross");
+assert.ok(adminJs.includes('if (selected) actionButton.append(createDeleteMarkerIcon());'),
+  "bulk selection must show the SVG destructive marker on selected cards");
+assert.ok(adminJs.includes('actionButton.append(createDeleteMarkerIcon());'),
+  "single-image delete must show the same SVG destructive marker");
+assert.ok(/\.delete-marker-circle\s*\{[\s\S]*?fill:\s*var\(--danger\)/m.test(adminCss) &&
+  /\.delete-marker-x\s*\{[\s\S]*?stroke:\s*#ffffff/m.test(adminCss),
+  "delete SVG must use a red filled circle with a white cross");
 assert.ok(adminJs.includes('card.setAttribute("aria-selected", selected ? "true" : "false")') &&
   adminJs.includes('event.key === "Enter" || event.key === " "'),
   "selection mode must expose explicit selection state and keyboard card toggling");
@@ -2267,13 +2312,18 @@ assert.ok(adminJs.includes("uploadQueue.replaceChildren()"), "a new batch must c
 assert.ok(adminJs.includes("files.map((file) => ({"), "all batch rows must be created before processing");
 assert.ok(adminJs.includes("createQueueItem(file)"), "batch rows must be materialized immediately");
 assert.ok(adminJs.includes("entry.queueItem.promoteToTop()"), "failed rows must be promoted to the top");
-assert.ok(adminJs.includes("runSequentialUploadBatch"), "batch processing must use the tested sequential runner");
+assert.ok(adminJs.includes("runPipelinedUploadBatch"), "batch processing must use the bounded prepare/commit pipeline");
 assert.ok(adminJs.includes("sourceHashPreflightDone: true"), "UI must not repeat the source-hash preflight");
 assert.ok(!adminJs.includes("repairPreparedAvifPayload"), "one-time payload repair path must be removed");
 assert.ok(avifConverter.includes('source.mimeType === "image/avif"'), "AVIF passthrough branch must exist");
 assert.ok(avifConverter.includes("sha256: source.sha256"), "AVIF passthrough must preserve exact source hash");
 assert.ok(avifConverter.includes("passthrough: true"), "AVIF passthrough must be explicit in prepared metadata");
-assert.ok(uploadBatchSource.includes("for (let index = 0; index < entries.length; index += 1)"), "batch runner must remain sequential");
+assert.ok(uploadBatchSource.includes("runPipelinedUploadBatch") && uploadBatchSource.includes("startPrepare"),
+  "upload batch helper must expose the bounded prepare/commit pipeline");
+assert.ok(adminJs.includes("prepareFile(file, contentClass, queueItem)") && adminJs.includes("commitPreparedFile"),
+  "Admin upload must split heavy preparation from network commit");
+assert.ok(adminJs.includes("sessionRefreshPromise"),
+  "mutation session refresh must be single-flight while prepare and commit overlap");
 assert.ok(uploadBatchSource.includes("shouldAbort"), "batch runner must support explicit fatal abort only");
 assert.ok(!adminContent.includes('upsert ='),
   "Phase B must remove backfill-only Storage upsert support");
@@ -2346,7 +2396,7 @@ console.log("Supabase-only content source + pagination + controlled failure: PAS
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
-console.log("V1.5.9.2 Admin upload category gate corrective: PASS");
+console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");
