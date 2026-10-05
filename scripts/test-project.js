@@ -2138,6 +2138,10 @@ assert.ok(adminJs.includes('window.alert("Najpierw wybierz kategorię AI albo HU
   "handleFiles must retain the late category invariant as defense in depth");
 assert.ok(adminCss.includes('.drop-zone.is-category-locked') && adminCss.includes('cursor: not-allowed'),
   "category-locked drop zone must be visibly unavailable");
+assert.ok(/\.inventory-status\s*\{[\s\S]*?height:\s*1\.25em;[\s\S]*?min-height:\s*1\.25em;[\s\S]*?white-space:\s*nowrap;[\s\S]*?text-overflow:\s*ellipsis;/m.test(adminCss),
+  "Library status must reserve a fixed one-line slot so transient messages cannot shift the grid");
+assert.ok(!adminCss.includes('.inventory-status:empty'),
+  "empty Library status must not collapse its reserved layout slot");
 assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('>Odśwież</button>'),
   "manual Library refresh control must be removed from the Admin UI");
 assert.ok(adminHtml.includes('id="inventory-select"') && adminHtml.includes('>Zaznacz</button>'),
@@ -2403,6 +2407,7 @@ console.log("Admin password Auth + session refresh + RLS authority probe: PASS")
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
 console.log("V1.5.9.3.1 Admin delete-marker + mobile grid corrective: PASS");
+console.log("V1.5.9.3.2 Stable Library status slot corrective: PASS");
 console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
