@@ -756,8 +756,8 @@ h2 {
   position: absolute;
   top: 8px;
   right: 8px;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -793,8 +793,8 @@ h2 {
 }
 
 .delete-marker-icon {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   display: block;
   pointer-events: none;
   filter: drop-shadow(0 3px 7px rgba(23, 31, 38, 0.24));
@@ -982,8 +982,8 @@ h2 {
   .inventory-name { font-size: 0.74rem; }
   .inventory-detail { font-size: 0.61rem; line-height: 1.35; overflow-wrap: anywhere; }
   .inventory-delete,
-  .inventory-select-control { top: 5px; right: 5px; width: 34px; height: 34px; }
-  .delete-marker-icon { width: 26px; height: 26px; }
+  .inventory-select-control { top: 5px; right: 5px; width: 44px; height: 44px; }
+  .delete-marker-icon { width: 34px; height: 34px; }
   .inventory-select-control::before { width: 24px; height: 24px; }
 }
 

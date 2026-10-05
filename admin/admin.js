@@ -28,6 +28,7 @@ import {
   runPipelinedUploadBatch,
   summarizeUploadBatch
 } from "../js/upload-batch.js";
+import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 
 const adminCard = document.querySelector("#admin-card");
 const loginView = document.querySelector("#login-view");
@@ -84,8 +85,7 @@ let storageUsagePromise = null;
 let selectionMode = false;
 const selectedImageIds = new Set();
 const deletingIds = new Set();
-const singleDeleteQueue = [];
-let singleDeleteWorkerPromise = null;
+let singleDeleteStats = createSingleDeleteStats();
 let sessionRefreshPromise = null;
 
 
@@ -95,6 +95,14 @@ const VIEW_NODES = Object.freeze({
   authorized: authorizedView,
   boot: bootView
 });
+
+function createSingleDeleteStats() {
+  return {
+    deletedCount: 0,
+    failedCount: 0,
+    reconcileFailed: false
+  };
+}
 
 function syncViewAccessibility(viewName) {
   for (const [name, node] of Object.entries(VIEW_NODES)) {
@@ -572,6 +580,87 @@ async function refreshInventory({ quiet = false, refreshStorage = true } = {}) {
   }
 }
 
+async function reconcileSingleDeleteAuthority() {
+  if (!currentSession) return false;
+
+  currentSession = await authorizeAdminSession({ session: currentSession });
+  saveAdminSession(currentSession);
+
+  inventoryRows = [...await listGameImages({ session: currentSession })];
+  renderInventory();
+
+  if (currentSession) await refreshStorageUsage({ force: true });
+  return true;
+}
+
+async function processSingleDeleteItem(image) {
+  await refreshCurrentSessionForMutation();
+  await deleteGameImage({
+    session: currentSession,
+    image
+  });
+}
+
+const singleDeleteCoordinator = new DeleteDrainCoordinator({
+  keyOf: (image) => image.id,
+  processItem: processSingleDeleteItem,
+  reconcile: reconcileSingleDeleteAuthority,
+  isFatalError: isSessionMutationError,
+  onWorkerStart: () => {
+    singleDeleteStats = createSingleDeleteStats();
+    setDeleteBusy(true);
+  },
+  onPhaseChange: (phase) => {
+    if (phase === "reconciling" && deletingIds.size === 0) {
+      setInventoryStatus("Synchronizacja biblioteki…");
+    }
+  },
+  onItemStart: (image, { pendingCount }) => {
+    setInventoryStatus(
+      pendingCount > 0
+        ? `Usuwanie ${image.original_filename}… · ${pendingCount} w kolejce`
+        : `Usuwanie ${image.original_filename}…`
+    );
+  },
+  onItemSuccess: (image) => {
+    singleDeleteStats.deletedCount += 1;
+    selectedImageIds.delete(image.id);
+    deletingIds.delete(image.id);
+    inventoryRows = inventoryRows.filter((row) => row.id !== image.id);
+    renderInventory();
+  },
+  onItemFailure: (image) => {
+    singleDeleteStats.failedCount += 1;
+    deletingIds.delete(image.id);
+    renderInventory();
+  },
+  onReconcileFailure: () => {
+    singleDeleteStats.reconcileFailed = true;
+  },
+  onFatal: () => {
+    deletingIds.clear();
+    clearAdminSession();
+    showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
+  },
+  onWorkerIdle: ({ fatal }) => {
+    if (fatal) return;
+
+    setDeleteBusy(false);
+    renderInventory();
+
+    const { deletedCount, failedCount, reconcileFailed } = singleDeleteStats;
+    if (failedCount > 0 || reconcileFailed) {
+      const parts = [];
+      if (deletedCount > 0) parts.push(`Usunięto ${deletedCount}.`);
+      if (failedCount > 0) parts.push(`Nie udało się usunąć ${failedCount}.`);
+      if (reconcileFailed) parts.push("Nie udało się odświeżyć biblioteki.");
+      setInventoryStatus(parts.join(" "), { error: true });
+    } else if (deletedCount > 0) {
+      setInventoryStatus(`Usunięto ${deletedCount} ${deletedCount === 1 ? "obraz" : "obrazów"}.`);
+    }
+  }
+});
+
 async function handleDelete(imageId) {
   if (selectionMode || deletingIds.has(imageId) || uploadBusy || inventoryBusy) return;
 
@@ -583,83 +672,20 @@ async function handleDelete(imageId) {
   );
   if (!accepted) return;
 
+  const workerWasActive = deleteBusy;
   deletingIds.add(imageId);
-  singleDeleteQueue.push(image);
-  renderInventory();
-  setInventoryStatus(
-    singleDeleteQueue.length > 1 || deleteBusy
-      ? `Dodano ${image.original_filename} do kolejki usuwania.`
-      : `Usuwanie ${image.original_filename}…`
-  );
+  const queued = singleDeleteCoordinator.enqueue(image);
 
-  if (!singleDeleteWorkerPromise) {
-    singleDeleteWorkerPromise = drainSingleDeleteQueue();
-  }
-}
-
-async function drainSingleDeleteQueue() {
-  setDeleteBusy(true);
-  let deletedCount = 0;
-  let failedCount = 0;
-  let sessionFailed = false;
-
-  try {
-    while (singleDeleteQueue.length > 0) {
-      const image = singleDeleteQueue.shift();
-      if (!image) continue;
-
-      setInventoryStatus(
-        singleDeleteQueue.length > 0
-          ? `Usuwanie ${image.original_filename}… · ${singleDeleteQueue.length} w kolejce`
-          : `Usuwanie ${image.original_filename}…`
-      );
-
-      try {
-        await refreshCurrentSessionForMutation();
-        await deleteGameImage({
-          session: currentSession,
-          image
-        });
-
-        deletedCount += 1;
-        selectedImageIds.delete(image.id);
-        inventoryRows = inventoryRows.filter((row) => row.id !== image.id);
-      } catch (error) {
-        if (isSessionMutationError(error)) {
-          sessionFailed = true;
-          break;
-        }
-        failedCount += 1;
-      } finally {
-        deletingIds.delete(image.id);
-        renderInventory();
-      }
-    }
-
-    if (sessionFailed) {
-      for (const queued of singleDeleteQueue.splice(0)) deletingIds.delete(queued.id);
-      clearAdminSession();
-      showLogin("Sesja administratora wygasła. Zaloguj się ponownie.");
-      return;
-    }
-
-    if (currentSession) {
-      await refreshInventory({ quiet: true, refreshStorage: false });
-      if (currentSession) await refreshStorageUsage({ force: true });
-    }
-
-    if (failedCount > 0) {
-      setInventoryStatus(
-        `Usunięto ${deletedCount}. Nie udało się usunąć ${failedCount}.`,
-        { error: true }
-      );
-    } else if (deletedCount > 0) {
-      setInventoryStatus(`Usunięto ${deletedCount} ${deletedCount === 1 ? "obraz" : "obrazów"}.`);
-    }
-  } finally {
-    setDeleteBusy(false);
-    singleDeleteWorkerPromise = null;
+  if (!queued) {
+    deletingIds.delete(imageId);
     renderInventory();
+    return;
+  }
+
+  renderInventory();
+
+  if (workerWasActive) {
+    setInventoryStatus(`Dodano ${image.original_filename} do kolejki usuwania.`);
   }
 }
 
@@ -755,7 +781,6 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
   selectionMode = false;
   selectedImageIds.clear();
   deletingIds.clear();
-  singleDeleteQueue.splice(0);
   deleteBusy = false;
   clearStorageUsage();
   passwordInput.value = "";

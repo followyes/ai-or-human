@@ -70,6 +70,7 @@ import {
   runSequentialUploadBatch,
   summarizeUploadBatch
 } from "../js/upload-batch.js";
+import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -1812,6 +1813,236 @@ async function testAdminInventoryPaginationAndDelete() {
 
 
 
+
+async function testDeleteDrainCoordinatorLifecycle() {
+  const deferred = () => {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+
+  const waitFor = async (predicate, message) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    assert.fail(message);
+  };
+
+  {
+    const deleteGate = deferred();
+    const processed = [];
+    let activeDeletes = 0;
+    let maxActiveDeletes = 0;
+
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        activeDeletes += 1;
+        maxActiveDeletes = Math.max(maxActiveDeletes, activeDeletes);
+        processed.push(item.id);
+        if (item.id === "A") await deleteGate.promise;
+        activeDeletes -= 1;
+      },
+      reconcile: async () => {},
+      isFatalError: () => false
+    });
+
+    assert.equal(coordinator.enqueue({ id: "A" }), true);
+    await waitFor(() => processed.includes("A"), "A should enter the destructive primitive");
+    assert.equal(coordinator.enqueue({ id: "B" }), true,
+      "B must be accepted while A is still deleting");
+    deleteGate.resolve();
+    await coordinator.whenIdle();
+
+    assert.deepEqual(processed, ["A", "B"],
+      "a delete accepted while another delete is pending must always be drained");
+    assert.equal(maxActiveDeletes, 1,
+      "hardened delete primitives must remain physically serial");
+    assert.deepEqual(coordinator.snapshot(), {
+      phase: "idle",
+      pendingCount: 0,
+      ownedCount: 0,
+      workerActive: false
+    }, "completed delete lifecycle must end truly quiescent");
+  }
+
+  {
+    const inventoryGate = deferred();
+    const storageGate = deferred();
+    const processed = [];
+    const stages = [];
+    let reconciliationCount = 0;
+
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+      },
+      reconcile: async () => {
+        reconciliationCount += 1;
+        if (reconciliationCount !== 1) return;
+        stages.push("inventory");
+        await inventoryGate.promise;
+        stages.push("storage");
+        await storageGate.promise;
+      },
+      isFatalError: () => false
+    });
+
+    coordinator.enqueue({ id: "A" });
+    await waitFor(() => stages.includes("inventory"),
+      "coordinator should enter authoritative inventory reconciliation");
+    assert.equal(coordinator.enqueue({ id: "B" }), true,
+      "delete must remain enqueueable during inventory reconciliation");
+
+    inventoryGate.resolve();
+    await waitFor(() => stages.includes("storage"),
+      "coordinator should continue into Storage reconciliation");
+    assert.equal(coordinator.enqueue({ id: "C" }), true,
+      "delete must remain enqueueable during Storage reconciliation");
+
+    storageGate.resolve();
+    await coordinator.whenIdle();
+
+    assert.deepEqual(processed, ["A", "B", "C"],
+      "items accepted during either reconciliation phase must be drained without a second user kick");
+    assert.equal(reconciliationCount, 2,
+      "new work arriving during reconciliation must trigger another authoritative reconciliation cycle");
+    assert.equal(coordinator.snapshot().pendingCount, 0);
+    assert.equal(coordinator.snapshot().ownedCount, 0);
+  }
+
+  {
+    const gate = deferred();
+    const processed = [];
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+        await gate.promise;
+      },
+      reconcile: async () => {},
+      isFatalError: () => false
+    });
+
+    assert.equal(coordinator.enqueue({ id: "same" }), true);
+    assert.equal(coordinator.enqueue({ id: "same" }), false,
+      "the same image ID must never be owned by the delete lifecycle twice");
+    gate.resolve();
+    await coordinator.whenIdle();
+    assert.deepEqual(processed, ["same"]);
+  }
+
+  {
+    const processed = [];
+    const failed = [];
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+        if (item.id === "B") throw new Error("ordinary failure");
+      },
+      reconcile: async () => {},
+      isFatalError: () => false,
+      onItemFailure: (item) => failed.push(item.id)
+    });
+
+    for (const id of ["A", "B", "C"]) coordinator.enqueue({ id });
+    await coordinator.whenIdle();
+    assert.deepEqual(processed, ["A", "B", "C"],
+      "ordinary delete failure must not abort later queued images");
+    assert.deepEqual(failed, ["B"]);
+    assert.equal(coordinator.snapshot().ownedCount, 0,
+      "failed item ownership must be released");
+  }
+
+  {
+    const processed = [];
+    const fatalDrops = [];
+    const fatalError = Object.assign(new Error("session lost"), { code: "AUTH_FATAL" });
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+        if (item.id === "A") throw fatalError;
+      },
+      reconcile: async () => {},
+      isFatalError: (error) => error?.code === "AUTH_FATAL",
+      onFatal: (_error, { pendingItems }) => {
+        fatalDrops.push(...pendingItems.map((item) => item.id));
+      }
+    });
+
+    coordinator.enqueue({ id: "A" });
+    coordinator.enqueue({ id: "B" });
+    coordinator.enqueue({ id: "C" });
+    await coordinator.whenIdle();
+
+    assert.deepEqual(processed, ["A"],
+      "fatal session failure must abort before later destructive primitives start");
+    assert.deepEqual(fatalDrops, ["B", "C"],
+      "fatal abort must explicitly release all pending queue ownership");
+    assert.equal(coordinator.snapshot().pendingCount, 0);
+    assert.equal(coordinator.snapshot().ownedCount, 0);
+  }
+
+  {
+    const reconcileGate = deferred();
+    const processed = [];
+    let reconciliationCount = 0;
+    const coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+        await Promise.resolve();
+      },
+      reconcile: async () => {
+        reconciliationCount += 1;
+        if (reconciliationCount === 1) await reconcileGate.promise;
+      },
+      isFatalError: () => false
+    });
+
+    for (let index = 0; index < 5; index += 1) coordinator.enqueue({ id: `burst-${index}` });
+    await waitFor(() => coordinator.snapshot().phase === "reconciling",
+      "burst should reach reconciliation after draining its first wave");
+    for (let index = 5; index < 10; index += 1) coordinator.enqueue({ id: `burst-${index}` });
+    reconcileGate.resolve();
+    await coordinator.whenIdle();
+
+    assert.equal(processed.length, 10, "rapid burst must process every accepted ID");
+    assert.equal(new Set(processed).size, 10, "rapid burst must process every ID exactly once");
+    assert.equal(coordinator.snapshot().workerActive, false);
+    assert.equal(coordinator.snapshot().pendingCount, 0);
+    assert.equal(coordinator.snapshot().ownedCount, 0);
+  }
+
+  {
+    const processed = [];
+    let injectedLateItem = false;
+    let coordinator;
+    coordinator = new DeleteDrainCoordinator({
+      processItem: async (item) => {
+        processed.push(item.id);
+      },
+      reconcile: async () => {},
+      isFatalError: () => false,
+      onWorkerIdle: () => {
+        if (!injectedLateItem) {
+          injectedLateItem = true;
+          coordinator.enqueue({ id: "late" });
+        }
+      }
+    });
+
+    coordinator.enqueue({ id: "first" });
+    await coordinator.whenIdle();
+    assert.deepEqual(processed, ["first", "late"],
+      "a very late accepted item must automatically acquire a new worker without another user click");
+    assert.equal(coordinator.snapshot().pendingCount, 0);
+    assert.equal(coordinator.snapshot().ownedCount, 0);
+  }
+}
+
 async function testSequentialUploadBatchContinuity() {
   const seen = [];
   const success = [];
@@ -1957,6 +2188,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   const adminContent = await fs.readFile(path.join(projectRoot, "js", "admin-content.js"), "utf8");
   const avifConverter = await fs.readFile(path.join(projectRoot, "js", "avif-converter.js"), "utf8");
   const uploadBatchSource = await fs.readFile(path.join(projectRoot, "js", "upload-batch.js"), "utf8");
+  const deleteQueueSource = await fs.readFile(path.join(projectRoot, "js", "delete-queue.js"), "utf8");
   const buildSiteSource = await fs.readFile(path.join(projectRoot, "scripts", "build-site.js"), "utf8");
 
   assert.ok(!html.includes("final-percent"));
@@ -2214,12 +2446,31 @@ assert.ok(adminJs.includes('await refreshStorageUsage({ force: true })'),
   "upload/delete flows need authoritative Storage reconciliation");
 assert.ok(adminJs.includes('let deleteBusy = false') && adminJs.includes('const contentMutationBusy = uploadBusy || deleteBusy'),
   "upload and delete must remain mutually exclusive at workspace level");
-assert.ok(adminJs.includes('const singleDeleteQueue = []') && adminJs.includes('async function drainSingleDeleteQueue()'),
-  "single-image deletes must use an explicit serial queue");
-assert.ok(adminJs.includes('singleDeleteQueue.push(image)') && adminJs.includes('while (singleDeleteQueue.length > 0)'),
-  "additional delete clicks must queue while the current delete is running");
+assert.ok(adminJs.includes('new DeleteDrainCoordinator({') && adminJs.includes('singleDeleteCoordinator.enqueue(image)'),
+  "single-image deletes must be owned by the tested drain-until-quiescent coordinator");
+assert.ok(deleteQueueSource.includes('await this.reconcile()') &&
+  deleteQueueSource.includes('if (this.queue.length === 0) break;'),
+  "delete coordinator must re-check pending work after every awaited reconciliation");
+assert.ok(deleteQueueSource.includes('if (!runResult.fatal && this.queue.length > 0) this.#ensureWorker();'),
+  "delete coordinator must retain a final restart invariant against stranded late enqueue");
+assert.ok(adminJs.includes('async function reconcileSingleDeleteAuthority()') &&
+  !adminJs.slice(
+    adminJs.indexOf('async function reconcileSingleDeleteAuthority()'),
+    adminJs.indexOf('async function processSingleDeleteItem(image)')
+  ).includes('inventoryBusy') &&
+  !adminJs.slice(
+    adminJs.indexOf('async function reconcileSingleDeleteAuthority()'),
+    adminJs.indexOf('async function processSingleDeleteItem(image)')
+  ).includes('refreshInventory('),
+  "single-delete background reconciliation must not reuse the foreground inventory interaction lock");
+const singleDeleteHandlerSource = adminJs.slice(
+  adminJs.indexOf('async function handleDelete(imageId)'),
+  adminJs.indexOf('async function handleBulkDelete()')
+);
+assert.ok(!singleDeleteHandlerSource.includes('if (selectionMode || deletingIds.has(imageId) || uploadBusy || inventoryBusy || deleteBusy)'),
+  "active single-delete worker must not reject additional confirmed single-delete enqueue");
 assert.ok(adminJs.includes('actionButton.disabled = deletingIds.has(row.id) || uploadBusy || inventoryBusy;'),
-  "other single-delete controls must remain clickable while a queued delete is active");
+  "other single-delete controls must remain clickable while the delete worker itself is active");
 assert.ok(adminJs.includes('logoutButton.disabled = authBusy || contentInteractionBusy'),
   "logout must be blocked while destructive/inventory mutation work is active");
 assert.ok(adminJs.includes('selectedImageIds.clear();') && adminJs.includes('for (const row of filteredInventoryRows()) selectedImageIds.add(row.id);'),
@@ -2267,6 +2518,12 @@ assert.ok(/\.delete-marker-circle\s*\{[\s\S]*?fill:\s*var\(--danger\)/m.test(adm
   "delete SVG must use a red filled circle with a white cross");
 assert.ok(/\.inventory-delete,\s*\n\.inventory-select-control\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/m.test(adminCss),
   "delete/select hit areas must be visually transparent so the SVG is the only destructive circle");
+assert.ok(/\.inventory-delete,\s*\n\.inventory-select-control\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/m.test(adminCss),
+  "delete/select hit area must be 44x44px for reliable mouse/touch activation");
+assert.ok(/\.delete-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
+  "visible destructive SVG must be 34x34px");
+assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-delete,\s*\n\s*\.inventory-select-control\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;[\s\S]*?\.delete-marker-icon\s*\{[\s\S]*?width:\s*34px;[\s\S]*?height:\s*34px;/m.test(adminCss),
+  "mobile two-column cards must keep the same 44px target and 34px SVG");
 assert.ok(/\.inventory-card\.is-selected \.inventory-select-control::before\s*\{[\s\S]*?display:\s*none;/m.test(adminCss),
   "selected bulk cards must suppress the neutral selector ring behind the destructive SVG");
 assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/m.test(adminCss),
@@ -2390,6 +2647,7 @@ await testAvifConversionContracts();
 await testAdminStorageUsageContract();
 await testAdminContentUploadContracts();
 await testAdminInventoryPaginationAndDelete();
+await testDeleteDrainCoordinatorLifecycle();
 await testSequentialUploadBatchContinuity();
 await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
@@ -2408,6 +2666,7 @@ console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
 console.log("V1.5.9.3.1 Admin delete-marker + mobile grid corrective: PASS");
 console.log("V1.5.9.3.2 Stable Library status slot corrective: PASS");
+console.log("V1.5.9.4 Delete drain-until-quiescent temporal lifecycle: PASS");
 console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
