@@ -135,6 +135,10 @@ function focusViewTarget(target) {
   });
 }
 
+function uploadEntryReady() {
+  return Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !inventoryBusy;
+}
+
 function syncBusyControls() {
   loginButton.disabled = authBusy;
   emailInput.disabled = authBusy;
@@ -142,7 +146,11 @@ function syncBusyControls() {
 
   const contentMutationBusy = uploadBusy || deleteBusy;
   const contentInteractionBusy = contentMutationBusy || inventoryBusy;
+  const categorySelected = Boolean(selectedContentClass());
   dropZone.disabled = contentInteractionBusy;
+  dropZone.classList.toggle("is-category-locked", !categorySelected);
+  dropZone.setAttribute("aria-disabled", contentInteractionBusy || !categorySelected ? "true" : "false");
+  fileInput.disabled = contentInteractionBusy || !categorySelected;
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
   logoutButton.disabled = authBusy || contentInteractionBusy;
@@ -1008,17 +1016,27 @@ logoutButton.addEventListener("click", async () => {
   }
 });
 
+for (const input of classInputs) {
+  input.addEventListener("change", syncBusyControls);
+}
+
 dropZone.addEventListener("click", () => {
-  if (!uploadBusy && !deleteBusy && !inventoryBusy) fileInput.click();
+  if (uploadEntryReady()) fileInput.click();
 });
 
-fileInput.addEventListener("change", () => handleFiles(fileInput.files));
+fileInput.addEventListener("change", () => {
+  if (!uploadEntryReady()) {
+    fileInput.value = "";
+    return;
+  }
+  handleFiles(fileInput.files);
+});
 
 for (const eventName of ["dragenter", "dragover"]) {
   dropZone.addEventListener(eventName, (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!uploadBusy && !deleteBusy && !inventoryBusy) dropZone.classList.add("is-dragover");
+    if (uploadEntryReady()) dropZone.classList.add("is-dragover");
   });
 }
 
@@ -1031,7 +1049,7 @@ for (const eventName of ["dragleave", "drop"]) {
 }
 
 dropZone.addEventListener("drop", (event) => {
-  if (!uploadBusy && !deleteBusy && !inventoryBusy) handleFiles(event.dataTransfer?.files);
+  if (uploadEntryReady()) handleFiles(event.dataTransfer?.files);
 });
 
 

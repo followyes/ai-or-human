@@ -2080,6 +2080,30 @@ assert.ok(adminHtml.includes('id="storage-usage-percent"'), "Admin Library must 
 assert.ok(adminHtml.includes('id="storage-meter"') && adminHtml.includes('role="progressbar"'),
   "Admin Library must expose an accessible Storage capacity bar");
 assert.ok(adminHtml.includes('id="storage-remaining"'), "Admin Library must expose approximate remaining capacity");
+assert.ok(adminHtml.includes('id="drop-zone"') && adminHtml.includes('aria-disabled="true"'),
+  "Admin upload drop zone must start category-locked");
+assert.ok(/id="file-input"[\s\S]*?multiple[\s\S]*?disabled/m.test(adminHtml),
+  "native file input must start disabled until AI/HUMAN is selected");
+assert.ok(adminJs.includes('function uploadEntryReady()'),
+  "all upload-entry paths must share one category/busy readiness authority");
+assert.ok(adminJs.includes('Boolean(selectedContentClass()) && !uploadBusy && !deleteBusy && !inventoryBusy'),
+  "upload-entry readiness must require a category and an idle content workspace");
+assert.ok(adminJs.includes('dropZone.classList.toggle("is-category-locked", !categorySelected)'),
+  "drop zone visual lock must track category selection");
+assert.ok(adminJs.includes('fileInput.disabled = contentInteractionBusy || !categorySelected'),
+  "native file input must remain disabled while the category is missing");
+assert.ok(adminJs.includes('input.addEventListener("change", syncBusyControls)'),
+  "AI/HUMAN selection must immediately resynchronize upload-entry state");
+assert.ok(/dropZone\.addEventListener\("click", \(\) => \{[\s\S]*?if \(uploadEntryReady\(\)\) fileInput\.click\(\);/m.test(adminJs),
+  "desktop/mobile/keyboard activation must not open the picker before category selection");
+assert.ok(/for \(const eventName of \["dragenter", "dragover"\]\)[\s\S]*?event\.preventDefault\(\);[\s\S]*?if \(uploadEntryReady\(\)\) dropZone\.classList\.add\("is-dragover"\)/m.test(adminJs),
+  "drag-over must always block browser navigation but only activate visually when category-ready");
+assert.ok(/dropZone\.addEventListener\("drop", \(event\) => \{[\s\S]*?if \(uploadEntryReady\(\)\) handleFiles\(event\.dataTransfer\?\.files\);/m.test(adminJs),
+  "drop must not hand files to the uploader before category selection");
+assert.ok(adminJs.includes('window.alert("Najpierw wybierz kategorię AI albo HUMAN.")'),
+  "handleFiles must retain the late category invariant as defense in depth");
+assert.ok(adminCss.includes('.drop-zone.is-category-locked') && adminCss.includes('cursor: not-allowed'),
+  "category-locked drop zone must be visibly unavailable");
 assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('>Odśwież</button>'),
   "manual Library refresh control must be removed from the Admin UI");
 assert.ok(adminHtml.includes('id="inventory-select"') && adminHtml.includes('>Zaznacz</button>'),
@@ -2322,6 +2346,7 @@ console.log("Supabase-only content source + pagination + controlled failure: PAS
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
+console.log("V1.5.9.2 Admin upload category gate corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");

@@ -353,6 +353,27 @@ h2 {
   background: #ffffff;
 }
 
+.drop-zone.is-category-locked {
+  opacity: 0.56;
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: var(--surface-soft);
+  transform: none;
+}
+
+.drop-zone.is-category-locked:hover,
+.drop-zone.is-category-locked:focus-visible,
+.drop-zone.is-category-locked.is-dragover {
+  border-color: var(--border);
+  background: var(--surface-soft);
+  transform: none;
+}
+
+.drop-zone.is-category-locked:focus-visible {
+  outline: 3px solid rgba(32, 39, 45, 0.14);
+  outline-offset: 2px;
+}
+
 .drop-zone.is-dragover { transform: scale(1.006); }
 .drop-zone-title { font-size: 1.04rem; font-weight: 800; }
 .drop-zone-copy { font-size: 0.88rem; }

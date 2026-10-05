@@ -56,7 +56,7 @@
               </label>
             </fieldset>
 
-            <button class="drop-zone" id="drop-zone" type="button">
+            <button class="drop-zone is-category-locked" id="drop-zone" type="button" aria-disabled="true">
               <span class="drop-zone-title">Przeciągnij zdjęcia tutaj</span>
               <span class="drop-zone-copy">albo kliknij, aby wybrać pliki</span>
               <span class="drop-zone-formats">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
@@ -68,6 +68,7 @@
               type="file"
               accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.jfif,.png,.webp,.avif"
               multiple
+              disabled
             >
 
             <div class="queue-header is-hidden" id="queue-header">
