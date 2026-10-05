@@ -2261,6 +2261,12 @@ assert.ok(adminJs.includes('actionButton.append(createDeleteMarkerIcon());'),
 assert.ok(/\.delete-marker-circle\s*\{[\s\S]*?fill:\s*var\(--danger\)/m.test(adminCss) &&
   /\.delete-marker-x\s*\{[\s\S]*?stroke:\s*#ffffff/m.test(adminCss),
   "delete SVG must use a red filled circle with a white cross");
+assert.ok(/\.inventory-delete,\s*\n\.inventory-select-control\s*\{[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/m.test(adminCss),
+  "delete/select hit areas must be visually transparent so the SVG is the only destructive circle");
+assert.ok(/\.inventory-card\.is-selected \.inventory-select-control::before\s*\{[\s\S]*?display:\s*none;/m.test(adminCss),
+  "selected bulk cards must suppress the neutral selector ring behind the destructive SVG");
+assert.ok(/@media \(max-width:\s*680px\)[\s\S]*?\.inventory-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/m.test(adminCss),
+  "mobile Admin Library must render two inventory columns rather than one");
 assert.ok(adminJs.includes('card.setAttribute("aria-selected", selected ? "true" : "false")') &&
   adminJs.includes('event.key === "Enter" || event.key === " "'),
   "selection mode must expose explicit selection state and keyboard card toggling");
@@ -2396,6 +2402,7 @@ console.log("Supabase-only content source + pagination + controlled failure: PAS
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");
 console.log("V1.5.9.1 Admin delete-marker consistency corrective: PASS");
+console.log("V1.5.9.3.1 Admin delete-marker + mobile grid corrective: PASS");
 console.log("V1.5.9.3 Admin mutation concurrency corrective: PASS");
 console.log("V1.5.7B.1 AVIF production + derived preview contracts: PASS");
 console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");

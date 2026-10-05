@@ -1,6 +1,6 @@
 {
   "name": "ai-or-human",
-  "version": "1.5.9+3",
+  "version": "1.5.9+3.1",
   "private": true,
   "type": "module",
   "scripts": {
