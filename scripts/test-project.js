@@ -150,6 +150,9 @@ class FakeClassList {
 class FakeAnimation {
   constructor({ deferred = false } = {}) {
     this.cancelled = false;
+    this.pauseCalls = 0;
+    this.playCalls = 0;
+    this.playState = "running";
     this.resolveFinished = null;
     this.rejectFinished = null;
     this.finished = new Promise((resolve, reject) => {
@@ -157,14 +160,29 @@ class FakeAnimation {
       this.rejectFinished = reject;
     });
 
-    if (!deferred) queueMicrotask(() => this.resolveFinished());
+    if (!deferred) queueMicrotask(() => {
+      this.playState = "finished";
+      this.resolveFinished();
+    });
   }
 
   cancel() {
     this.cancelled = true;
+    this.playState = "idle";
+  }
+
+  pause() {
+    this.pauseCalls += 1;
+    if (this.playState !== "finished" && this.playState !== "idle") this.playState = "paused";
+  }
+
+  play() {
+    this.playCalls += 1;
+    if (this.playState !== "finished" && this.playState !== "idle") this.playState = "running";
   }
 
   finish() {
+    this.playState = "finished";
     this.resolveFinished();
   }
 }
@@ -2715,6 +2733,8 @@ async function testPublicThemeController() {
     setItem(key, value) { persisted.set(key, value); }
   };
   let transitionCalls = 0;
+  let releaseTransition = null;
+  const hookEvents = [];
   const documentRef = {
     documentElement: root,
     querySelector(selector) {
@@ -2725,7 +2745,7 @@ async function testPublicThemeController() {
     startViewTransition(callback) {
       transitionCalls += 1;
       callback();
-      return { finished: Promise.resolve() };
+      return { finished: new Promise((resolve) => { releaseTransition = resolve; }) };
     }
   };
   const windowRef = {
@@ -2736,15 +2756,31 @@ async function testPublicThemeController() {
   };
 
   root.dataset.theme = "light";
-  const controller = initializeThemeController({ documentRef, windowRef, storage });
+  const controller = initializeThemeController({
+    documentRef,
+    windowRef,
+    storage,
+    beforeChange: ({ fromTheme, toTheme }) => hookEvents.push(`before:${fromTheme}->${toTheme}`),
+    afterChange: ({ fromTheme, toTheme }) => hookEvents.push(`after:${fromTheme}->${toTheme}`)
+  });
   assert.equal(controller.theme, "light");
   assert.equal(attributes.get("aria-checked"), "false");
   assert.equal(typeof clickHandler, "function");
 
-  clickHandler();
-  await Promise.resolve();
-  await Promise.resolve();
+  const firstToggle = clickHandler();
+  assert.deepEqual(hookEvents, ["before:light->dark"],
+    "theme motion hold must begin before the root reveal settles");
+  const secondToggle = clickHandler();
+  assert.equal(secondToggle, firstToggle,
+    "rapid second theme toggle must reuse the active transition instead of nesting hold/resume cycles");
+  assert.equal(transitionCalls, 1,
+    "rapid second theme toggle must not start a second root View Transition");
 
+  releaseTransition();
+  await firstToggle;
+
+  assert.deepEqual(hookEvents, ["before:light->dark", "after:light->dark"],
+    "theme motion hold must release only after the transition settles");
   assert.equal(controller.theme, "dark");
   assert.equal(root.dataset.theme, "dark");
   assert.equal(root.style.colorScheme, "dark");
@@ -2769,6 +2805,65 @@ async function testPublicThemeController() {
   const directRoot = { dataset: {}, style: {} };
   applyTheme("light", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
   assert.equal(directRoot.dataset.theme, "light");
+
+  const makeHookPathFixture = ({ reducedMotion = false, withViewTransition = false } = {}) => {
+    const hookRoot = {
+      dataset: { theme: "light" },
+      classList: new FakeClassList(),
+      offsetWidth: 100,
+      style: {
+        colorScheme: "",
+        setProperty() {}
+      }
+    };
+    const hookButton = {
+      hidden: false,
+      disabled: false,
+      title: "",
+      setAttribute() {},
+      addEventListener(type, handler) { if (type === "click") this.click = handler; },
+      getBoundingClientRect() { return { left: 0, top: 0, width: 44, height: 44 }; },
+      blur() {}
+    };
+    const hookDocument = {
+      documentElement: hookRoot,
+      querySelector(selector) {
+        if (selector === "#theme-switch") return hookButton;
+        return null;
+      }
+    };
+    if (withViewTransition) {
+      hookDocument.startViewTransition = (callback) => {
+        callback();
+        return { finished: Promise.resolve() };
+      };
+    }
+    const hookWindow = {
+      innerWidth: 320,
+      innerHeight: 640,
+      matchMedia: () => ({ matches: reducedMotion }),
+      setTimeout(callback) { callback(); }
+    };
+    const events = [];
+    const hookController = initializeThemeController({
+      documentRef: hookDocument,
+      windowRef: hookWindow,
+      storage: { getItem: () => null, setItem() {} },
+      beforeChange: () => events.push("before"),
+      afterChange: () => events.push("after")
+    });
+    return { hookController, hookButton, events };
+  };
+
+  const fallbackFixture = makeHookPathFixture();
+  await fallbackFixture.hookButton.click();
+  assert.deepEqual(fallbackFixture.events, ["before", "after"],
+    "theme lifecycle hooks must wrap the CSS fallback path symmetrically");
+
+  const reducedFixture = makeHookPathFixture({ reducedMotion: true, withViewTransition: true });
+  await reducedFixture.hookButton.click();
+  assert.deepEqual(reducedFixture.events, ["before", "after"],
+    "theme lifecycle hooks must also wrap the reduced-motion immediate path symmetrically");
 }
 
 async function testResultCelebrationLifecycle() {
@@ -2888,6 +2983,58 @@ async function testResultCelebrationLifecycle() {
   assert.equal(windowRef.timers.size, 0,
     "completed turns must not reschedule after the celebration window has closed");
 
+  const themeWindow = new FakeTimerWindow();
+  const themeCards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
+  let themeEligible = true;
+  const themeController = new ResultCelebrationController({
+    cardSurfaces: themeCards,
+    sparkles: [],
+    canSchedule: () => themeEligible,
+    windowRef: themeWindow,
+    motionMedia: new FakeMotionMedia(false),
+    random: createSeededRng(44),
+    options: {
+      firstTurnDelayMinMs: 10,
+      firstTurnDelayMaxMs: 50,
+      idleTurnDelayMinMs: 60,
+      idleTurnDelayMaxMs: 90
+    }
+  });
+  assert.equal(themeController.enter(), true);
+  const firstThemeTimer = [...themeWindow.timers.keys()][0];
+  themeWindow.run(firstThemeTimer);
+  const activeThemeAnimation = themeCards.find((card) => card.animations.length)?.animations[0];
+  assert.ok(activeThemeAnimation, "theme-sync test requires one active card turn");
+  assert.equal(themeWindow.timers.size, 4);
+
+  assert.equal(themeController.suspendForThemeTransition(), true);
+  assert.equal(themeWindow.timers.size, 0,
+    "theme hold must clear all not-yet-started card schedules");
+  assert.equal(activeThemeAnimation.playState, "paused");
+  assert.equal(activeThemeAnimation.pauseCalls, 1,
+    "active card turn must pause at its exact WAAPI timeline rather than reset");
+
+  assert.equal(themeController.resumeAfterThemeTransition(), true);
+  assert.equal(activeThemeAnimation.playState, "running");
+  assert.equal(activeThemeAnimation.playCalls, 1,
+    "theme release must resume the same active card animation");
+  assert.equal(themeWindow.timers.size, 4,
+    "theme release must re-arm only cards that are not already turning");
+
+  themeController.suspendForThemeTransition();
+  themeEligible = false;
+  themeController.leave();
+  assert.equal(themeController.resumeAfterThemeTransition(), true);
+  assert.equal(themeWindow.timers.size, 0,
+    "leaving result during theme hold must not re-arm any future card schedules");
+  assert.equal(activeThemeAnimation.playState, "running",
+    "an already-started turn must resume after theme hold so it can finish naturally even after result exit");
+  activeThemeAnimation.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(themeWindow.timers.size, 0);
+  themeController.destroy();
+
   const reducedWindow = new FakeTimerWindow();
   const reducedMedia = new FakeMotionMedia(true);
   const reducedCards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
@@ -2910,27 +3057,67 @@ async function testResultCelebrationLifecycle() {
     "enabling reduced motion must stop future starts without hard-resetting active motion");
   reducedController.destroy();
 
-  const sparkleWindow = new FakeTimerWindow();
-  const sparkles = Array.from({ length: 6 }, () => new FakeCelebrationNode());
-  const sparkleController = new ResultCelebrationController({
+  const decorationWindow = new FakeTimerWindow();
+  const sparkles = Array.from({ length: 8 }, () => new FakeCelebrationNode());
+  const halo = new FakeCelebrationNode();
+  const dividerStar = new FakeCelebrationNode();
+  const decorationController = new ResultCelebrationController({
     cardSurfaces: [],
     sparkles,
+    halo,
+    dividerStar,
     canSchedule: () => true,
-    windowRef: sparkleWindow,
+    windowRef: decorationWindow,
     motionMedia: new FakeMotionMedia(false),
     random: createSeededRng(17)
   });
-  assert.equal(sparkleController.enter(), true);
+  assert.equal(decorationController.enter(), true);
   assert.equal(sparkles.every((sparkle) => sparkle.animations.length === 1), true,
     "result entry must trigger a finite local sparkle burst around the score/divider");
-  assert.equal(sparkleWindow.timers.size, 1,
-    "settled celebration must schedule only one next occasional sparkle at a time");
-  sparkleController.leave();
-  assert.equal(sparkleWindow.timers.size, 0,
-    "leaving celebration must disarm future ambient sparkles");
-  assert.equal(sparkles.every((sparkle) => sparkle.animations.every((animation) => !animation.cancelled)), true,
-    "already-started sparkles may finish naturally on exit");
-  sparkleController.destroy();
+  assert.equal(sparkles.every((sparkle) => sparkle.animations[0].options.duration >= 1100), true,
+    "entry sparkle burst must remain visible long enough to register on a real phone");
+  assert.equal(dividerStar.animations.length, 1,
+    "result entry must flare the existing divider star once");
+  assert.equal(decorationWindow.timers.size, 3,
+    "settled celebration must independently schedule sparkle, halo and divider-star ambient events");
+
+  const [sparkleTimerId, haloTimerId, starTimerId] = [...decorationWindow.timers.keys()];
+  decorationWindow.run(sparkleTimerId);
+  assert.equal(sparkles.some((sparkle) => sparkle.animations.length > 1), true,
+    "ambient sparkle scheduling must continue while primary celebration stays active");
+  decorationWindow.run(haloTimerId);
+  assert.equal(halo.animations.length, 1,
+    "persistent celebration must periodically breathe the local score halo");
+  decorationWindow.run(starTimerId);
+  assert.equal(dividerStar.animations.length, 2,
+    "persistent celebration must periodically flare the divider star");
+  assert.equal(decorationWindow.timers.size, 3,
+    "each persistent ambient channel must re-arm itself while celebration remains active");
+
+  decorationController.suspendForThemeTransition();
+  assert.equal(decorationWindow.timers.size, 0,
+    "theme hold must clear pending sparkle/halo/star starts");
+  const activeDecorationAnimations = [
+    ...sparkles.flatMap((sparkle) => sparkle.animations),
+    ...halo.animations,
+    ...dividerStar.animations
+  ].filter((animation) => animation.playState !== "finished");
+  assert.equal(activeDecorationAnimations.every((animation) => animation.playState === "paused"), true,
+    "theme hold must pause all tracked finite decorative animations");
+
+  decorationController.leave();
+  decorationController.resumeAfterThemeTransition();
+  assert.equal(decorationWindow.timers.size, 0,
+    "leaving during theme hold must not restart persistent celebration schedules");
+  assert.equal(activeDecorationAnimations.every((animation) => animation.playState === "running"), true,
+    "already-started non-card effects must resume and finish naturally after theme hold");
+  assert.equal(activeDecorationAnimations.every((animation) => !animation.cancelled), true,
+    "persistent decoration exit must never hard-cancel an already-started effect");
+  for (const animation of activeDecorationAnimations) animation.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(decorationWindow.timers.size, 0);
+  decorationController.destroy();
 
   controller.destroy();
 }
@@ -2991,7 +3178,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "theme change must keep a non-View-Transition fallback");
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'),
     "theme motion must respect reduced-motion preference");
-  assert.ok(game.includes('initializeThemeController()'),
+  assert.ok(game.includes('initializeThemeController({'),
     "public game bootstrap must initialize the theme controller without owning theme storage itself");
   assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('startViewTransition'),
     "theme controller must own durable preference and progressive transition orchestration");
@@ -3075,10 +3262,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.4"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.4"') &&
-    game.includes('./result-celebration.js?v=1.6.3-test.4'),
-    "V1.6.3 test.4 must version the changed CSS/JS entry graph so phone caches cannot mix celebration generations");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.5"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.5"') &&
+    game.includes('./result-celebration.js?v=1.6.3-test.5'),
+    "V1.6.3 test.5 must version the changed CSS/JS entry graph so phone caches cannot mix celebration generations");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3117,7 +3304,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     resultCelebrationSource.includes('activeCardAnimations') &&
     resultCelebrationSource.includes('animationFinished(animation)') &&
     resultCelebrationSource.includes('this.clearPendingSchedules()'),
-    "V1.6.3 test.4 must own finite independent card schedules in one focused celebration controller");
+    "V1.6.3 test.5 must preserve finite independent card schedules in one focused celebration controller");
   assert.ok(game.includes('state === "result"') && game.includes('resultSubstate === "celebration"') &&
     game.includes('document.body.dataset.publicView === "result"'),
     "new result motion starts must be gated by the internal celebration substate, not public-view=result alone");
@@ -3131,10 +3318,34 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(/\.floating-card__surface::before,[\s\S]*?\.floating-card__surface::after[\s\S]*?backface-visibility:\s*hidden/m.test(css) &&
     /\.floating-card__surface::after[\s\S]*?rotateY\(180deg\)/m.test(css),
     "full card turns must use two faces of the existing card-back artwork instead of disappearing/mirroring on the back half");
-  assert.equal((html.match(/data-result-sparkle/g) || []).length, 6,
-    "result hero must expose a small local decorative sparkle layer around score/divider");
-  assert.ok(resultCelebrationSource.includes('playEntrySparkles') && resultCelebrationSource.includes('scheduleAmbientSparkle'),
-    "result sparkles must have one finite entry burst plus occasional settled twinkles");
+  assert.equal((html.match(/data-result-sparkle/g) || []).length, 8,
+    "result hero must expose a visible local decorative sparkle layer around score/divider");
+  assert.ok(html.includes('data-result-halo') && css.includes('.result-ambient-halo'),
+    "persistent celebration must have a dedicated local halo target without affecting score readability");
+  assert.ok(resultCelebrationSource.includes('playEntrySparkles') &&
+    resultCelebrationSource.includes('scheduleAmbientSparkle') &&
+    resultCelebrationSource.includes('scheduleAmbientHalo') &&
+    resultCelebrationSource.includes('scheduleAmbientStar'),
+    "result celebration must combine one entry burst with persistent stochastic sparkle/halo/star channels");
+  assert.ok(/result-title-settle 1200ms/m.test(css) &&
+    /result-score-halo 2000ms/m.test(css) &&
+    /result-score-settle 1350ms/m.test(css),
+    "test.5 victory impact must stay visible long enough to register on a real phone");
+  assert.ok(resultCelebrationSource.includes('suspendForThemeTransition') &&
+    resultCelebrationSource.includes('resumeAfterThemeTransition') &&
+    resultCelebrationSource.includes('animation.pause()') &&
+    resultCelebrationSource.includes('animation.play()'),
+    "result celebration must pause/resume existing WAAPI timelines around theme reveal instead of resetting them");
+  assert.ok(themeControllerSource.includes('beforeChange') &&
+    themeControllerSource.includes('afterChange') &&
+    themeControllerSource.includes('transitionInFlight') &&
+    game.includes('beforeChange: suspendPublicMotionForTheme') &&
+    game.includes('afterChange: resumePublicMotionAfterTheme'),
+    "generic theme lifecycle hooks must serialize reveal and coordinate celebration motion without coupling theme-controller to result code");
+  assert.ok(/:root\.theme-motion-hold \.floating-card,[\s\S]*?:root\.theme-motion-hold \.cosmic-orbit,[\s\S]*?animation-play-state:\s*paused\s*!important/m.test(css) &&
+    game.includes('document.documentElement.classList.add("theme-motion-hold")') &&
+    game.includes('document.documentElement.classList.remove("theme-motion-hold")'),
+    "theme reveal must pause shared CSS atmosphere motion at the same visual frame as WAAPI card/decor motion");
   assert.ok(/\.floating-card\s*\{[\s\S]*?animation-play-state:\s*paused/m.test(css) &&
     /body\[data-public-view="mode-select"\] \.floating-card,[\s\S]*?body\[data-public-view="result"\] \.floating-card[\s\S]*?animation-play-state:\s*running/m.test(css),
     "decorative card motion must be view-scoped so invisible gameplay does not keep the homepage animation running");
@@ -3723,5 +3934,5 @@ console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
-console.log("V1.6.3-test.4 independent five-card celebration motion + graceful exit: PASS");
+console.log("V1.6.3-test.5 victory impact + persistent celebration + theme-motion sync: PASS");
 console.log("UI/deploy source contracts: PASS");

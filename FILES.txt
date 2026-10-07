@@ -1,28 +1,26 @@
-AI OR HUMAN — V1.6.3-test.4 RESULT CELEBRATION MOTION — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.5 VICTORY IMPACT / PERSISTENT CELEBRATION / THEME MOTION SYNC — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.2: 7 files (6 modified, 1 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.4: 8 files (8 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
 js/game.js
+js/result-celebration.js
+js/theme-controller.js
 package.json
 scripts/test-project.js
 
-ADDED
-js/result-celebration.js
-
 Scope:
-- preserve accepted test.2 result/replay layout and cache-coherence contract;
-- add independent random full-turn scheduling for all five existing result cards;
-- stop only future card/sparkle starts on replay/home while active turns finish naturally without snap;
-- add focused `ResultCelebrationController` without RAF/canvas/WebGL;
-- use two CSS faces of the existing inverse-theme card art for complete Y turns;
-- refine `Twój wynik` + score entrance, subtle pulse and finite gold/blue halo flash;
-- add local entry sparkle burst + occasional single twinkles only in primary celebration;
-- preserve slow result orbits, replay 10/20/50 semantics, homepage return, theme authority and reduced-motion;
-- advance cache version to `1.6.3-test.4`;
+- preserve accepted test.4 five-card independent random full-turn rotation exactly as the card-motion baseline;
+- strengthen one-shot victory impact so title/score/halo/sparkle entry is visible on a real phone;
+- keep primary result celebration alive with sparse random sparkle, score-halo breath and divider-star flare events;
+- stop NEW events immediately on replay/home while every already-started finite animation finishes naturally without snap;
+- synchronize LIGHT/DARK with result motion through generic theme before/after hooks, WAAPI pause/resume and CSS atmosphere motion hold;
+- serialize rapid theme toggles so root View Transition and celebration hold/resume cannot overlap;
+- preserve inverse card-back mapping, result/replay flow, reduced-motion and mobile-first layout;
+- advance cache version to `1.6.3-test.5`;
 - no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
 Status: TEST / LOCAL QA PASS only after final package verification. Real-phone visual acceptance is still required.

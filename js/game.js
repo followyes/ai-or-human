@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.4";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.5";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -52,6 +52,8 @@ const gameImage = document.querySelector("#game-image");
 const answerFeedbackElement = document.querySelector("#answer-feedback");
 const resultFloatingCardSurfaces = [...document.querySelectorAll(".floating-card__surface")];
 const resultSparkles = [...document.querySelectorAll("[data-result-sparkle]")];
+const resultAmbientHalo = document.querySelector("[data-result-halo]");
+const resultDividerStar = document.querySelector("#end-screen .result-brand .cosmic-divider > span");
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
@@ -566,6 +568,16 @@ function finishSession() {
   resultCelebration?.enter();
 }
 
+function suspendPublicMotionForTheme() {
+  document.documentElement.classList.add("theme-motion-hold");
+  resultCelebration?.suspendForThemeTransition();
+}
+
+function resumePublicMotionAfterTheme() {
+  resultCelebration?.resumeAfterThemeTransition();
+  document.documentElement.classList.remove("theme-motion-hold");
+}
+
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
@@ -574,6 +586,8 @@ function initializeInteractions() {
   resultCelebration = new ResultCelebrationController({
     cardSurfaces: resultFloatingCardSurfaces,
     sparkles: resultSparkles,
+    halo: resultAmbientHalo,
+    dividerStar: resultDividerStar,
     windowRef: window,
     canSchedule: () =>
       state === "result" &&
@@ -589,7 +603,10 @@ function initializeInteractions() {
 
 function bootstrap() {
   initializeInteractions();
-  themeController = initializeThemeController();
+  themeController = initializeThemeController({
+    beforeChange: suspendPublicMotionForTheme,
+    afterChange: resumePublicMotionAfterTheme
+  });
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select" });
   syncClassicSetupControls();
