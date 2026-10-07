@@ -55,6 +55,12 @@ Atmosfera V1.6.1 pozostaje widoczna w obu stanach pre-game, dzięki czemu lewitu
 
 Wspólny `pre-game-stage` ma zarezerwowaną stabilną wysokość, aby różnica rozmiaru obu paneli nie powodowała pionowego skoku podczas animacji. `PreGameTransitionCoordinator` pozostaje jedyną authority animacji/accessibility i obsługuje jawny kierunek `forward` / `back`, `inert`, `aria-hidden`, rapid-tap lock, focus handoff oraz reduced-motion. Manifest klasyka, retry, 10/20/50 i gameplay pozostają bez zmian.
 
+### V1.6.2.1 — Pre-Game Visual Coherence Corrective
+
+Real-phone smoke V1.6.2 wykazał, że wspólny shell był poprawny technicznie, ale setup nadal korzystał z wizualnego języka starego V1.5. V1.6.2.1 ujednolica oba stany bez zmiany mechaniki: `Wybierz tryb gry` oraz `Klasyczny` używają tej samej pre-game typografii display, tego samego `AI OR HUMAN` + cosmic divider, tych samych landingowych tokenów złoto/navy/blue i tej samej rodziny powierzchni. Selector 10/20/50 oraz `Rozpocznij` mają teraz dedykowany pre-game skin zamiast legacy generic UI.
+
+`Wróć` pozostaje tym samym semantycznym przyciskiem i tym samym handlerem, ale nie jest już wypychany ujemnym `top` w pole dekoracyjnych kart. Jest częścią bezpiecznego flow setupu, ma co najmniej 44 px touch target i używa landingowej powierzchni/borderu. Dla krótkich telefonów istnieje osobny kompaktowy portrait profile, żeby back, selector i CTA pozostały dostępne przy dynamicznym browser chrome. Theme switch nadal jest widoczny wyłącznie w `mode-select`, a gameplay/data/Admin pozostają nietknięte.
+
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
@@ -141,5 +147,5 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 baseline. V1.6.2: Mode Setup Morph / Shared Pre-Game Shell — LOCAL QA PASS / deploy + real-phone visual smoke pending.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 architecture. V1.6.2: shared shell/morph intermediate build — visual smoke rejected. V1.6.2.1: Pre-Game Visual Coherence Corrective — LOCAL QA PASS / deploy + real-phone visual smoke pending.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.

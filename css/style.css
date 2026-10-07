@@ -55,6 +55,10 @@
   --orbit-line: rgba(216, 149, 17, 0.30);
   --orbit-line-blue: rgba(20, 91, 150, 0.22);
   --floating-card-image: url("../assets/game/card-back-dark.webp");
+  --pregame-cta-bg: #10263b;
+  --pregame-cta-text: #fffaf0;
+  --pregame-cta-border: rgba(216, 149, 17, 0.48);
+  --pregame-control-shadow: 0 14px 34px rgba(16, 38, 59, 0.13);
 }
 
 :root[data-theme="dark"] {
@@ -107,6 +111,10 @@
   --orbit-line: rgba(243, 189, 63, 0.28);
   --orbit-line-blue: rgba(109, 174, 229, 0.24);
   --floating-card-image: url("../assets/game/card-back-light.webp");
+  --pregame-cta-bg: #f3bd3f;
+  --pregame-cta-text: #10151a;
+  --pregame-cta-border: rgba(255, 214, 108, 0.58);
+  --pregame-control-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
 }
 
 
@@ -280,7 +288,9 @@ button {
 :root.theme-fallback-transition .choice-button,
 :root.theme-fallback-transition .game-mode-card,
 :root.theme-fallback-transition .game-mode-card__icon,
-:root.theme-fallback-transition .game-mode-card__arrow {
+:root.theme-fallback-transition .game-mode-card__arrow,
+:root.theme-fallback-transition .setup-back-button,
+:root.theme-fallback-transition .setup-retry-button {
   transition-property: background-color, color, border-color, box-shadow, transform;
   transition-duration: 420ms;
   transition-timing-function: cubic-bezier(.22, .78, .30, 1);
@@ -997,8 +1007,9 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   transform: translate(-50%, -50%);
 }
 
-.mode-select-panel h1 {
+.pre-game-display-title {
   max-width: 100%;
+  margin-bottom: 0;
   color: var(--landing-title);
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(2.25rem, 10.8vw, 3.75rem);
@@ -1113,63 +1124,143 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 24px 0;
+  padding: 18px 0 20px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
   text-align: center;
 }
 
 .mode-setup-brand {
   display: grid;
   justify-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.mode-setup-eyebrow {
+  color: color-mix(in srgb, var(--accent-blue) 70%, var(--muted));
+  letter-spacing: .20em;
+}
+
+.mode-setup-panel .pre-game-display-title {
+  font-size: clamp(2.3rem, 10.2vw, 3.5rem);
 }
 
 .setup-back-button {
-  position: absolute;
-  left: 0;
-  top: -58px;
-  min-width: 76px;
+  position: relative;
+  justify-self: start;
+  min-width: 86px;
   min-height: 44px;
-  padding: 0 10px 0 6px;
+  margin: 0 0 18px;
+  padding: 0 14px 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  border: 0;
+  gap: 5px;
+  border: 1px solid var(--landing-panel-border);
   border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
+  background: var(--landing-panel);
+  color: var(--landing-title);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--accent-gold) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   cursor: pointer;
-  font-weight: 700;
-  transition: color 150ms ease, background 150ms ease, transform 150ms ease;
+  font-weight: 800;
+  transition: color 160ms ease, border-color 180ms ease, background-color 260ms ease, box-shadow 180ms ease, transform 160ms ease;
 }
 
 .setup-back-button svg {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 2.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .setup-back-button:hover {
-  color: var(--text);
-  background: var(--surface-muted);
+  border-color: color-mix(in srgb, var(--accent-gold) 66%, transparent);
+  box-shadow:
+    0 13px 32px color-mix(in srgb, var(--accent-gold) 14%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 84%, transparent);
+  transform: translateY(-1px);
 }
 
-.setup-back-button:active { transform: scale(.97); }
-.setup-back-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
-.setup-back-button:disabled { opacity: .4; cursor: default; }
+.setup-back-button:active { transform: translateY(1px) scale(.985); }
+.setup-back-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent-gold) 48%, transparent); outline-offset: 3px; }
+.setup-back-button:disabled { opacity: .42; cursor: default; transform: none; }
 
 .setup-lede {
-  margin: 13px 0 0;
+  margin: 0;
   color: var(--muted);
-  font-size: .98rem;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.mode-setup-panel .session-size-picker {
+  width: min(100%, 370px);
+  margin: 27px auto 0;
+}
+
+.mode-setup-panel .session-size-picker .meta-label {
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--accent-blue) 58%, var(--muted));
+  font-size: .78rem;
+  letter-spacing: .17em;
+}
+
+.mode-setup-panel .session-size-options {
+  gap: 6px;
+  min-height: 58px;
+  padding: 5px;
+  border-color: var(--landing-panel-border);
+  background: color-mix(in srgb, var(--landing-panel) 88%, transparent);
+  box-shadow:
+    var(--pregame-control-shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 80%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.mode-setup-panel .session-size-indicator {
+  border-color: color-mix(in srgb, var(--accent-gold) 42%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent-gold) 12%);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--accent-gold) 14%, transparent),
+    inset 0 1px 0 var(--inset-highlight-strong);
+}
+
+.mode-setup-panel .session-size-button {
+  min-height: 48px;
+  color: color-mix(in srgb, var(--landing-title) 58%, var(--muted));
+  font-size: 1rem;
+}
+
+.mode-setup-panel .session-size-button.is-selected {
+  color: var(--landing-title);
+  font-weight: 850;
+}
+
+.mode-setup-panel .session-size-options:not(.is-enhanced) .session-size-button.is-selected {
+  border-color: color-mix(in srgb, var(--accent-gold) 42%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent-gold) 12%);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--accent-gold) 14%, transparent),
+    inset 0 1px 0 var(--inset-highlight-strong);
+}
+
+.mode-setup-panel .session-size-button:hover:not(:disabled):not(.is-selected) {
+  background: var(--accent-gold-soft);
+  color: var(--landing-title);
 }
 
 .setup-status {
   min-height: 22px;
-  margin-top: 17px;
+  margin-top: 16px;
   color: var(--muted);
   font-size: .82rem;
   line-height: 1.35;
@@ -1182,18 +1273,55 @@ body[data-public-view="mode-setup"] .game-atmosphere {
 .setup-retry-button {
   min-height: 44px;
   margin-top: 8px;
-  padding: 0 16px;
-  border: 1px solid var(--border);
+  padding: 0 17px;
+  border: 1px solid var(--landing-panel-border);
   border-radius: 999px;
-  background: var(--surface-raised);
-  color: var(--text);
+  background: var(--landing-panel);
+  color: var(--landing-title);
+  box-shadow: var(--shadow-soft);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .setup-retry-button:focus-visible {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: 3px solid color-mix(in srgb, var(--accent-gold) 48%, transparent);
+  outline-offset: 3px;
+}
+
+.mode-setup-panel .primary-button {
+  min-width: 184px;
+  min-height: 56px;
+  margin-top: 24px;
+  padding: 0 30px;
+  border: 1px solid var(--pregame-cta-border);
+  background: var(--pregame-cta-bg);
+  color: var(--pregame-cta-text);
+  box-shadow:
+    0 16px 38px color-mix(in srgb, var(--accent-gold) 18%, transparent),
+    0 9px 24px color-mix(in srgb, var(--pregame-cta-bg) 26%, transparent);
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.mode-setup-panel .primary-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow:
+    0 20px 46px color-mix(in srgb, var(--accent-gold) 24%, transparent),
+    0 10px 28px color-mix(in srgb, var(--pregame-cta-bg) 30%, transparent);
+}
+
+.mode-setup-panel .primary-button:active:not(:disabled) {
+  transform: translateY(1px) scale(.992);
+}
+
+.mode-setup-panel .primary-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-gold) 50%, transparent);
+  outline-offset: 4px;
+}
+
+.mode-setup-panel .primary-button:disabled {
+  opacity: .42;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 body[data-public-view="mode-setup"] .cosmic-orbit--outer {
@@ -1232,8 +1360,12 @@ body:not([data-public-view="mode-select"]) .theme-switch {
     gap: 26px;
   }
 
-  .mode-select-panel h1 {
+  .pre-game-display-title {
     font-size: 2.08rem;
+  }
+
+  .mode-setup-panel .pre-game-display-title {
+    font-size: 2.18rem;
   }
 
   .game-mode-card {
@@ -1282,7 +1414,7 @@ body:not([data-public-view="mode-select"]) .theme-switch {
   }
 
   .setup-back-button {
-    top: -54px;
+    margin-bottom: 15px;
   }
 
   .game-header {
@@ -1308,6 +1440,47 @@ body:not([data-public-view="mode-select"]) .theme-switch {
     min-height: 56px;
     border-radius: 16px;
     font-size: 0.88rem;
+  }
+
+  .mode-setup-panel {
+    padding-top: 14px;
+  }
+
+  .mode-setup-panel .session-size-picker {
+    margin-top: 24px;
+  }
+}
+
+
+@media (max-height: 740px) and (orientation: portrait) {
+  .mode-setup-panel {
+    padding-top: 10px;
+    padding-bottom: 12px;
+  }
+
+  .setup-back-button {
+    margin-bottom: 10px;
+  }
+
+  .mode-setup-brand {
+    gap: 8px;
+  }
+
+  .mode-setup-panel .pre-game-display-title {
+    font-size: clamp(2rem, 9.6vw, 2.75rem);
+  }
+
+  .mode-setup-panel .session-size-picker {
+    margin-top: 18px;
+  }
+
+  .setup-status {
+    margin-top: 10px;
+  }
+
+  .mode-setup-panel .primary-button {
+    min-height: 52px;
+    margin-top: 16px;
   }
 }
 

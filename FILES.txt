@@ -1,22 +1,21 @@
-AI OR HUMAN — V1.6.2 MODE SETUP MORPH / SHARED PRE-GAME SHELL — UPDATED_FILES
+AI OR HUMAN — V1.6.2.1 PRE-GAME VISUAL COHERENCE CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.1: 7 files (7 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.2: 5 files (5 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
-js/game.js
-js/pre-game-transition.js
 package.json
 scripts/test-project.js
 
 Scope:
-- one public pre-game shell instead of separate select/setup public screens;
-- internal mode-select -> mode-setup morph with forward/back direction;
-- stable pre-game geometry to avoid vertical layout shift;
-- floating-card atmosphere persists through setup and is slightly quieted;
-- theme switch remains available only on game selection;
-- no second-mode teaser and no SQL/Admin/gameplay contract change.
+- one shared V1.6 pre-game typography/brand authority across mode selection and classic setup;
+- visible safe-flow `Wróć` control with >=44 px touch target and no negative positioning;
+- 10/20/50 reskinned with landing/pre-game tokens while keeping existing logic/indicator;
+- dedicated pre-game CTA skin for `Rozpocznij` with light/dark parity;
+- compact short-phone portrait spacing profile;
+- durable workflow correction: UI audits must verify visual authority/mobile coherence before implementation and real-phone smoke remains required before PASS/CLOSED;
+- no gameplay, Supabase, Admin, SQL, assets or V1.7 mode changes.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

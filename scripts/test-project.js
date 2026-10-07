@@ -2854,6 +2854,25 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "floating-card atmosphere must remain present through both pre-game states");
   assert.ok(/body:not\(\[data-public-view="mode-select"\]\) \.theme-switch[\s\S]*?display:\s*none/m.test(css),
     "theme switch must still disappear as soon as the shell morphs into mode setup");
+  assert.equal((html.match(/class="cosmic-divider"/g) || []).length, 2,
+    "V1.6.2.1 must keep the same cosmic divider language in mode selection and mode setup");
+  assert.equal((html.match(/class="pre-game-display-title"/g) || []).length, 2,
+    "selection and setup titles must share one pre-game display-title authority");
+  assert.ok(/\.pre-game-display-title\s*\{[\s\S]*?font-family:\s*Georgia, "Times New Roman", serif/m.test(css),
+    "pre-game titles must share the accepted V1.6 serif display typography");
+  const setupBackCss = css.match(/\.setup-back-button\s*\{([\s\S]*?)\}/m)?.[1] || "";
+  assert.ok(!/top:\s*-/.test(setupBackCss) && setupBackCss.includes("position: relative"),
+    "setup back navigation must stay in the safe content flow and must not use negative top positioning");
+  assert.ok(setupBackCss.includes("var(--landing-panel)") && setupBackCss.includes("var(--landing-panel-border)"),
+    "setup back navigation must use the same landing visual tokens as the game-selection screen");
+  const setupOptionsCss = css.match(/\.mode-setup-panel \.session-size-options\s*\{([\s\S]*?)\}/m)?.[1] || "";
+  assert.ok(setupOptionsCss.includes("var(--landing-panel)") && setupOptionsCss.includes("var(--landing-panel-border)"),
+    "classic setup segmented control must use V1.6 pre-game landing tokens instead of the legacy generic skin");
+  const setupPrimaryCss = css.match(/\.mode-setup-panel \.primary-button\s*\{([\s\S]*?)\}/m)?.[1] || "";
+  assert.ok(setupPrimaryCss.includes("var(--pregame-cta-bg)") && setupPrimaryCss.includes("var(--pregame-cta-border)"),
+    "classic setup CTA must use the dedicated pre-game CTA authority rather than the legacy generic primary skin");
+  assert.ok(/@media \(max-height: 740px\) and \(orientation: portrait\)[\s\S]*?\.setup-back-button/m.test(css),
+    "short mobile portrait layouts must keep an explicit compact setup profile so back/CTA remain reachable");
   assert.ok(css.includes('--floating-card-image: url("../assets/game/card-back-dark.webp")') &&
     /:root\[data-theme="dark"\][\s\S]*?--floating-card-image:\s*url\("\.\.\/assets\/game\/card-back-light\.webp"\)/m.test(css),
     "theme/art mapping must be inverse: light UI -> dark back, dark UI -> light back");
@@ -3449,5 +3468,5 @@ console.log("Visible image decode readiness: PASS");
 console.log("Mobile pointer capture/cancel recovery: PASS");
 console.log("Answer feedback semantic lifecycle: PASS");
 console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
-console.log("V1.6.2 pre-game shell + mode setup morph: PASS");
+console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("UI/deploy source contracts: PASS");
