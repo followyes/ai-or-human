@@ -63,6 +63,16 @@ export function applyTheme(theme, {
   return normalized;
 }
 
+
+export function setThemeSwitchVisible(button, visible) {
+  if (!button) return;
+  const shown = Boolean(visible);
+  button.hidden = !shown;
+  button.disabled = !shown;
+  button.setAttribute("aria-hidden", String(!shown));
+  if (!shown && typeof button.blur === "function") button.blur();
+}
+
 function prefersReducedMotion(windowRef) {
   return Boolean(windowRef?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 }
@@ -87,7 +97,9 @@ export function initializeThemeController({
     persist: false
   });
 
-  if (!button) return Object.freeze({ get theme() { return currentTheme; } });
+  if (!button) return Object.freeze({ get theme() { return currentTheme; }, setVisible() {}, whenSettled() { return Promise.resolve(); } });
+
+  let activeTransition = Promise.resolve();
 
   const commitTheme = (nextTheme) => {
     currentTheme = applyTheme(nextTheme, {
@@ -104,7 +116,15 @@ export function initializeThemeController({
     // Make the transition class authoritative before changing token values.
     void root.offsetWidth;
     commitTheme(nextTheme);
-    windowRef?.setTimeout?.(() => root.classList.remove("theme-fallback-transition"), 460);
+    activeTransition = new Promise((resolve) => {
+      const finish = () => {
+        root.classList.remove("theme-fallback-transition");
+        resolve();
+      };
+      if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(finish, 460);
+      else finish();
+    });
+    return activeTransition;
   };
 
   const toggle = () => {
@@ -115,10 +135,10 @@ export function initializeThemeController({
     if (reducedMotion || !canViewTransition) {
       if (reducedMotion) {
         commitTheme(nextTheme);
-      } else {
-        applyFallback(nextTheme);
+        activeTransition = Promise.resolve();
+        return activeTransition;
       }
-      return;
+      return applyFallback(nextTheme);
     }
 
     const rect = button.getBoundingClientRect();
@@ -141,13 +161,13 @@ export function initializeThemeController({
       transition = documentRef.startViewTransition(() => commitTheme(nextTheme));
     } catch {
       root.classList.remove("theme-view-transition");
-      applyFallback(nextTheme);
-      return;
+      return applyFallback(nextTheme);
     }
 
-    Promise.resolve(transition?.finished)
+    activeTransition = Promise.resolve(transition?.finished)
       .catch(() => {})
       .finally(() => root.classList.remove("theme-view-transition"));
+    return activeTransition;
   };
 
   button.addEventListener("click", toggle);
@@ -156,6 +176,12 @@ export function initializeThemeController({
     get theme() {
       return currentTheme;
     },
-    toggle
+    toggle,
+    setVisible(visible) {
+      setThemeSwitchVisible(button, visible);
+    },
+    whenSettled() {
+      return activeTransition;
+    }
   });
 }

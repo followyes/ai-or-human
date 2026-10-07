@@ -19,7 +19,7 @@ Nie ma repozytoryjnego katalogu contentu, `data/images.json` ani runtime fallbac
 
 ## Gra
 
-Przed rozpoczęciem gracz wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokładnie wybraną liczbę unikalnych obrazów, bez wymuszonego balansu AI/HUMAN. Mobile obsługuje swipe lewo = CZŁOWIEK i prawo = AI; desktop korzysta z przycisków.
+Publiczny flow rozpoczyna się od ekranu `Wybierz tryb gry`. V1.6.1 pokazuje wyłącznie aktualny tryb `Klasyczny`; po jego wyborze gracz przechodzi do osobnego setupu i wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokładnie wybraną liczbę unikalnych obrazów, bez wymuszonego balansu AI/HUMAN. Mobile obsługuje swipe lewo = CZŁOWIEK i prawo = AI; desktop korzysta z przycisków.
 
 Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo jest niedostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
 
@@ -31,7 +31,21 @@ V1.6 rozpoczyna przebudowę publicznego doświadczenia od wspólnej authority mo
 
 W prawym górnym rogu publicznej strony znajduje się dostępny klawiaturowo suwak motywu. Wybór jest zapamiętywany w `localStorage` pod jedną kluczową preferencją i odtwarzany jeszcze w `<head>`, zanim UI zostanie pokazane, żeby uniknąć błysku złego motywu. Zmiana aktualizuje także `color-scheme` oraz `meta[name=theme-color]`.
 
-Na wspieranych przeglądarkach nowy motyw rozchodzi się od położenia suwaka jako kołowy View Transition reveal. Na pozostałych przeglądarkach działa kontrolowany fallback fade. `prefers-reduced-motion` omija reveal i przełącza motyw bez rozbudowanej animacji. Mechanika sesji, swipe, feedback, preload, Supabase i Admin nie są zmieniane przez ten etap. Rewersy jasny/ciemny nie są jeszcze używane w runtime.
+Na wspieranych przeglądarkach nowy motyw rozchodzi się od położenia suwaka jako kołowy View Transition reveal. Na pozostałych przeglądarkach działa kontrolowany fallback fade. `prefers-reduced-motion` omija reveal i przełącza motyw bez rozbudowanej animacji. Mechanika sesji, swipe, feedback, preload, Supabase i Admin nie zostały zmienione przez V1.6.0. W samym V1.6.0 rewersy jasny/ciemny nie były jeszcze używane; ich integrację wprowadza V1.6.1.
+
+Kontrakt V1.6.1 zawęża widoczność kontrolki: na publicznej stronie przełącznik motywu ma być widoczny wyłącznie na ekranie `Wybierz tryb gry`. Po przejściu do konfiguracji trybu, przygotowania, rozgrywki, wyniku lub błędu kontrolka znika, ale wcześniej wybrany motyw nadal obowiązuje na tych ekranach. Drugim zatwierdzonym miejscem dla przełącznika jest `/admin`; pełne dopasowanie wizualne Admina nie jest automatycznie częścią V1.6.1.
+
+### V1.6.1 — Mobile Game Selection / Floating Cards Foundation
+
+V1.6.1 implementuje mobile-first landing `Wybierz tryb gry` i oddziela go od konfiguracji klasyka. Publicznie widoczny jest dokładnie jeden kafelek `Klasyczny`; nie ma drugiego trybu, placeholdera ani `Wkrótce`. Architektura posiada osobne `selectedGameMode`, ale V1.7 pozostaje niewidoczne i niezaimplementowane.
+
+Classic setup zawiera zachowany selector 10/20/50 i `Rozpocznij`. Landing nie czeka już na Supabase manifest: content klasyka prefetchuje się po pierwszym paint, a setup ma własny stan ładowania i retry. Przejście select <-> setup obsługuje osobny coordinator oparty na Web Animations, `inert`/`aria-hidden`, focus handoff i reduced-motion timing. Gameplay swipe/card lifecycle pozostaje niezależny.
+
+Pierwszy ekran ma pięć dekoracyjnych rewersów na viewport-level atmosphere. Runtime używa dwóch zoptymalizowanych WebP, wielokrotnie reuseowanych przez CSS. Mapping jest odwrotny: LIGHT UI używa DARK rewersu, DARK UI używa LIGHT rewersu. Karty są `aria-hidden`, `pointer-events:none`, poruszają się tylko transformami i stają się statyczne przy `prefers-reduced-motion: reduce`. Oryginalne PNG są zachowane jako package masters poza runtime.
+
+Theme switch jest widoczny tylko na ekranie wyboru gry. Po wejściu do setupu/gameplay/result/error znika z UI i focus order, ale wybrany motyw nadal obowiązuje. Admin pozostaje drugim zatwierdzonym miejscem dla przyszłego/dedykowanego switcha; ten etap nie przebudowuje Admin UI.
+
+Build publikuje teraz również `assets/`. Mobile acceptance: 320/360/390/430 px + safe-area/dynamic browser chrome przed desktopową akceptacją.
 
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
@@ -101,7 +115,7 @@ npm run test
 npm run build
 ```
 
-Build kopiuje statyczny runtime (`index.html`, `css/`, `js/`, `admin/`) i nie generuje repozytoryjnego manifestu contentu.
+Build kopiuje statyczny runtime (`index.html`, `css/`, `js/`, `admin/`, `assets/`) i nie generuje repozytoryjnego manifestu contentu.
 
 ## GitHub Pages
 
@@ -119,5 +133,5 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.0: Light / Dark Theme Foundation — LOCAL QA PASS / deploy smoke pending.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — LOCAL QA PASS / deploy + real-phone visual smoke pending.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.

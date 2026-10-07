@@ -20,9 +20,28 @@
   </script>
   <title>AI or Human</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
+  <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
+  <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
   <link rel="stylesheet" href="./css/style.css">
 </head>
-<body>
+<body data-public-view="mode-select">
+  <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
+    <div class="cosmic-orbit cosmic-orbit--outer"></div>
+    <div class="cosmic-orbit cosmic-orbit--inner"></div>
+    <span class="cosmic-star cosmic-star--one"></span>
+    <span class="cosmic-star cosmic-star--two"></span>
+    <span class="cosmic-star cosmic-star--three"></span>
+    <span class="cosmic-dot cosmic-dot--one"></span>
+    <span class="cosmic-dot cosmic-dot--two"></span>
+    <span class="cosmic-dot cosmic-dot--three"></span>
+
+    <div class="floating-card floating-card--one"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--two"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--three"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--four"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--five"><span class="floating-card__surface"></span></div>
+  </div>
+
   <button class="theme-switch" id="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Włącz ciemny motyw" title="Ciemny motyw">
     <span class="theme-switch__track" aria-hidden="true">
       <svg class="theme-switch__icon theme-switch__icon--sun" viewBox="0 0 24 24" focusable="false">
@@ -37,26 +56,61 @@
   </button>
 
   <main class="app-shell">
-    <section class="screen screen-start" id="start-screen" aria-labelledby="game-title">
+    <section class="screen screen-mode-select" id="mode-select-screen" aria-labelledby="mode-select-title">
+      <div class="mode-select-panel">
+        <div class="mode-select-brand">
+          <p class="eyebrow mode-select-eyebrow">AI OR HUMAN</p>
+          <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+          <h1 id="mode-select-title">Wybierz tryb gry</h1>
+        </div>
+
+        <div class="game-mode-list" aria-label="Tryby gry">
+          <button class="game-mode-card" id="classic-mode-button" type="button" data-game-mode="classic">
+            <span class="game-mode-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 32 32" focusable="false">
+                <path d="M18.2 2.7 7.8 17h7.1l-1.2 12.3L24.3 14h-7.2l1.1-11.3Z"></path>
+              </svg>
+            </span>
+            <span class="game-mode-card__copy">
+              <strong>Klasyczny</strong>
+              <span>Zgaduj, kto stworzył obraz</span>
+            </span>
+            <span class="game-mode-card__arrow" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg>
+            </span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen screen-setup is-hidden" id="mode-setup-screen" aria-labelledby="mode-setup-title" aria-hidden="true" inert>
+      <button class="setup-back-button" id="mode-setup-back" type="button" aria-label="Wróć do wyboru trybu">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"></path></svg>
+        <span>Wróć</span>
+      </button>
+
       <div class="brand-block">
         <p class="eyebrow">AI OR HUMAN</p>
-        <h1 id="game-title">Kto stworzył ten obraz?</h1>
+        <h1 id="mode-setup-title" tabindex="-1">Klasyczny</h1>
+        <p class="setup-lede">Wybierz liczbę obrazów</p>
       </div>
 
       <div class="session-size-picker" aria-labelledby="start-size-label">
         <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
         <div class="session-size-options" aria-label="Liczba obrazów">
           <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
-          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
-          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
-          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false" disabled>10</button>
+          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
+          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
         </div>
       </div>
 
-      <button class="primary-button" id="start-button" type="button">Rozpocznij</button>
+      <div class="setup-status" id="classic-setup-status" aria-live="polite">Ładowanie obrazów…</div>
+      <button class="setup-retry-button is-hidden" id="setup-retry-button" type="button">Spróbuj ponownie</button>
+      <button class="primary-button" id="start-button" type="button" disabled>Rozpocznij</button>
     </section>
 
-    <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite">
+    <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite" aria-hidden="true" inert>
       <header class="game-header">
         <div>
           <span class="meta-label">POSTĘP</span>
@@ -100,7 +154,7 @@
       <p class="swipe-help">Przesuń w lewo: człowiek · w prawo: AI</p>
     </section>
 
-    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title">
+    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert>
       <p class="eyebrow">AI OR HUMAN</p>
       <h2 id="end-title">Twój wynik</h2>
 
@@ -123,7 +177,7 @@
       </div>
     </section>
 
-    <section class="screen screen-error is-hidden" id="error-screen" role="alert">
+    <section class="screen screen-error is-hidden" id="error-screen" role="alert" aria-hidden="true" inert>
       <p class="eyebrow">AI OR HUMAN</p>
       <h2>Nie udało się uruchomić gry.</h2>
       <p id="error-message"></p>

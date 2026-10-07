@@ -75,6 +75,8 @@ import {
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
+import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectable } from "../js/game-modes.js";
+import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -83,7 +85,8 @@ import {
   getNextTheme,
   initializeThemeController,
   normalizeTheme,
-  resolveStoredTheme
+  resolveStoredTheme,
+  setThemeSwitchVisible
 } from "../js/theme-controller.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -454,7 +457,7 @@ async function testAnswerFeedbackLifecycle() {
 }
 
 async function copyRuntimeFixture(targetRoot) {
-  for (const entry of ["index.html", "css", "js", "admin"]) {
+  for (const entry of ["index.html", "css", "js", "admin", "assets"]) {
     await fs.cp(path.join(projectRoot, entry), path.join(targetRoot, entry), { recursive: true });
   }
 }
@@ -2547,6 +2550,86 @@ async function testSequentialUploadBatchContinuity() {
   );
 }
 
+
+function testGameModeRegistryContract() {
+  const modes = getGameModes();
+  assert.equal(modes.length, 1, "V1.6.1 must expose only the approved current mode");
+  assert.equal(modes[0].id, GAME_MODE_IDS.CLASSIC);
+  assert.equal(modes[0].enabled, true);
+  assert.equal(getGameModeDefinition("classic")?.label, "Klasyczny");
+  assert.equal(getGameModeDefinition("future-mode"), null);
+  assert.equal(isGameModeSelectable("classic"), true);
+  assert.equal(isGameModeSelectable("future-mode"), false,
+    "an unknown/future mode must never fall through to classic gameplay");
+}
+
+async function testPreGameTransitionLifecycle() {
+  class FakeTransitionScreen {
+    constructor({ hidden = false, defer = false } = {}) {
+      this.classList = new FakeClassList();
+      if (hidden) this.classList.add("is-hidden");
+      this.attributes = new Map();
+      this.inert = hidden;
+      this.defer = defer;
+      this.animations = [];
+    }
+
+    setAttribute(name, value) {
+      this.attributes.set(name, String(value));
+    }
+
+    animate(_frames, options) {
+      const animation = new FakeAnimation({ deferred: this.defer });
+      animation.options = options;
+      this.animations.push(animation);
+      return animation;
+    }
+  }
+
+  const focusTarget = {
+    calls: 0,
+    focus() { this.calls += 1; }
+  };
+  const from = new FakeTransitionScreen({ defer: true });
+  const to = new FakeTransitionScreen({ hidden: true, defer: true });
+  const coordinator = new PreGameTransitionCoordinator({
+    windowRef: { matchMedia: () => ({ matches: false }) },
+    durationMs: 360,
+    reducedDurationMs: 90
+  });
+
+  const first = coordinator.transition(from, to, { focusTarget });
+  assert.equal(coordinator.busy, true);
+  assert.equal(to.classList.contains("is-hidden"), false,
+    "incoming pre-game screen must become renderable before its entrance animation");
+  assert.equal(from.inert, true);
+  assert.equal(to.inert, true,
+    "both screens must be interaction-locked while the transition is active");
+  assert.equal(await coordinator.transition(from, to), false,
+    "rapid repeated mode taps must not start a second transition");
+
+  [...from.animations, ...to.animations].forEach((animation) => animation.finish());
+  assert.equal(await first, true);
+  assert.equal(coordinator.busy, false);
+  assert.equal(from.classList.contains("is-hidden"), true);
+  assert.equal(from.attributes.get("aria-hidden"), "true");
+  assert.equal(to.classList.contains("is-hidden"), false);
+  assert.equal(to.attributes.get("aria-hidden"), "false");
+  assert.equal(to.inert, false);
+  assert.equal(focusTarget.calls, 1);
+
+  const reducedFrom = new FakeTransitionScreen();
+  const reducedTo = new FakeTransitionScreen({ hidden: true });
+  const reduced = new PreGameTransitionCoordinator({
+    windowRef: { matchMedia: () => ({ matches: true }) },
+    durationMs: 360,
+    reducedDurationMs: 90
+  });
+  assert.equal(await reduced.transition(reducedFrom, reducedTo), true);
+  assert.equal(reducedFrom.animations[0].options.duration, 90,
+    "reduced-motion pre-game navigation must use the shortened transition profile");
+}
+
 async function testSupabaseOnlyBuild() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ai-or-human-build-supabase-only-"));
   await copyRuntimeFixture(tempRoot);
@@ -2569,6 +2652,10 @@ async function testSupabaseOnlyBuild() {
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "content-source.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "theme-controller.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "game-modes.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "pre-game-transition.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "assets", "game", "card-back-dark.webp")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "assets", "game", "card-back-light.webp")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-worker-client.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-preparation-worker.js")));
@@ -2614,6 +2701,10 @@ async function testPublicThemeController() {
   let clickHandler = null;
   const button = {
     title: "",
+    hidden: false,
+    disabled: false,
+    blurCalls: 0,
+    blur() { this.blurCalls += 1; },
     setAttribute(name, value) { attributes.set(name, value); },
     addEventListener(type, handler) { if (type === "click") clickHandler = handler; },
     getBoundingClientRect() { return { left: 80, top: 10, width: 40, height: 30 }; }
@@ -2663,6 +2754,17 @@ async function testPublicThemeController() {
   assert.ok(root.style.values.has("--theme-origin-x"));
   assert.ok(root.style.values.has("--theme-reveal-radius"));
 
+  controller.setVisible(false);
+  assert.equal(button.hidden, true);
+  assert.equal(button.disabled, true);
+  assert.equal(attributes.get("aria-hidden"), "true");
+  controller.setVisible(true);
+  assert.equal(button.hidden, false);
+  assert.equal(button.disabled, false);
+  assert.equal(attributes.get("aria-hidden"), "false");
+  setThemeSwitchVisible(button, false);
+  assert.equal(button.blurCalls > 0, true);
+
   const directRoot = { dataset: {}, style: {} };
   applyTheme("light", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
   assert.equal(directRoot.dataset.theme, "light");
@@ -2673,6 +2775,8 @@ async function testSourceContracts() {
   const css = await fs.readFile(path.join(projectRoot, "css", "style.css"), "utf8");
   const game = await fs.readFile(path.join(projectRoot, "js", "game.js"), "utf8");
   const themeControllerSource = await fs.readFile(path.join(projectRoot, "js", "theme-controller.js"), "utf8");
+  const gameModesSource = await fs.readFile(path.join(projectRoot, "js", "game-modes.js"), "utf8");
+  const preGameTransitionSource = await fs.readFile(path.join(projectRoot, "js", "pre-game-transition.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
@@ -2699,8 +2803,16 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes("data-feedback-icon"));
   assert.ok(html.includes("data-feedback-label"));
   assert.ok(html.includes('rel="icon"'));
+  assert.ok(html.includes('id="mode-select-screen"') && html.includes('id="mode-setup-screen"'),
+    "V1.6.1 must separate game-mode selection from classic session setup");
+  assert.ok(html.includes('id="classic-mode-button"') && html.includes('data-game-mode="classic"'),
+    "the current classic mode must be a semantic selectable mode tile");
+  assert.equal((html.match(/data-game-mode=/g) || []).length, 1,
+    "V1.6.1 must not expose or tease a second game mode before V1.7");
+  assert.ok(!html.includes("Pojedynek") && !html.includes("Wkrótce"),
+    "public V1.6.1 copy must not spoil an unimplemented future mode");
   assert.ok(html.includes('id="theme-switch"') && html.includes('role="switch"'),
-    "public UI must expose one accessible light/dark theme switch");
+    "public UI must expose one accessible light/dark theme switch on mode selection");
   assert.ok(html.includes('ai-or-human.theme'),
     "head bootstrap must restore the saved theme before the public UI is painted");
   assert.ok(css.includes(':root[data-theme="dark"]') && css.includes('--primary-bg:'),
@@ -2715,6 +2827,32 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "public game bootstrap must initialize the theme controller without owning theme storage itself");
   assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('startViewTransition'),
     "theme controller must own durable preference and progressive transition orchestration");
+  assert.ok(themeControllerSource.includes('setThemeSwitchVisible') && game.includes('themeController?.setVisible'),
+    "theme switch visibility must be controlled contextually without creating another theme authority");
+  assert.ok(gameModesSource.includes('GAME_MODE_IDS') && gameModesSource.includes('CLASSIC'),
+    "mode selection must have an explicit registry/authority independent from session size");
+  assert.ok(game.includes('selectedGameMode') && game.includes('selectedSessionSize'),
+    "game mode and round-size selection must remain independent runtime state");
+  assert.ok(game.includes('prefetchClassicManifestAfterFirstPaint') && game.includes('ensureClassicManifest'),
+    "classic manifest loading must be decoupled from immediate landing render");
+  assert.ok(!/async function bootstrap\(\)[\s\S]*?await\s+loadManifest\(/m.test(game),
+    "mode-selection bootstrap must not await the classic manifest before first render");
+  assert.ok(preGameTransitionSource.includes('class PreGameTransitionCoordinator') &&
+    preGameTransitionSource.includes('inert') && preGameTransitionSource.includes('.animate'),
+    "pre-game navigation must have one animation/accessibility coordinator rather than timeout-driven hiding");
+  assert.ok(css.includes('--floating-card-image: url("../assets/game/card-back-dark.webp")') &&
+    /:root\[data-theme="dark"\][\s\S]*?--floating-card-image:\s*url\("\.\.\/assets\/game\/card-back-light\.webp"\)/m.test(css),
+    "theme/art mapping must be inverse: light UI -> dark back, dark UI -> light back");
+  assert.equal((html.match(/class="floating-card floating-card--/g) || []).length, 5,
+    "mode-selection atmosphere must use five reusable decorative card instances");
+  assert.ok(html.includes('id="game-atmosphere" aria-hidden="true"') &&
+    /\.game-atmosphere\s*\{[\s\S]*?pointer-events:\s*none/m.test(css),
+    "floating cards must be accessibility-hidden and pointer-inert");
+  assert.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.floating-card\s*\{[\s\S]*?animation:\s*none\s*!important/m.test(css),
+    "reduced motion must stop continuous floating-card animation");
+  assert.ok(html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp"') &&
+    html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp"'),
+    "both inverse-theme card backs must be preloaded before the first theme toggle");
   assert.ok(html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
@@ -2753,7 +2891,7 @@ assert.ok(supabaseConfig.includes('publishableKey: "sb_publishable_'));
 assert.ok(!/publishableKey:\s*["']sb_secret_/i.test(supabaseConfig), "browser config must never contain a Supabase secret key");
 assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEVER place an sb_secret_'));
   assert.ok(game.includes("SessionSizePicker"));
-  assert.ok(game.includes("syncSessionSizeControls({ animate: true })"));
+  assert.ok(game.includes("syncClassicSetupControls({ animate: true })"));
   assert.ok(game.includes("picker.refresh()"));
   assert.ok(sessionPicker.includes("ResizeObserver"));
   assert.ok(sessionPicker.includes("prefers-reduced-motion"));
@@ -2774,7 +2912,7 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
   assert.ok(css.includes("overflow-x: clip") || css.includes("overflow-x: hidden"));
   assert.ok(!game.includes("localStorage"));
   assert.ok(!game.includes("history.js"));
-  assert.ok(game.includes("SESSION_SIZE_OPTIONS"));
+  assert.ok(sessionConfig.includes("SESSION_SIZE_OPTIONS"));
   assert.ok(sessionConfig.includes("[10, 20, 50]"));
   assert.ok(game.includes("activeSessionSize"));
   assert.ok(game.includes("roundSize: requestedSessionSize"));
@@ -3227,6 +3365,7 @@ assert.ok(adminAuth.includes("sessionStorage"));
 assert.ok(!adminAuth.includes("/auth/v1/signup"), "admin client must never expose public sign-up");
 assert.ok(!adminAuth.includes("localStorage"), "admin tokens must use tab-scoped sessionStorage");
 assert.ok(buildSiteSource.includes('"admin"'), "build must publish /admin directory");
+assert.ok(buildSiteSource.includes('"assets"'), "build must publish the V1.6 runtime asset directory");
 assert.ok(!buildSiteSource.includes("images/AI"), "build must not scan repository AI content");
 assert.ok(!buildSiteSource.includes("images.json"), "build must not generate repository manifest");
 assert.ok(!buildSiteSource.includes("MINIMUM_IMAGE_COUNT"), "build must not depend on repository pool size");
@@ -3260,6 +3399,8 @@ await testContentClassMoveLifecycle();
 await testDeleteDrainCoordinatorLifecycle();
 await testUploadPreparationWorkerClientLifecycle();
 await testSequentialUploadBatchContinuity();
+testGameModeRegistryContract();
+await testPreGameTransitionLifecycle();
 await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
 await testImageReadinessContract();
@@ -3294,4 +3435,5 @@ console.log("Visible image decode readiness: PASS");
 console.log("Mobile pointer capture/cancel recovery: PASS");
 console.log("Answer feedback semantic lifecycle: PASS");
 console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
+console.log("V1.6.1 mobile game selection + pre-game transition + floating cards: PASS");
 console.log("UI/deploy source contracts: PASS");

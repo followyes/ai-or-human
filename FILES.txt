@@ -1,26 +1,31 @@
-AI OR HUMAN — V1.6.0 LIGHT / DARK THEME FOUNDATION — UPDATED_FILES
+AI OR HUMAN — V1.6.1 MOBILE GAME SELECTION / FLOATING CARDS — UPDATED_FILES
 
-Exact REPO delta versus V1.5 FINAL CLOSED BASELINE: 7 files (6 modified + 1 added).
+Exact REPO delta versus PRE V1.6.1 corrected baseline: 12 files (8 modified, 4 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
 js/game.js
+js/theme-controller.js
 package.json
+scripts/build-site.js
 scripts/test-project.js
 
 ADDED
-js/theme-controller.js
+assets/game/card-back-dark.webp
+assets/game/card-back-light.webp
+js/game-modes.js
+js/pre-game-transition.js
 
 Scope:
-- tokenized light/dark public theme authority;
-- accessible persistent theme switch;
-- pre-paint saved-theme restore;
-- circular View Transition reveal from the switch with fallback fade;
-- reduced-motion handling;
-- theme lifecycle/source/build regression tests;
-- no Admin/runtime data/SQL changes;
-- no card-back asset usage yet.
+- dedicated mobile-first MODE SELECT and separate classic setup;
+- exactly one visible current mode; no V1.7 teaser/placeholder;
+- landing decoupled from classic manifest readiness;
+- accessible pre-game transition coordinator + theme-transition handoff;
+- public theme switch visible only on MODE SELECT;
+- five floating inverse-theme card backs with reduced-motion behavior;
+- optimized WebP runtime card assets + static assets build support;
+- no SQL/Admin/gameplay classification/swipe/feedback contract change.
 
-Gate: every listed file above must be byte-identical to the corresponding REPO file.
+Gate: every listed file must be byte-identical to the corresponding REPO file.

@@ -5,18 +5,27 @@ import { AnswerFeedbackController } from "./answer-feedback.js";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
+import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
+import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
-  SESSION_SIZE_OPTIONS,
   isSessionSizeAvailable as isConfiguredSessionSizeAvailable,
   resolveSessionSize
 } from "./session-config.js";
 
-const startScreen = document.querySelector("#start-screen");
+const modeSelectScreen = document.querySelector("#mode-select-screen");
+const modeSetupScreen = document.querySelector("#mode-setup-screen");
 const gameScreen = document.querySelector("#game-screen");
 const endScreen = document.querySelector("#end-screen");
 const errorScreen = document.querySelector("#error-screen");
+const publicScreens = [modeSelectScreen, modeSetupScreen, gameScreen, endScreen, errorScreen];
+
+const classicModeButton = document.querySelector('#classic-mode-button[data-game-mode="classic"]');
+const modeSetupTitle = document.querySelector("#mode-setup-title");
+const modeSetupBackButton = document.querySelector("#mode-setup-back");
+const setupStatus = document.querySelector("#classic-setup-status");
+const setupRetryButton = document.querySelector("#setup-retry-button");
 
 const startButton = document.querySelector("#start-button");
 const retryButton = document.querySelector("#retry-button");
@@ -42,6 +51,14 @@ let preloader = null;
 let swipe = null;
 let answerFeedback = null;
 let sessionSizePickers = [];
+let themeController = null;
+let preGameTransition = null;
+
+let selectedGameMode = null;
+let classicManifestStatus = "idle";
+let classicManifestError = null;
+let classicManifestPromise = null;
+let preGameNavigationPending = false;
 
 let sessionNumber = 0;
 let sessionDeck = [];
@@ -53,16 +70,41 @@ let score = 0;
 let state = "boot";
 let presentationRevision = 0;
 
-function showOnly(screen) {
-  [startScreen, gameScreen, endScreen, errorScreen].forEach((element) => {
-    element.classList.toggle("is-hidden", element !== screen);
-  });
+function publicViewForScreen(screen) {
+  if (screen === modeSelectScreen) return "mode-select";
+  if (screen === modeSetupScreen) return "mode-setup";
+  if (screen === gameScreen) return "gameplay";
+  if (screen === endScreen) return "result";
+  if (screen === errorScreen) return "error";
+  return "unknown";
+}
 
-  if (sessionSizePickers.length) {
-    window.requestAnimationFrame(() => {
-      sessionSizePickers.forEach((picker) => picker.refresh());
+function refreshSessionSizePickersSoon() {
+  if (!sessionSizePickers.length) return;
+  window.requestAnimationFrame(() => {
+    sessionSizePickers.forEach((picker) => picker.refresh());
+  });
+}
+
+function applyPublicView(screen, { themeSwitchVisible = screen === modeSelectScreen } = {}) {
+  document.body.dataset.publicView = publicViewForScreen(screen);
+  themeController?.setVisible(themeSwitchVisible);
+}
+
+function showOnly(screen) {
+  if (preGameTransition) {
+    preGameTransition.showImmediately(screen, publicScreens);
+  } else {
+    publicScreens.forEach((element) => {
+      const active = element === screen;
+      element.classList.toggle("is-hidden", !active);
+      element.inert = !active;
+      element.setAttribute("aria-hidden", String(!active));
     });
   }
+
+  applyPublicView(screen);
+  refreshSessionSizePickersSoon();
 }
 
 function setState(nextState) {
@@ -127,12 +169,41 @@ function syncSessionSizeControls({ busy = false, animate = false } = {}) {
   }
 }
 
+function syncClassicSetupControls({ animate = false } = {}) {
+  const preparing = state === "preparing";
+  const manifestReady = classicManifestStatus === "ready";
+  const manifestLoading = classicManifestStatus === "loading" || classicManifestStatus === "idle";
+  const manifestFailed = classicManifestStatus === "error";
+  const canStart =
+    selectedGameMode === GAME_MODE_IDS.CLASSIC &&
+    manifestReady &&
+    isSessionSizeAvailable(selectedSessionSize) &&
+    !preparing;
+
+  syncSessionSizeControls({ busy: preparing || !manifestReady, animate });
+  startButton.disabled = !canStart;
+  modeSetupBackButton.disabled = preparing;
+  setupRetryButton.disabled = preparing;
+  setupRetryButton.classList.toggle("is-hidden", !manifestFailed || preparing);
+  setupStatus.classList.toggle("is-error", manifestFailed);
+
+  if (preparing) {
+    setupStatus.textContent = "Przygotowywanie rundy…";
+  } else if (manifestLoading) {
+    setupStatus.textContent = "Ładowanie obrazów…";
+  } else if (manifestFailed) {
+    setupStatus.textContent = classicManifestError ?? "Nie udało się przygotować gry.";
+  } else {
+    setupStatus.textContent = "";
+  }
+}
+
 function chooseSessionSize(size) {
   if (!isSessionSizeAvailable(size)) return false;
   if (size === selectedSessionSize) return true;
 
   selectedSessionSize = size;
-  syncSessionSizeControls({ animate: true });
+  syncClassicSetupControls({ animate: true });
   return true;
 }
 
@@ -143,7 +214,7 @@ function configureSessionSizeAvailability(imageCount) {
     selectedSessionSize = resolveSessionSize(imageCount, selectedSessionSize) ?? MIN_SESSION_SIZE;
   }
 
-  syncSessionSizeControls();
+  syncClassicSetupControls();
 }
 
 function showFatalError(message) {
@@ -205,6 +276,100 @@ async function loadManifest() {
   configureSessionSizeAvailability(images.length);
 }
 
+function ensureClassicManifest({ force = false } = {}) {
+  if (classicManifestStatus === "ready" && !force) return Promise.resolve(true);
+  if (classicManifestStatus === "loading" && classicManifestPromise) return classicManifestPromise;
+
+  classicManifestStatus = "loading";
+  classicManifestError = null;
+  if (force) {
+    selector = null;
+    preloader = null;
+    availableImageCount = 0;
+  }
+  syncClassicSetupControls();
+
+  classicManifestPromise = loadManifest()
+    .then(() => {
+      classicManifestStatus = "ready";
+      classicManifestError = null;
+      return true;
+    })
+    .catch((error) => {
+      classicManifestStatus = "error";
+      classicManifestError = error instanceof Error ? error.message : String(error);
+      return false;
+    })
+    .finally(() => {
+      classicManifestPromise = null;
+      syncClassicSetupControls();
+    });
+
+  return classicManifestPromise;
+}
+
+function prefetchClassicManifestAfterFirstPaint() {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      void ensureClassicManifest();
+    });
+  });
+}
+
+async function openGameMode(modeId) {
+  if (preGameNavigationPending || preGameTransition?.busy || state === "preparing") return false;
+  if (!isGameModeSelectable(modeId)) return false;
+
+  const mode = getGameModeDefinition(modeId);
+  if (!mode || mode.id !== GAME_MODE_IDS.CLASSIC) return false;
+
+  preGameNavigationPending = true;
+  try {
+    await themeController?.whenSettled?.();
+    if (preGameTransition?.busy || state === "preparing") return false;
+
+    selectedGameMode = mode.id;
+    setState("mode-setup");
+    syncClassicSetupControls();
+    themeController?.setVisible(false);
+    document.body.dataset.publicView = "mode-setup";
+    void ensureClassicManifest();
+
+    const moved = await preGameTransition.transition(modeSelectScreen, modeSetupScreen, {
+      focusTarget: modeSetupTitle
+    });
+
+    if (moved) refreshSessionSizePickersSoon();
+    return moved;
+  } finally {
+    preGameNavigationPending = false;
+  }
+}
+
+async function returnToModeSelect() {
+  if (preGameNavigationPending || preGameTransition?.busy || state === "preparing") return false;
+
+  preGameNavigationPending = true;
+  try {
+    setState("mode-select");
+    themeController?.setVisible(false);
+    document.body.dataset.publicView = "mode-select";
+
+    const moved = await preGameTransition.transition(modeSetupScreen, modeSelectScreen, {
+      focusTarget: classicModeButton
+    });
+
+    if (moved) {
+      selectedGameMode = null;
+      themeController?.setVisible(true);
+    }
+
+    return moved;
+  } finally {
+    preGameNavigationPending = false;
+  }
+}
+
 async function presentCurrentCard({ revealGameScreen = false } = {}) {
   const item = sessionDeck[currentIndex];
   if (!item) {
@@ -237,8 +402,6 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
     showOnly(gameScreen);
   }
 
-  // Give the browser a paint opportunity while the card itself is still hidden.
-  // The new src is therefore committed before the card can return to the centre.
   await nextPaint();
   if (revision !== presentationRevision || state === "error") return false;
 
@@ -251,12 +414,13 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
 }
 
 async function prepareAndStartSession(triggerButton, normalText) {
-  if (!preloader || state === "preparing") return;
+  if (selectedGameMode !== GAME_MODE_IDS.CLASSIC) return;
+  if (classicManifestStatus !== "ready" || !preloader || state === "preparing") return;
   if (!isSessionSizeAvailable(selectedSessionSize)) return;
 
   setState("preparing");
   setButtonBusy(triggerButton, true, normalText);
-  syncSessionSizeControls({ busy: true });
+  syncClassicSetupControls();
 
   try {
     const requestedSessionSize = selectedSessionSize;
@@ -278,7 +442,7 @@ async function prepareAndStartSession(triggerButton, normalText) {
     showFatalError(error instanceof Error ? error.message : String(error));
   } finally {
     setButtonBusy(triggerButton, false, normalText);
-    syncSessionSizeControls();
+    syncClassicSetupControls();
   }
 }
 
@@ -296,8 +460,6 @@ async function answer(type) {
     scoreDisplay.textContent = String(score);
   }
 
-  // Feedback remains fixed above the stage while the card leaves immediately.
-  // Both paths share one lifecycle; there is no artificial feedback hold timeout.
   const feedbackPromise = answerFeedback.play(correct);
   const throwPromise = swipe.throw(type);
 
@@ -319,8 +481,6 @@ function finishSession() {
   setState("result");
   clearCardOverlays();
   hideImageContent();
-  // After the final throw the card intentionally stays hidden. Do not reset it
-  // before switching screens, otherwise the final image can flash back on screen.
   finalScore.textContent = `${score} / ${activeSessionSize}`;
   playAgainButton.disabled = false;
   playAgainButton.textContent = "Zagraj ponownie";
@@ -331,6 +491,7 @@ function finishSession() {
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
+  preGameTransition = new PreGameTransitionCoordinator({ windowRef: window });
   swipe = new SwipeController(imageCard, {
     onDecision: (type) => answer(type),
     onProgress: updateSwipeHints
@@ -338,31 +499,26 @@ function initializeInteractions() {
   swipe.setEnabled(false);
 }
 
-async function bootstrap() {
-  try {
-    initializeInteractions();
-    setState("boot");
-    showOnly(startScreen);
-    startButton.disabled = true;
-    syncSessionSizeControls({ busy: true });
-    await loadManifest();
-    startButton.disabled = false;
-    setState("ready");
-  } catch (error) {
-    console.error(error);
-    showFatalError(error instanceof Error ? error.message : String(error));
-  }
+function bootstrap() {
+  initializeInteractions();
+  themeController = initializeThemeController();
+  setState("mode-select");
+  showOnly(modeSelectScreen);
+  syncClassicSetupControls();
+  prefetchClassicManifestAfterFirstPaint();
 }
 
 sessionSizeButtons.forEach((button) => {
   button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));
 });
 
+classicModeButton.addEventListener("click", () => void openGameMode(classicModeButton.dataset.gameMode));
+modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
+setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));
 startButton.addEventListener("click", () => prepareAndStartSession(startButton, "Rozpocznij"));
 playAgainButton.addEventListener("click", () => prepareAndStartSession(playAgainButton, "Zagraj ponownie"));
 retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));
 
-initializeThemeController();
 bootstrap();

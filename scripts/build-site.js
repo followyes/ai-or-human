@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const RUNTIME_ENTRIES = Object.freeze(["index.html", "css", "js", "admin"]);
+const RUNTIME_ENTRIES = Object.freeze(["index.html", "css", "js", "admin", "assets"]);
 
 async function copyRuntime(projectRoot, distRoot) {
   for (const entry of RUNTIME_ENTRIES) {
