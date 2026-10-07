@@ -1,21 +1,22 @@
-AI OR HUMAN — V1.6.2.1 PRE-GAME VISUAL COHERENCE CORRECTIVE — UPDATED_FILES
+AI OR HUMAN — V1.6.2.2 PRE-GAME INTERACTION / COPY / THEME CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.2: 5 files (5 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.2.1: 6 files (6 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
+js/game.js
 package.json
 scripts/test-project.js
 
 Scope:
-- one shared V1.6 pre-game typography/brand authority across mode selection and classic setup;
-- visible safe-flow `Wróć` control with >=44 px touch target and no negative positioning;
-- 10/20/50 reskinned with landing/pre-game tokens while keeping existing logic/indicator;
-- dedicated pre-game CTA skin for `Rozpocznij` with light/dark parity;
-- compact short-phone portrait spacing profile;
-- durable workflow correction: UI audits must verify visual authority/mobile coherence before implementation and real-phone smoke remains required before PASS/CLOSED;
-- no gameplay, Supabase, Admin, SQL, assets or V1.7 mode changes.
+- remove the browser-default blue focus box from the programmatically focused `Klasyczny` heading while preserving focus handoff semantics;
+- prevent accidental touch/text selection across static pre-game presentation copy;
+- remove redundant `Wybierz liczbę obrazów`, keeping one `LICZBA OBRAZÓW` label;
+- keep the public theme switch visible throughout pre-game and hide it only on the actual gameplay view;
+- remove setup-only atmosphere/orbit opacity dimming so mode-select and mode-setup share one visual plane;
+- durable docs correction for economical copy and pre-game/theme-state authority;
+- no gameplay mechanics, Supabase, Admin, SQL, card asset or V1.7 changes.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

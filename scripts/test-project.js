@@ -2814,7 +2814,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(!html.includes("Pojedynek") && !html.includes("Wkrótce"),
     "public V1.6.1 copy must not spoil an unimplemented future mode");
   assert.ok(html.includes('id="theme-switch"') && html.includes('role="switch"'),
-    "public UI must expose one accessible light/dark theme switch on mode selection");
+    "public UI must expose one accessible light/dark theme switch across the non-gameplay public flow");
   assert.ok(html.includes('ai-or-human.theme'),
     "head bootstrap must restore the saved theme before the public UI is painted");
   assert.ok(css.includes(':root[data-theme="dark"]') && css.includes('--primary-bg:'),
@@ -2852,8 +2852,22 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "pre-game shell must reserve stable geometry so select/setup morph does not vertically jump");
   assert.ok(/body\[data-public-view="mode-select"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="mode-setup"\] \.game-atmosphere/m.test(css),
     "floating-card atmosphere must remain present through both pre-game states");
-  assert.ok(/body:not\(\[data-public-view="mode-select"\]\) \.theme-switch[\s\S]*?display:\s*none/m.test(css),
-    "theme switch must still disappear as soon as the shell morphs into mode setup");
+  assert.ok(/body\[data-public-view="gameplay"\] \.theme-switch[\s\S]*?display:\s*none/m.test(css),
+    "theme switch must disappear only on the actual gameplay view");
+  assert.ok(game.includes('themeSwitchVisible = view !== "gameplay"') &&
+    game.includes('view: "mode-setup", themeSwitchVisible: true'),
+    "mode setup must keep the theme switch visible; only gameplay hides it");
+  const modeSetupAtmosphereCss = css.match(/body\[data-public-view="mode-setup"\] \.game-atmosphere\s*\{([^}]*)\}/m)?.[1] || "";
+  assert.ok(/opacity:\s*1/.test(modeSetupAtmosphereCss) && !/opacity:\s*\.72/.test(modeSetupAtmosphereCss),
+    "mode setup must keep the same full-opacity shared atmosphere as mode selection");
+  assert.ok(!/body\[data-public-view="mode-setup"\] \.cosmic-orbit--(?:outer|inner)/m.test(css),
+    "mode setup must not fade the shared orbital decoration relative to mode selection");
+  assert.ok(!html.includes('class="setup-lede"') && !html.includes("Wybierz liczbę obrazów"),
+    "classic setup must not repeat the obvious LICZBA OBRAZÓW instruction with a second sentence");
+  assert.ok(/\.screen-pre-game\s*\{[\s\S]*?user-select:\s*none[\s\S]*?-webkit-user-select:\s*none/m.test(css),
+    "static pre-game copy must not be accidentally text-selected on touch devices");
+  assert.ok(/\.pre-game-display-title\[tabindex="-1"\]:focus\s*\{[\s\S]*?outline:\s*none/m.test(css),
+    "programmatic focus handoff to the setup heading must not render a browser-default blue focus box");
   assert.equal((html.match(/class="cosmic-divider"/g) || []).length, 2,
     "V1.6.2.1 must keep the same cosmic divider language in mode selection and mode setup");
   assert.equal((html.match(/class="pre-game-display-title"/g) || []).length, 2,
@@ -3469,4 +3483,5 @@ console.log("Mobile pointer capture/cancel recovery: PASS");
 console.log("Answer feedback semantic lifecycle: PASS");
 console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
+console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("UI/deploy source contracts: PASS");

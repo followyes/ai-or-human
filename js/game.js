@@ -87,7 +87,7 @@ function refreshSessionSizePickersSoon() {
   });
 }
 
-function applyPublicView(screen, { view = publicViewForScreen(screen), themeSwitchVisible = view === "mode-select" } = {}) {
+function applyPublicView(screen, { view = publicViewForScreen(screen), themeSwitchVisible = view !== "gameplay" } = {}) {
   document.body.dataset.publicView = view;
   themeController?.setVisible(themeSwitchVisible);
 }
@@ -332,7 +332,7 @@ async function openGameMode(modeId) {
     selectedGameMode = mode.id;
     setState("mode-setup");
     syncClassicSetupControls();
-    applyPublicView(preGameScreen, { view: "mode-setup", themeSwitchVisible: false });
+    applyPublicView(preGameScreen, { view: "mode-setup", themeSwitchVisible: true });
     void ensureClassicManifest();
 
     const moved = await preGameTransition.transition(modeSelectPanel, modeSetupPanel, {
@@ -353,7 +353,7 @@ async function returnToModeSelect() {
   preGameNavigationPending = true;
   try {
     setState("mode-select");
-    applyPublicView(preGameScreen, { view: "mode-select", themeSwitchVisible: false });
+    applyPublicView(preGameScreen, { view: "mode-select", themeSwitchVisible: true });
 
     const moved = await preGameTransition.transition(modeSetupPanel, modeSelectPanel, {
       focusTarget: classicModeButton,
@@ -362,7 +362,6 @@ async function returnToModeSelect() {
 
     if (moved) {
       selectedGameMode = null;
-      themeController?.setVisible(true);
     }
 
     return moved;

@@ -33,7 +33,7 @@ W prawym górnym rogu publicznej strony znajduje się dostępny klawiaturowo suw
 
 Na wspieranych przeglądarkach nowy motyw rozchodzi się od położenia suwaka jako kołowy View Transition reveal. Na pozostałych przeglądarkach działa kontrolowany fallback fade. `prefers-reduced-motion` omija reveal i przełącza motyw bez rozbudowanej animacji. Mechanika sesji, swipe, feedback, preload, Supabase i Admin nie zostały zmienione przez V1.6.0. W samym V1.6.0 rewersy jasny/ciemny nie były jeszcze używane; ich integrację wprowadza V1.6.1.
 
-Kontrakt V1.6.1 zawęża widoczność kontrolki: na publicznej stronie przełącznik motywu ma być widoczny wyłącznie na ekranie `Wybierz tryb gry`. Po przejściu do konfiguracji trybu, przygotowania, rozgrywki, wyniku lub błędu kontrolka znika, ale wcześniej wybrany motyw nadal obowiązuje na tych ekranach. Drugim zatwierdzonym miejscem dla przełącznika jest `/admin`; pełne dopasowanie wizualne Admina nie jest automatycznie częścią V1.6.1.
+Aktualny kontrakt widoczności kontrolki jest kontekstowy: na publicznej stronie przełącznik motywu pozostaje dostępny podczas całego pre-game, w tym `Wybierz tryb gry` i konfiguracji Klasycznego. Znika dopiero po wejściu do właściwego widoku gameplayu; wybrany motyw nadal obowiązuje. Drugim zatwierdzonym miejscem dla przełącznika jest `/admin`; pełne dopasowanie wizualne Admina nie jest automatycznie częścią tego etapu.
 
 ### V1.6.1 — Mobile Game Selection / Floating Cards Foundation
 
@@ -43,7 +43,7 @@ Classic setup zawiera zachowany selector 10/20/50 i `Rozpocznij`. Landing nie cz
 
 Pierwszy ekran ma pięć dekoracyjnych rewersów na viewport-level atmosphere. Runtime używa dwóch zoptymalizowanych WebP, wielokrotnie reuseowanych przez CSS. Mapping jest odwrotny: LIGHT UI używa DARK rewersu, DARK UI używa LIGHT rewersu. Karty są `aria-hidden`, `pointer-events:none`, poruszają się tylko transformami i stają się statyczne przy `prefers-reduced-motion: reduce`. Oryginalne PNG są zachowane jako package masters poza runtime.
 
-Theme switch jest widoczny tylko na ekranie wyboru gry. Po wejściu do setupu/gameplay/result/error znika z UI i focus order, ale wybrany motyw nadal obowiązuje. Admin pozostaje drugim zatwierdzonym miejscem dla przyszłego/dedykowanego switcha; ten etap nie przebudowuje Admin UI.
+Theme switch jest widoczny w obu stanach pre-game i znika dopiero w widoku gameplayu. Po opuszczeniu gameplayu może ponownie być dostępny; wybrany motyw pozostaje jedną wspólną preferencją. Admin pozostaje drugim zatwierdzonym miejscem dla switcha; ten etap nie przebudowuje Admin UI.
 
 Build publikuje teraz również `assets/`. Mobile acceptance: 320/360/390/430 px + safe-area/dynamic browser chrome przed desktopową akceptacją.
 
@@ -51,7 +51,7 @@ Build publikuje teraz również `assets/`. Mobile acceptance: 320/360/390/430 px
 
 V1.6.2 scala wybór trybu i konfigurację klasyka w jeden publiczny `pre-game-screen`. Wewnątrz tego samego shell działają dwa wzajemnie wykluczające się panele: `mode-select` oraz `mode-setup`. Kliknięcie `Klasyczny` nie przełącza już pełnego publicznego ekranu; centralna zawartość morphuje kierunkowo do konfiguracji 10/20/50, a `Wróć` odwraca ten sam lifecycle.
 
-Atmosfera V1.6.1 pozostaje widoczna w obu stanach pre-game, dzięki czemu lewitujące rewersy i orbitalna oprawa nie znikają podczas konfiguracji. W setupie warstwa może być delikatnie wyciszona, ale zachowuje ciągłość kompozycji. Theme switch nadal występuje wyłącznie w `mode-select` i znika natychmiast po wejściu do setupu bez resetowania motywu.
+Atmosfera V1.6.1 pozostaje widoczna w obu stanach pre-game, dzięki czemu lewitujące rewersy i orbitalna oprawa nie znikają podczas konfiguracji. Setup zachowuje tę samą siłę atmosfery i orbit co wybór trybu; nie używamy opacity-dimmingu udającego modal. Theme switch pozostaje widoczny także w `mode-setup` i znika dopiero po wejściu do właściwego gameplayu.
 
 Wspólny `pre-game-stage` ma zarezerwowaną stabilną wysokość, aby różnica rozmiaru obu paneli nie powodowała pionowego skoku podczas animacji. `PreGameTransitionCoordinator` pozostaje jedyną authority animacji/accessibility i obsługuje jawny kierunek `forward` / `back`, `inert`, `aria-hidden`, rapid-tap lock, focus handoff oraz reduced-motion. Manifest klasyka, retry, 10/20/50 i gameplay pozostają bez zmian.
 
@@ -59,7 +59,7 @@ Wspólny `pre-game-stage` ma zarezerwowaną stabilną wysokość, aby różnica 
 
 Real-phone smoke V1.6.2 wykazał, że wspólny shell był poprawny technicznie, ale setup nadal korzystał z wizualnego języka starego V1.5. V1.6.2.1 ujednolica oba stany bez zmiany mechaniki: `Wybierz tryb gry` oraz `Klasyczny` używają tej samej pre-game typografii display, tego samego `AI OR HUMAN` + cosmic divider, tych samych landingowych tokenów złoto/navy/blue i tej samej rodziny powierzchni. Selector 10/20/50 oraz `Rozpocznij` mają teraz dedykowany pre-game skin zamiast legacy generic UI.
 
-`Wróć` pozostaje tym samym semantycznym przyciskiem i tym samym handlerem, ale nie jest już wypychany ujemnym `top` w pole dekoracyjnych kart. Jest częścią bezpiecznego flow setupu, ma co najmniej 44 px touch target i używa landingowej powierzchni/borderu. Dla krótkich telefonów istnieje osobny kompaktowy portrait profile, żeby back, selector i CTA pozostały dostępne przy dynamicznym browser chrome. Theme switch nadal jest widoczny wyłącznie w `mode-select`, a gameplay/data/Admin pozostają nietknięte.
+`Wróć` pozostaje tym samym semantycznym przyciskiem i tym samym handlerem, ale nie jest już wypychany ujemnym `top` w pole dekoracyjnych kart. Jest częścią bezpiecznego flow setupu, ma co najmniej 44 px touch target i używa landingowej powierzchni/borderu. Dla krótkich telefonów istnieje osobny kompaktowy portrait profile, żeby back, selector i CTA pozostały dostępne przy dynamicznym browser chrome. Gameplay/data/Admin pozostają nietknięte.
 
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
@@ -147,5 +147,11 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 architecture. V1.6.2: shared shell/morph intermediate build — visual smoke rejected. V1.6.2.1: Pre-Game Visual Coherence Corrective — LOCAL QA PASS / deploy + real-phone visual smoke pending.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 architecture. V1.6.2: shared shell/morph intermediate build — visual smoke rejected. V1.6.2.1: superseded by V1.6.2.2 after real-phone interaction/copy/theme findings. V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — LOCAL QA PASS / deploy + real-phone visual smoke pending.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
+
+### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective
+
+Real-phone smoke V1.6.2.1 ujawnił cztery mniejsze, ale widoczne niespójności. Programowy focus na `Klasyczny` (`tabindex=-1`) pokazywał na iOS/Chrome domyślny niebieski browser focus-box; cały statyczny tekst pre-game mógł też zostać przypadkowo zaznaczony dotykiem. Corrective zachowuje focus handoff dla dostępności, ale usuwa surowy obrys przeglądarki z nietabbowalnego nagłówka i blokuje przypadkową selekcję statycznej warstwy pre-game.
+
+Setup nie powtarza już `Wybierz liczbę obrazów` bezpośrednio nad `LICZBA OBRAZÓW`; pozostaje jedna wystarczająca etykieta kontrolki. Usunięto również setup-only `opacity` całej atmosfery i osobne przygaszenie orbit, ponieważ `mode-setup` jest stanem tego samego shellu, a nie modalem. Theme switch jest dostępny przez cały pre-game i znika dopiero po wejściu do widoku gameplayu.

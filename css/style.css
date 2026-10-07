@@ -772,10 +772,6 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   opacity: 1;
 }
 
-body[data-public-view="mode-setup"] .game-atmosphere {
-  opacity: .72;
-}
-
 .game-atmosphere::before {
   content: "";
   position: absolute;
@@ -941,6 +937,13 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   z-index: 12;
   max-width: 560px;
   text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.pre-game-display-title[tabindex="-1"]:focus {
+  outline: none;
 }
 
 .pre-game-stage {
@@ -1194,13 +1197,6 @@ body[data-public-view="mode-setup"] .game-atmosphere {
 .setup-back-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent-gold) 48%, transparent); outline-offset: 3px; }
 .setup-back-button:disabled { opacity: .42; cursor: default; transform: none; }
 
-.setup-lede {
-  margin: 0;
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.4;
-}
-
 .mode-setup-panel .session-size-picker {
   width: min(100%, 370px);
   margin: 27px auto 0;
@@ -1324,15 +1320,7 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   box-shadow: 0 8px 18px color-mix(in srgb, var(--text) 8%, transparent);
 }
 
-body[data-public-view="mode-setup"] .cosmic-orbit--outer {
-  opacity: .68;
-}
-
-body[data-public-view="mode-setup"] .cosmic-orbit--inner {
-  opacity: .52;
-}
-
-body:not([data-public-view="mode-select"]) .theme-switch {
+body[data-public-view="gameplay"] .theme-switch {
   display: none;
 }
 
