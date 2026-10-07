@@ -61,6 +61,18 @@ Real-phone smoke V1.6.2 wykazał, że wspólny shell był poprawny technicznie, 
 
 `Wróć` pozostaje tym samym semantycznym przyciskiem i tym samym handlerem, ale nie jest już wypychany ujemnym `top` w pole dekoracyjnych kart. Jest częścią bezpiecznego flow setupu, ma co najmniej 44 px touch target i używa landingowej powierzchni/borderu. Dla krótkich telefonów istnieje osobny kompaktowy portrait profile, żeby back, selector i CTA pozostały dostępne przy dynamicznym browser chrome. Gameplay/data/Admin pozostają nietknięte.
 
+### V1.6.3 TEST — Results Celebration / Replay Flow
+
+V1.6.3 jest celowo przygotowane jako **testowa paczka wizualna**, a nie zaakceptowane zamknięcie etapu. Wynik po ostatniej karcie jest teraz osobnym finałem rundy zamiast jednocześnie pełnić rolę konfiguratora następnej sesji. Domyślny stan pokazuje przede wszystkim `AI OR HUMAN`, cosmic divider, `Twój wynik`, duży rezultat oraz dwie niezależne akcje: `Zagraj ponownie` i `Wróć do strony głównej`.
+
+`Zagraj ponownie` nie uruchamia od razu następnej sesji. Odsłania wewnątrz tego samego stabilnego action-stage selector 10/20/50 oraz `Rozpocznij`; dopiero `Rozpocznij` korzysta z istniejącego `prepareAndStartSession()`. Powrót do strony głównej przywraca kanoniczny `mode-select` bez przeładowania strony i bez tworzenia drugiej authority landingu. Ostatnio wybrana liczba obrazów pozostaje zachowana.
+
+Celebracja reuse'uje dokładnie tę samą globalną atmosferę co homepage: pięć istniejących rewersów, orbity, gwiazdy, inverse theme mapping i display typography. Testowy profil jest celowo kontrolowany: wynik dostaje krótki halo/settle, gwiazdy jednorazowy sparkle, orbity spokojny przeciwbieżny ruch, a powierzchnie kart mały `rotateY` wokół własnej osi. Nie dodano confetti, trofeów, nowych assetów ani tekstu zależnego od wyniku. `prefers-reduced-motion` pozostawia statyczną kompozycję bez ciągłego ruchu.
+
+Przy okazji motion atmosphere jest teraz faktycznie view-scoped: dekoracyjne floaty są aktywne w `mode-select`, `mode-setup` i `result`, a podczas niewidocznego gameplayu są zatrzymane zamiast dalej zużywać compositor work w tle. Theme switch nadal jest ukrywany wyłącznie podczas właściwego gameplayu.
+
+Pakiet wymaga real-phone visual QA przed jakimkolwiek PASS: finał ostatniej karty, czytelność i intensywność celebracji, oba CTA, reveal replay setup bez pionowego skoku, 320/360/390/430 px, krótki portrait z browser chrome, light/dark, reduced motion oraz powrót do homepage i replay do gameplayu.
+
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
@@ -147,7 +159,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 architecture. V1.6.2: shared shell/morph intermediate build — visual smoke rejected. V1.6.2.1: superseded by V1.6.2.2 after real-phone interaction/copy/theme findings. V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — LOCAL QA PASS / deploy + real-phone visual smoke pending.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; not yet accepted as the final result design.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective

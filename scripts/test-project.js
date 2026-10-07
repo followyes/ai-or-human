@@ -2850,16 +2850,16 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "select/setup navigation must morph internal panels with explicit forward/back direction");
   assert.ok(/\.pre-game-stage\s*\{[\s\S]*?min-height:\s*clamp\(410px, 62svh, 500px\)/m.test(css),
     "pre-game shell must reserve stable geometry so select/setup morph does not vertically jump");
-  assert.ok(/body\[data-public-view="mode-select"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="mode-setup"\] \.game-atmosphere/m.test(css),
-    "floating-card atmosphere must remain present through both pre-game states");
+  assert.ok(/body\[data-public-view="mode-select"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="mode-setup"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="result"\] \.game-atmosphere/m.test(css),
+    "the one floating-card atmosphere must remain present through pre-game and the V1.6.3 result celebration");
   assert.ok(/body\[data-public-view="gameplay"\] \.theme-switch[\s\S]*?display:\s*none/m.test(css),
     "theme switch must disappear only on the actual gameplay view");
   assert.ok(game.includes('themeSwitchVisible = view !== "gameplay"') &&
     game.includes('view: "mode-setup", themeSwitchVisible: true'),
     "mode setup must keep the theme switch visible; only gameplay hides it");
-  const modeSetupAtmosphereCss = css.match(/body\[data-public-view="mode-setup"\] \.game-atmosphere\s*\{([^}]*)\}/m)?.[1] || "";
-  assert.ok(/opacity:\s*1/.test(modeSetupAtmosphereCss) && !/opacity:\s*\.72/.test(modeSetupAtmosphereCss),
-    "mode setup must keep the same full-opacity shared atmosphere as mode selection");
+  const sharedAtmosphereCss = css.match(/body\[data-public-view="mode-select"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="result"\] \.game-atmosphere\s*\{([^}]*)\}/m)?.[1] || "";
+  assert.ok(/opacity:\s*1/.test(sharedAtmosphereCss) && !/opacity:\s*\.72/.test(sharedAtmosphereCss),
+    "mode select/setup/result must keep the same full-opacity shared atmosphere");
   assert.ok(!/body\[data-public-view="mode-setup"\] \.cosmic-orbit--(?:outer|inner)/m.test(css),
     "mode setup must not fade the shared orbital decoration relative to mode selection");
   assert.ok(!html.includes('class="setup-lede"') && !html.includes("Wybierz liczbę obrazów"),
@@ -2868,8 +2868,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "static pre-game copy must not be accidentally text-selected on touch devices");
   assert.ok(/\.pre-game-display-title\[tabindex="-1"\]:focus\s*\{[\s\S]*?outline:\s*none/m.test(css),
     "programmatic focus handoff to the setup heading must not render a browser-default blue focus box");
-  assert.equal((html.match(/class="cosmic-divider"/g) || []).length, 2,
-    "V1.6.2.1 must keep the same cosmic divider language in mode selection and mode setup");
+  assert.equal((html.match(/class="cosmic-divider"/g) || []).length, 3,
+    "V1.6.3 must reuse the same cosmic divider language in mode selection, mode setup and result");
   assert.equal((html.match(/class="pre-game-display-title"/g) || []).length, 2,
     "selection and setup titles must share one pre-game display-title authority");
   assert.ok(/\.pre-game-display-title\s*\{[\s\S]*?font-family:\s*Georgia, "Times New Roman", serif/m.test(css),
@@ -2895,8 +2895,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('id="game-atmosphere" aria-hidden="true"') &&
     /\.game-atmosphere\s*\{[\s\S]*?pointer-events:\s*none/m.test(css),
     "floating cards must be accessibility-hidden and pointer-inert");
-  assert.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.floating-card\s*\{[\s\S]*?animation:\s*none\s*!important/m.test(css),
-    "reduced motion must stop continuous floating-card animation");
+  assert.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.floating-card,[\s\S]*?\.cosmic-orbit,[\s\S]*?animation:\s*none\s*!important/m.test(css),
+    "reduced motion must stop continuous floating-card and result-orbit celebration animation");
   assert.ok(html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp"') &&
     html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp"'),
     "both inverse-theme card backs must be preloaded before the first theme toggle");
@@ -2905,6 +2905,43 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('data-session-size="50"'));
   assert.equal((html.match(/data-session-indicator aria-hidden/g) || []).length, 2,
     "both pickers must have one moving pill indicator");
+
+  assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
+    "V1.6.3 result must enter in the celebration substate");
+  assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
+    "result celebration must expose separate replay and homepage actions");
+  assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert'),
+    "10/20/50 replay configuration must be hidden/inert until replay intent is explicit");
+  assert.ok(html.includes('id="result-start-button"') && html.includes('>Rozpocznij</button>'),
+    "revealed replay configuration must keep Rozpocznij as the actual round-start action");
+  assert.ok(game.includes('playAgainButton.addEventListener("click", openResultReplaySetup)') &&
+    !game.includes('prepareAndStartSession(playAgainButton'),
+    "first Zagraj ponownie action must reveal replay setup and must not prepare a session directly");
+  assert.ok(game.includes('resultStartButton.addEventListener("click", () => prepareAndStartSession(resultStartButton, "Rozpocznij"))'),
+    "result replay Rozpocznij must remain the prepare/start authority");
+  assert.ok(game.includes('function returnResultToHome()') &&
+    game.includes('preGameTransition?.showImmediately(modeSelectPanel, preGamePanels)') &&
+    game.includes('selectedGameMode = null') &&
+    game.includes('showOnly(preGameScreen, { view: "mode-select", themeSwitchVisible: true })'),
+    "result home action must return to canonical mode-select without inventing a parallel landing state");
+  const resultHomeFunction = game.match(/function returnResultToHome\(\) \{([\s\S]*?)\n\}/m)?.[1] || "";
+  assert.ok(!resultHomeFunction.includes('window.location.reload'),
+    "result -> homepage must not reload/refetch the application");
+  assert.ok(/\.result-action-stage\s*\{[\s\S]*?display:\s*grid/m.test(css) &&
+    /\.result-action-panel\s*\{[\s\S]*?grid-area:\s*1 \/ 1/m.test(css),
+    "celebration/replay controls must share one stable action-stage geometry instead of vertically appending setup");
+  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface[\s\S]*?result-card-turn/m.test(css) &&
+    /body\[data-public-view="result"\] \.cosmic-orbit--outer[\s\S]*?result-orbit-outer/m.test(css) &&
+    /result-score-stage::before[\s\S]*?result-score-halo/m.test(css),
+    "result celebration must reuse the existing cards/orbits with controlled transform-based motion and score halo");
+  assert.ok(/\.floating-card\s*\{[\s\S]*?animation-play-state:\s*paused/m.test(css) &&
+    /body\[data-public-view="mode-select"\] \.floating-card,[\s\S]*?body\[data-public-view="result"\] \.floating-card[\s\S]*?animation-play-state:\s*running/m.test(css),
+    "decorative card motion must be view-scoped so invisible gameplay does not keep the homepage animation running");
+  assert.ok(/@keyframes result-card-turn\s*\{[\s\S]*?rotateY/m.test(css) &&
+    !html.includes('<canvas'),
+    "V1.6.3 celebration must stay CSS-transform based without a canvas/WebGL loop");
+  assert.ok(/@media \(max-height: 740px\) and \(orientation: portrait\)[\s\S]*?\.result-action-stage/m.test(css),
+    "short portrait phones must have an explicit compact result/replay profile");
   assert.ok(!html.includes("data-session-liquid"), "obsolete morph SVG markup must be removed");
   assert.ok(!html.includes("data-session-liquid-path"), "obsolete morph path markup must be removed");
   assert.ok(!html.includes(">Sesja<"), "mode name must stay hidden until multiple modes exist");
@@ -3484,4 +3521,5 @@ console.log("Answer feedback semantic lifecycle: PASS");
 console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
+console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("UI/deploy source contracts: PASS");

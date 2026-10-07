@@ -156,26 +156,37 @@
       <p class="swipe-help">Przesuń w lewo: człowiek · w prawo: AI</p>
     </section>
 
-    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert>
-      <p class="eyebrow">AI OR HUMAN</p>
-      <h2 id="end-title">Twój wynik</h2>
-
-      <div class="final-score">
-        <strong id="final-score">0 / 20</strong>
-      </div>
-
-      <div class="session-size-picker session-size-picker-end" aria-labelledby="end-size-label">
-        <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
-        <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
-          <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
-          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
-          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
-          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert data-result-state="celebration">
+      <div class="result-shell">
+        <div class="result-brand">
+          <p class="eyebrow result-eyebrow">AI OR HUMAN</p>
+          <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+          <h2 class="result-title" id="end-title">Twój wynik</h2>
         </div>
-      </div>
 
-      <div class="end-actions">
-        <button class="primary-button" id="play-again-button" type="button">Zagraj ponownie</button>
+        <div class="result-score-stage" aria-live="polite">
+          <strong id="final-score">0 / 20</strong>
+        </div>
+
+        <div class="result-action-stage">
+          <div class="result-action-panel result-actions is-active" id="result-actions" aria-hidden="false">
+            <button class="result-primary-button" id="play-again-button" type="button">Zagraj ponownie</button>
+            <button class="result-secondary-button" id="result-home-button" type="button">Wróć do strony głównej</button>
+          </div>
+
+          <div class="result-action-panel result-replay-setup" id="result-replay-setup" aria-hidden="true" inert>
+            <div class="session-size-picker session-size-picker-end" aria-labelledby="end-size-label">
+              <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
+              <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
+                <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
+                <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
+                <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
+                <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+              </div>
+            </div>
+            <button class="result-primary-button result-start-button" id="result-start-button" type="button">Rozpocznij</button>
+          </div>
+        </div>
       </div>
     </section>
 

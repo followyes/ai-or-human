@@ -290,7 +290,9 @@ button {
 :root.theme-fallback-transition .game-mode-card__icon,
 :root.theme-fallback-transition .game-mode-card__arrow,
 :root.theme-fallback-transition .setup-back-button,
-:root.theme-fallback-transition .setup-retry-button {
+:root.theme-fallback-transition .setup-retry-button,
+:root.theme-fallback-transition .result-primary-button,
+:root.theme-fallback-transition .result-secondary-button {
   transition-property: background-color, color, border-color, box-shadow, transform;
   transition-duration: 420ms;
   transition-timing-function: cubic-bezier(.22, .78, .30, 1);
@@ -737,25 +739,257 @@ h2 {
   line-height: 1.45;
 }
 
-.final-score {
-  margin: 26px 0 0;
+/* V1.6.3 TEST — results celebration / replay flow */
+.screen-end {
+  position: relative;
+  z-index: 12;
+  max-width: 560px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.final-score strong {
-  font-size: clamp(3rem, 11vw, 4.6rem);
+.result-shell {
+  width: 100%;
+  padding: 18px 0 12px;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+}
+
+.result-brand {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 11px;
+}
+
+.result-eyebrow {
+  color: color-mix(in srgb, var(--accent-blue) 70%, var(--muted));
+  letter-spacing: .20em;
+}
+
+.result-title {
+  margin: 0;
+  color: var(--landing-title);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2.15rem, 9.7vw, 3.45rem);
   font-weight: 700;
-  letter-spacing: -0.045em;
-  line-height: 1;
+  line-height: .98;
+  letter-spacing: -.045em;
+  text-wrap: balance;
 }
 
-.end-actions {
-  display: flex;
-  justify-content: center;
-  margin-top: 30px;
+.result-score-stage {
+  position: relative;
+  isolation: isolate;
+  width: max-content;
+  max-width: 100%;
+  margin: 28px auto 0;
+}
+
+.result-score-stage::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  top: 50%;
+  width: clamp(152px, 48vw, 230px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 44% 42%, color-mix(in srgb, var(--accent-gold-bright) 28%, transparent), transparent 48%),
+    radial-gradient(circle at 58% 58%, color-mix(in srgb, var(--accent-blue) 18%, transparent), transparent 62%);
+  opacity: .18;
+  transform: translate(-50%, -50%) scale(1.06);
+  pointer-events: none;
+}
+
+.result-score-stage strong {
+  display: block;
+  color: var(--landing-title);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(4.2rem, 19vw, 6.6rem);
+  font-weight: 700;
+  letter-spacing: -.07em;
+  line-height: .88;
+  text-shadow: 0 10px 34px color-mix(in srgb, var(--accent-gold) 12%, transparent);
+}
+
+.result-action-stage {
+  position: relative;
+  width: min(100%, 370px);
+  min-height: 176px;
+  margin: 34px auto 0;
+  display: grid;
+  align-items: start;
+}
+
+.result-action-panel {
+  grid-area: 1 / 1;
+  width: 100%;
+  display: grid;
+  justify-items: stretch;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(10px) scale(.985);
+  transition:
+    opacity 220ms ease,
+    transform 260ms cubic-bezier(.22, .78, .30, 1),
+    visibility 0s linear 260ms;
+}
+
+.result-action-panel.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+
+.result-actions {
+  gap: 12px;
+}
+
+.result-primary-button,
+.result-secondary-button {
+  width: 100%;
+  min-height: 56px;
+  padding: 0 22px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 800;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 260ms ease, color 260ms ease, box-shadow 180ms ease, opacity 160ms ease;
+}
+
+.result-primary-button {
+  border: 1px solid var(--pregame-cta-border);
+  background: var(--pregame-cta-bg);
+  color: var(--pregame-cta-text);
+  box-shadow:
+    0 16px 38px color-mix(in srgb, var(--accent-gold) 18%, transparent),
+    0 9px 24px color-mix(in srgb, var(--pregame-cta-bg) 24%, transparent);
+}
+
+.result-secondary-button {
+  border: 1px solid var(--landing-panel-border);
+  background: color-mix(in srgb, var(--landing-panel) 90%, transparent);
+  color: var(--landing-title);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--accent-gold) 9%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 78%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.result-primary-button:hover:not(:disabled),
+.result-secondary-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.result-primary-button:active:not(:disabled),
+.result-secondary-button:active:not(:disabled) {
+  transform: translateY(1px) scale(.992);
+}
+
+.result-primary-button:focus-visible,
+.result-secondary-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent-gold) 50%, transparent);
+  outline-offset: 4px;
+}
+
+.result-primary-button:disabled,
+.result-secondary-button:disabled {
+  cursor: default;
+  opacity: .46;
+  transform: none;
+}
+
+.result-replay-setup {
+  gap: 22px;
+}
+
+.result-replay-setup .session-size-picker {
+  width: 100%;
+  margin: 0;
+}
+
+.result-replay-setup .session-size-picker .meta-label {
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--accent-blue) 58%, var(--muted));
+  font-size: .78rem;
+  letter-spacing: .17em;
+}
+
+.result-replay-setup .session-size-options {
+  gap: 6px;
+  min-height: 58px;
+  padding: 5px;
+  border-color: var(--landing-panel-border);
+  background: color-mix(in srgb, var(--landing-panel) 88%, transparent);
+  box-shadow:
+    var(--pregame-control-shadow),
+    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 80%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.result-replay-setup .session-size-indicator {
+  border-color: color-mix(in srgb, var(--accent-gold) 42%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent-gold) 12%);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--accent-gold) 14%, transparent),
+    inset 0 1px 0 var(--inset-highlight-strong);
+}
+
+.result-replay-setup .session-size-button {
+  min-height: 48px;
+  color: color-mix(in srgb, var(--landing-title) 58%, var(--muted));
+  font-size: 1rem;
+}
+
+.result-replay-setup .session-size-button.is-selected {
+  color: var(--landing-title);
+  font-weight: 850;
+}
+
+.result-replay-setup .session-size-options:not(.is-enhanced) .session-size-button.is-selected {
+  border-color: color-mix(in srgb, var(--accent-gold) 42%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent-gold) 12%);
+  box-shadow:
+    0 8px 20px color-mix(in srgb, var(--accent-gold) 14%, transparent),
+    inset 0 1px 0 var(--inset-highlight-strong);
+}
+
+.result-replay-setup .session-size-button:hover:not(:disabled):not(.is-selected) {
+  background: var(--accent-gold-soft);
+  color: var(--landing-title);
+}
+
+body[data-public-view="result"] .result-score-stage::before {
+  animation: result-score-halo 900ms cubic-bezier(.22, .78, .30, 1) both;
+}
+
+body[data-public-view="result"] .result-score-stage strong {
+  animation: result-score-settle 620ms cubic-bezier(.18, .86, .28, 1.16) both;
+}
+
+@keyframes result-score-halo {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.48); }
+  46% { opacity: .56; }
+  100% { opacity: .18; transform: translate(-50%, -50%) scale(1.06); }
+}
+
+@keyframes result-score-settle {
+  0% { opacity: 0; transform: translateY(10px) scale(.90); }
+  72% { opacity: 1; transform: translateY(0) scale(1.035); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 
-/* V1.6.2 — shared mobile-first pre-game atmosphere */
+/* V1.6.2+ — shared mobile-first public atmosphere */
 .game-atmosphere {
   position: fixed;
   z-index: 1;
@@ -768,7 +1002,8 @@ h2 {
 }
 
 body[data-public-view="mode-select"] .game-atmosphere,
-body[data-public-view="mode-setup"] .game-atmosphere {
+body[data-public-view="mode-setup"] .game-atmosphere,
+body[data-public-view="result"] .game-atmosphere {
   opacity: 1;
 }
 
@@ -849,6 +1084,7 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   aspect-ratio: 2 / 3;
   pointer-events: none;
   transform-origin: 50% 50%;
+  perspective: 800px;
   will-change: transform;
 }
 
@@ -862,6 +1098,9 @@ body[data-public-view="mode-setup"] .game-atmosphere {
   background-repeat: no-repeat;
   background-size: cover;
   box-shadow: 0 18px 40px color-mix(in srgb, var(--text) 18%, transparent);
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .floating-card--one {
@@ -930,6 +1169,62 @@ body[data-public-view="mode-setup"] .game-atmosphere {
 
 @keyframes float-card-five {
   to { transform: translate3d(10px, 7px, 0) rotate(-3.5deg) scale(.92); }
+}
+
+/* Decorative compositor work is view-scoped. Gameplay keeps the atmosphere hidden and paused. */
+.floating-card {
+  animation-play-state: paused;
+}
+
+body[data-public-view="mode-select"] .floating-card,
+body[data-public-view="mode-setup"] .floating-card,
+body[data-public-view="result"] .floating-card {
+  animation-play-state: running;
+}
+
+body[data-public-view="result"] .cosmic-orbit--outer {
+  animation: result-orbit-outer 24s linear infinite;
+}
+
+body[data-public-view="result"] .cosmic-orbit--inner {
+  animation: result-orbit-inner 31s linear infinite;
+}
+
+body[data-public-view="result"] .floating-card__surface {
+  animation: result-card-turn 5.8s ease-in-out infinite alternate;
+}
+
+body[data-public-view="result"] .floating-card--two .floating-card__surface { animation-duration: 6.6s; animation-delay: -1.8s; }
+body[data-public-view="result"] .floating-card--three .floating-card__surface { animation-duration: 6.2s; animation-delay: -3.1s; }
+body[data-public-view="result"] .floating-card--four .floating-card__surface { animation-duration: 5.3s; animation-delay: -1.2s; }
+body[data-public-view="result"] .floating-card--five .floating-card__surface { animation-duration: 7.1s; animation-delay: -2.6s; }
+
+body[data-public-view="result"] .cosmic-star {
+  animation: result-star-sparkle 900ms cubic-bezier(.22, .78, .30, 1) both;
+}
+
+body[data-public-view="result"] .cosmic-star--two { animation-delay: 120ms; }
+body[data-public-view="result"] .cosmic-star--three { animation-delay: 220ms; }
+
+@keyframes result-orbit-outer {
+  from { transform: translate(-50%, -50%) rotate(-8deg); }
+  to { transform: translate(-50%, -50%) rotate(352deg); }
+}
+
+@keyframes result-orbit-inner {
+  from { transform: translate(-50%, -50%) rotate(11deg); }
+  to { transform: translate(-50%, -50%) rotate(-349deg); }
+}
+
+@keyframes result-card-turn {
+  from { transform: rotateY(-4.5deg) translateZ(0); }
+  to { transform: rotateY(4.5deg) translateZ(0); }
+}
+
+@keyframes result-star-sparkle {
+  0% { opacity: .15; transform: scale(.55) rotate(-12deg); }
+  58% { opacity: 1; transform: scale(1.32) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
 }
 
 .screen-pre-game {
@@ -1472,6 +1767,82 @@ body[data-public-view="gameplay"] .theme-switch {
   }
 }
 
+@media (max-width: 600px) {
+  .result-shell {
+    padding-top: 14px;
+  }
+
+  .result-action-stage {
+    width: min(100%, 350px);
+  }
+}
+
+@media (max-width: 340px) {
+  .result-title {
+    font-size: 2.05rem;
+  }
+
+  .result-score-stage strong {
+    font-size: 4rem;
+  }
+
+  .result-action-stage {
+    min-height: 170px;
+    margin-top: 28px;
+  }
+
+  .result-primary-button,
+  .result-secondary-button {
+    min-height: 54px;
+    font-size: .94rem;
+  }
+}
+
+@media (max-height: 740px) and (orientation: portrait) {
+  .result-shell {
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+
+  .result-brand {
+    gap: 8px;
+  }
+
+  .result-title {
+    font-size: clamp(1.95rem, 9vw, 2.65rem);
+  }
+
+  .result-score-stage {
+    margin-top: 20px;
+  }
+
+  .result-score-stage strong {
+    font-size: clamp(3.7rem, 17vw, 5.2rem);
+  }
+
+  .result-action-stage {
+    min-height: 164px;
+    margin-top: 24px;
+  }
+
+  .result-replay-setup {
+    gap: 16px;
+  }
+
+  .result-primary-button,
+  .result-secondary-button {
+    min-height: 52px;
+  }
+
+  .result-replay-setup .session-size-options {
+    min-height: 54px;
+  }
+
+  .result-replay-setup .session-size-button {
+    min-height: 44px;
+  }
+}
+
 @media (max-height: 760px) and (orientation: landscape) {
   .screen-game {
     max-width: 760px;
@@ -1506,12 +1877,20 @@ body[data-public-view="gameplay"] .theme-switch {
   .choice-button,
   .session-size-button,
   .game-mode-card,
+  .result-action-panel,
+  .result-primary-button,
+  .result-secondary-button,
   .game-atmosphere,
   #game-image {
     transition-duration: 0.001ms !important;
   }
 
-  .floating-card {
+  .floating-card,
+  .floating-card__surface,
+  .cosmic-orbit,
+  .cosmic-star,
+  .result-score-stage::before,
+  .result-score-stage strong {
     animation: none !important;
   }
 }

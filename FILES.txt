@@ -1,6 +1,6 @@
-AI OR HUMAN — V1.6.2.2 PRE-GAME INTERACTION / COPY / THEME CORRECTIVE — UPDATED_FILES
+AI OR HUMAN — V1.6.3 TEST RESULTS CELEBRATION / REPLAY FLOW — UPDATED_FILES
 
-Exact REPO delta versus V1.6.2.1: 6 files (6 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.2.2: 6 files (6 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
@@ -11,12 +11,16 @@ package.json
 scripts/test-project.js
 
 Scope:
-- remove the browser-default blue focus box from the programmatically focused `Klasyczny` heading while preserving focus handoff semantics;
-- prevent accidental touch/text selection across static pre-game presentation copy;
-- remove redundant `Wybierz liczbę obrazów`, keeping one `LICZBA OBRAZÓW` label;
-- keep the public theme switch visible throughout pre-game and hide it only on the actual gameplay view;
-- remove setup-only atmosphere/orbit opacity dimming so mode-select and mode-setup share one visual plane;
-- durable docs correction for economical copy and pre-game/theme-state authority;
-- no gameplay mechanics, Supabase, Admin, SQL, card asset or V1.7 changes.
+- rebuild the default result as a score-first V1.6 celebration instead of an always-visible replay configurator;
+- add separate `Zagraj ponownie` and `Wróć do strony głównej` result decisions;
+- reveal 10/20/50 only after explicit replay intent and keep `Rozpocznij` as the actual prepare/start trigger;
+- return result -> canonical mode-select without page reload or unnecessary manifest reset/refetch;
+- reuse the existing global card/orbit/star atmosphere on result with restrained CSS-only celebration motion;
+- pause decorative floating-card motion while the atmosphere is hidden during gameplay;
+- preserve inverse light/dark card mapping, theme authority and reduced-motion behavior;
+- add short-phone result/replay geometry and source/lifecycle regression gates;
+- no Supabase, SQL, Admin, content-classification, swipe, answer-feedback, manifest-source or V1.7 changes.
+
+Status: TEST / LOCAL QA PASS only after final package verification. Real-phone visual acceptance is still required.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

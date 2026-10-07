@@ -32,6 +32,10 @@ const setupRetryButton = document.querySelector("#setup-retry-button");
 const startButton = document.querySelector("#start-button");
 const retryButton = document.querySelector("#retry-button");
 const playAgainButton = document.querySelector("#play-again-button");
+const resultHomeButton = document.querySelector("#result-home-button");
+const resultStartButton = document.querySelector("#result-start-button");
+const resultActions = document.querySelector("#result-actions");
+const resultReplaySetup = document.querySelector("#result-replay-setup");
 const humanButton = document.querySelector("#human-button");
 const aiButton = document.querySelector("#ai-button");
 const sessionSizeButtons = [...document.querySelectorAll("[data-session-size]")];
@@ -70,6 +74,7 @@ let availableImageCount = 0;
 let currentIndex = 0;
 let score = 0;
 let state = "boot";
+let resultSubstate = "celebration";
 let presentationRevision = 0;
 
 function publicViewForScreen(screen) {
@@ -124,6 +129,70 @@ function setButtonBusy(button, busy, normalText) {
 function nextPaint() {
   return new Promise((resolve) => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(resolve));
+  });
+}
+
+function setResultSubstate(nextSubstate, { focus = false } = {}) {
+  const replaySetupVisible = nextSubstate === "replay-setup";
+  resultSubstate = replaySetupVisible ? "replay-setup" : "celebration";
+  endScreen.dataset.resultState = resultSubstate;
+
+  resultActions.classList.toggle("is-active", !replaySetupVisible);
+  resultActions.inert = replaySetupVisible;
+  resultActions.setAttribute("aria-hidden", String(replaySetupVisible));
+
+  resultReplaySetup.classList.toggle("is-active", replaySetupVisible);
+  resultReplaySetup.inert = !replaySetupVisible;
+  resultReplaySetup.setAttribute("aria-hidden", String(!replaySetupVisible));
+
+  if (!replaySetupVisible) return;
+
+  syncSessionSizeControls();
+  refreshSessionSizePickersSoon();
+
+  if (focus) {
+    window.requestAnimationFrame(() => {
+      const selectedSizeButton = resultReplaySetup.querySelector(
+        `[data-session-size="${selectedSessionSize}"]`
+      );
+      selectedSizeButton?.focus({ preventScroll: true });
+    });
+  }
+}
+
+function resetResultPresentation() {
+  setResultSubstate("celebration");
+  playAgainButton.disabled = false;
+  resultHomeButton.disabled = false;
+  resultStartButton.disabled = false;
+  playAgainButton.textContent = "Zagraj ponownie";
+  resultStartButton.textContent = "Rozpocznij";
+}
+
+function openResultReplaySetup() {
+  if (state !== "result" || resultSubstate === "replay-setup") return;
+  setResultSubstate("replay-setup", { focus: true });
+}
+
+function returnResultToHome() {
+  if (state !== "result") return;
+
+  presentationRevision += 1;
+  resetResultPresentation();
+  clearCardOverlays();
+  hideImageContent();
+  sessionDeck = [];
+  currentIndex = 0;
+  score = 0;
+  scoreDisplay.textContent = "0";
+  selectedGameMode = null;
+
+  preGameTransition?.showImmediately(modeSelectPanel, preGamePanels);
+  setState("mode-select");
+  showOnly(preGameScreen, { view: "mode-select", themeSwitchVisible: true });
+
+  window.requestAnimationFrame(() => {
+    classicModeButton?.focus({ preventScroll: true });
   });
 }
 
@@ -482,8 +551,7 @@ function finishSession() {
   clearCardOverlays();
   hideImageContent();
   finalScore.textContent = `${score} / ${activeSessionSize}`;
-  playAgainButton.disabled = false;
-  playAgainButton.textContent = "Zagraj ponownie";
+  resetResultPresentation();
   syncSessionSizeControls();
   showOnly(endScreen);
 }
@@ -517,7 +585,9 @@ classicModeButton.addEventListener("click", () => void openGameMode(classicModeB
 modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
 setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));
 startButton.addEventListener("click", () => prepareAndStartSession(startButton, "Rozpocznij"));
-playAgainButton.addEventListener("click", () => prepareAndStartSession(playAgainButton, "Zagraj ponownie"));
+playAgainButton.addEventListener("click", openResultReplaySetup);
+resultHomeButton.addEventListener("click", returnResultToHome);
+resultStartButton.addEventListener("click", () => prepareAndStartSession(resultStartButton, "Rozpocznij"));
 retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));
