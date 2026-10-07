@@ -2908,12 +2908,20 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.2"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.2"'),
+    "V1.6.3 test.2 must version changed public CSS/JS URLs so GitHub Pages/browser caches cannot mix presentation generations");
+  assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
+    "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
     "result celebration must expose separate replay and homepage actions");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert'),
     "10/20/50 replay configuration must be hidden/inert until replay intent is explicit");
   assert.ok(html.includes('id="result-start-button"') && html.includes('>Rozpocznij</button>'),
     "revealed replay configuration must keep Rozpocznij as the actual round-start action");
+  assert.ok(game.includes('resultActions.hidden = replaySetupVisible') &&
+    game.includes('resultReplaySetup.hidden = !replaySetupVisible'),
+    "result substate authority must synchronize native hidden as a mixed-cache presentation fail-safe");
   assert.ok(game.includes('playAgainButton.addEventListener("click", openResultReplaySetup)') &&
     !game.includes('prepareAndStartSession(playAgainButton'),
     "first Zagraj ponownie action must reveal replay setup and must not prepare a session directly");

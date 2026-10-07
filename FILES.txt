@@ -19,6 +19,7 @@ Scope:
 - pause decorative floating-card motion while the atmosphere is hidden during gameplay;
 - preserve inverse light/dark card mapping, theme authority and reduced-motion behavior;
 - add short-phone result/replay geometry and source/lifecycle regression gates;
+- cache-bust changed public CSS/JS entry URLs and synchronize native `hidden` for result substates so a stale phone cache cannot render both result panels at once;
 - no Supabase, SQL, Admin, content-classification, swipe, answer-feedback, manifest-source or V1.7 changes.
 
 Status: TEST / LOCAL QA PASS only after final package verification. Real-phone visual acceptance is still required.

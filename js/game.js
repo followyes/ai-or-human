@@ -138,10 +138,12 @@ function setResultSubstate(nextSubstate, { focus = false } = {}) {
   endScreen.dataset.resultState = resultSubstate;
 
   resultActions.classList.toggle("is-active", !replaySetupVisible);
+  resultActions.hidden = replaySetupVisible;
   resultActions.inert = replaySetupVisible;
   resultActions.setAttribute("aria-hidden", String(replaySetupVisible));
 
   resultReplaySetup.classList.toggle("is-active", replaySetupVisible);
+  resultReplaySetup.hidden = !replaySetupVisible;
   resultReplaySetup.inert = !replaySetupVisible;
   resultReplaySetup.setAttribute("aria-hidden", String(!replaySetupVisible));
 

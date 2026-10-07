@@ -73,6 +73,8 @@ Przy okazji motion atmosphere jest teraz faktycznie view-scoped: dekoracyjne flo
 
 Pakiet wymaga real-phone visual QA przed jakimkolwiek PASS: finał ostatniej karty, czytelność i intensywność celebracji, oba CTA, reveal replay setup bez pionowego skoku, 320/360/390/430 px, krótki portrait z browser chrome, light/dark, reduced motion oraz powrót do homepage i replay do gameplayu.
 
+Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po real-phone smoke pierwszej paczki testowej: zmienione publiczne `style.css` i `game.js` mają wersjonowane URL-e w `index.html`, a result substate synchronizuje także natywne `hidden`. Dzięki temu nowy HTML nie może pokazać jednocześnie celebration actions i replay setup tylko dlatego, że telefon zachował poprzedni CSS w cache. Nie zmienia to projektu celebracji ani logiki gry.
+
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
