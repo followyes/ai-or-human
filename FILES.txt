@@ -1,10 +1,9 @@
-AI OR HUMAN — V1.6.3-test.5 VICTORY IMPACT / PERSISTENT CELEBRATION / THEME MOTION SYNC — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.6 LIVE RESULT THEME TRANSITION CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.4: 8 files (8 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.5: 7 files (7 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
-css/style.css
 index.html
 js/game.js
 js/result-celebration.js
@@ -13,16 +12,15 @@ package.json
 scripts/test-project.js
 
 Scope:
-- preserve accepted test.4 five-card independent random full-turn rotation exactly as the card-motion baseline;
-- strengthen one-shot victory impact so title/score/halo/sparkle entry is visible on a real phone;
-- keep primary result celebration alive with sparse random sparkle, score-halo breath and divider-star flare events;
-- stop NEW events immediately on replay/home while every already-started finite animation finishes naturally without snap;
-- synchronize LIGHT/DARK with result motion through generic theme before/after hooks, WAAPI pause/resume and CSS atmosphere motion hold;
-- serialize rapid theme toggles so root View Transition and celebration hold/resume cannot overlap;
-- preserve inverse card-back mapping, result/replay flow, reduced-motion and mobile-first layout;
-- advance cache version to `1.6.3-test.5`;
-- no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
+- preserve test.5 result layout, victory impact, persistent sparkle/halo/star and accepted five-card random rotation;
+- correct the real-phone LIGHT/DARK reflection/jump artifact caused by freezing/snapshotting a card mid-rotateY;
+- bypass root View Transition while primary result celebration is active or while any result animation is still finishing;
+- use the existing live CSS theme fallback in that state: stop only future celebration schedules while already-started turns/effects continue naturally;
+- keep root View Transition + theme-motion-hold + exact WAAPI pause/resume for states with no active result motion;
+- keep rapid theme-toggle serialization and inverse LIGHT/DARK card-back mapping;
+- advance cache version to `1.6.3-test.6`;
+- no celebration redesign, Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
-Status: TEST / LOCAL QA PASS only after final package verification. Real-phone visual acceptance is still required.
+Status: TEST / LOCAL QA PASS only after final package verification. Real-phone LIGHT/DARK acceptance is still required.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

@@ -90,7 +90,8 @@ export function initializeThemeController({
   windowRef = globalThis.window,
   storage = globalThis.localStorage,
   beforeChange = null,
-  afterChange = null
+  afterChange = null,
+  shouldUseViewTransition = null
 } = {}) {
   if (!documentRef?.documentElement) return null;
 
@@ -151,19 +152,34 @@ export function initializeThemeController({
 
     const fromTheme = currentTheme;
     const nextTheme = getNextTheme(currentTheme);
-    const context = Object.freeze({ fromTheme, toTheme: nextTheme });
     const reducedMotion = prefersReducedMotion(windowRef);
     const canViewTransition = typeof documentRef.startViewTransition === "function";
+    let allowViewTransition = canViewTransition;
+
+    if (allowViewTransition && typeof shouldUseViewTransition === "function") {
+      try {
+        allowViewTransition = shouldUseViewTransition(Object.freeze({ fromTheme, toTheme: nextTheme })) !== false;
+      } catch (error) {
+        console.error("[AI OR HUMAN] Theme transition preference failed.", error);
+      }
+    }
+
+    const transitionMode = reducedMotion
+      ? "immediate"
+      : allowViewTransition
+        ? "view-transition"
+        : "fallback";
+    const context = Object.freeze({ fromTheme, toTheme: nextTheme, transitionMode });
 
     transitionInFlight = true;
     invokeHook(beforeChange, context);
 
     let transitionPromise;
 
-    if (reducedMotion) {
+    if (transitionMode === "immediate") {
       commitTheme(nextTheme);
       transitionPromise = Promise.resolve();
-    } else if (!canViewTransition) {
+    } else if (transitionMode === "fallback") {
       transitionPromise = applyFallbackCore(nextTheme);
     } else {
       const rect = button.getBoundingClientRect();
@@ -195,7 +211,7 @@ export function initializeThemeController({
     activeTransition = Promise.resolve(transitionPromise)
       .catch(() => {})
       .finally(() => {
-        invokeHook(afterChange, Object.freeze({ fromTheme, toTheme: currentTheme }));
+        invokeHook(afterChange, Object.freeze({ fromTheme, toTheme: currentTheme, transitionMode }));
         transitionInFlight = false;
       });
 

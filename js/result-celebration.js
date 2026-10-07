@@ -141,12 +141,16 @@ export class ResultCelebrationController {
     this.armPersistentSchedules();
   }
 
-  suspendForThemeTransition() {
+  suspendForThemeTransition({ pauseActiveAnimations = true } = {}) {
     if (this.destroyed || this.suspended) return false;
     this.suspended = true;
     this.clearPendingSchedules();
-    this.pauseActiveAnimations();
+    if (pauseActiveAnimations) this.pauseActiveAnimations();
     return true;
+  }
+
+  get hasActiveAnimations() {
+    return this.activeCardAnimations.size > 0 || this.activeDecorationAnimations.size > 0;
   }
 
   resumeAfterThemeTransition() {
