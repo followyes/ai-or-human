@@ -7,6 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.4";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -49,6 +50,8 @@ const errorMessage = document.querySelector("#error-message");
 const imageCard = document.querySelector("#image-card");
 const gameImage = document.querySelector("#game-image");
 const answerFeedbackElement = document.querySelector("#answer-feedback");
+const resultFloatingCardSurfaces = [...document.querySelectorAll(".floating-card__surface")];
+const resultSparkles = [...document.querySelectorAll("[data-result-sparkle]")];
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
@@ -59,6 +62,7 @@ let answerFeedback = null;
 let sessionSizePickers = [];
 let themeController = null;
 let preGameTransition = null;
+let resultCelebration = null;
 
 let selectedGameMode = null;
 let classicManifestStatus = "idle";
@@ -173,12 +177,14 @@ function resetResultPresentation() {
 
 function openResultReplaySetup() {
   if (state !== "result" || resultSubstate === "replay-setup") return;
+  resultCelebration?.leave();
   setResultSubstate("replay-setup", { focus: true });
 }
 
 function returnResultToHome() {
   if (state !== "result") return;
 
+  resultCelebration?.leave();
   presentationRevision += 1;
   resetResultPresentation();
   clearCardOverlays();
@@ -290,6 +296,7 @@ function configureSessionSizeAvailability(imageCount) {
 }
 
 function showFatalError(message) {
+  resultCelebration?.leave();
   presentationRevision += 1;
   setState("error");
   swipe?.resetVisuals();
@@ -556,6 +563,7 @@ function finishSession() {
   resetResultPresentation();
   syncSessionSizeControls();
   showOnly(endScreen);
+  resultCelebration?.enter();
 }
 
 function initializeInteractions() {
@@ -563,6 +571,15 @@ function initializeInteractions() {
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
   preGameTransition = new PreGameTransitionCoordinator({ windowRef: window });
   preGameTransition.showImmediately(modeSelectPanel, preGamePanels);
+  resultCelebration = new ResultCelebrationController({
+    cardSurfaces: resultFloatingCardSurfaces,
+    sparkles: resultSparkles,
+    windowRef: window,
+    canSchedule: () =>
+      state === "result" &&
+      resultSubstate === "celebration" &&
+      document.body.dataset.publicView === "result"
+  });
   swipe = new SwipeController(imageCard, {
     onDecision: (type) => answer(type),
     onProgress: updateSwipeHints

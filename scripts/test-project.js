@@ -77,6 +77,7 @@ import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from ".
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectable } from "../js/game-modes.js";
 import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
+import { ResultCelebrationController, getFullTurnAngle } from "../js/result-celebration.js";
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -2770,6 +2771,170 @@ async function testPublicThemeController() {
   assert.equal(directRoot.dataset.theme, "light");
 }
 
+async function testResultCelebrationLifecycle() {
+  class FakeMotionMedia {
+    constructor(matches = false) {
+      this.matches = matches;
+      this.listeners = new Set();
+    }
+
+    addEventListener(type, listener) {
+      if (type === "change") this.listeners.add(listener);
+    }
+
+    removeEventListener(type, listener) {
+      if (type === "change") this.listeners.delete(listener);
+    }
+
+    dispatch(matches) {
+      this.matches = matches;
+      for (const listener of this.listeners) listener({ matches });
+    }
+  }
+
+  class FakeTimerWindow {
+    constructor() {
+      this.nextId = 1;
+      this.timers = new Map();
+    }
+
+    setTimeout(callback, delay) {
+      const id = this.nextId++;
+      this.timers.set(id, { callback, delay });
+      return id;
+    }
+
+    clearTimeout(id) {
+      this.timers.delete(id);
+    }
+
+    run(id) {
+      const timer = this.timers.get(id);
+      if (!timer) return false;
+      this.timers.delete(id);
+      timer.callback();
+      return true;
+    }
+  }
+
+  class FakeCelebrationNode {
+    constructor() {
+      this.dataset = {};
+      this.animations = [];
+    }
+
+    animate(keyframes, options) {
+      const animation = new FakeAnimation({ deferred: true });
+      animation.keyframes = keyframes;
+      animation.options = options;
+      this.animations.push(animation);
+      return animation;
+    }
+  }
+
+  const fullTurnRandom = (() => {
+    const values = [0.2];
+    return () => values.shift() ?? 0.2;
+  })();
+  assert.equal(getFullTurnAngle(fullTurnRandom, 2), -720,
+    "result card completion geometry must always be an integer full turn");
+
+  const windowRef = new FakeTimerWindow();
+  const motionMedia = new FakeMotionMedia(false);
+  const cards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
+  let eligible = true;
+  const controller = new ResultCelebrationController({
+    cardSurfaces: cards,
+    sparkles: [],
+    canSchedule: () => eligible,
+    windowRef,
+    motionMedia,
+    random: createSeededRng(20261007),
+    options: {
+      firstTurnDelayMinMs: 10,
+      firstTurnDelayMaxMs: 50,
+      idleTurnDelayMinMs: 60,
+      idleTurnDelayMaxMs: 90
+    }
+  });
+
+  assert.equal(controller.enter(), true);
+  assert.equal(windowRef.timers.size, 5,
+    "all five result cards must own an independent first-start schedule");
+
+  const initialTimerIds = [...windowRef.timers.keys()];
+  for (const id of initialTimerIds) windowRef.run(id);
+  assert.equal(cards.every((card) => card.animations.length === 1), true,
+    "all five cards must be eligible to rotate independently");
+
+  for (const card of cards) {
+    const endTransform = card.animations[0].keyframes.at(-1).transform;
+    const angle = Number(endTransform.match(/rotateY\((-?\d+)deg\)/)?.[1]);
+    assert.equal(Number.isFinite(angle), true);
+    assert.equal(Math.abs(angle) % 360, 0,
+      "finite result turns must finish at a visually equivalent full-turn orientation");
+  }
+
+  eligible = false;
+  controller.leave();
+  assert.equal(windowRef.timers.size, 0,
+    "leaving result celebration must clear only not-yet-started schedules");
+  assert.equal(cards.every((card) => card.animations.every((animation) => !animation.cancelled)), true,
+    "leaving result celebration must not cancel active turns");
+
+  for (const card of cards) card.animations[0].finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(windowRef.timers.size, 0,
+    "completed turns must not reschedule after the celebration window has closed");
+
+  const reducedWindow = new FakeTimerWindow();
+  const reducedMedia = new FakeMotionMedia(true);
+  const reducedCards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
+  const reducedController = new ResultCelebrationController({
+    cardSurfaces: reducedCards,
+    sparkles: [],
+    canSchedule: () => true,
+    windowRef: reducedWindow,
+    motionMedia: reducedMedia,
+    random: createSeededRng(9)
+  });
+  assert.equal(reducedController.enter(), false);
+  assert.equal(reducedWindow.timers.size, 0,
+    "prefers-reduced-motion must suppress random result rotation scheduling");
+  reducedMedia.dispatch(false);
+  assert.equal(reducedWindow.timers.size, 5,
+    "disabling reduced motion while celebration is active may arm all five independent schedules");
+  reducedMedia.dispatch(true);
+  assert.equal(reducedWindow.timers.size, 0,
+    "enabling reduced motion must stop future starts without hard-resetting active motion");
+  reducedController.destroy();
+
+  const sparkleWindow = new FakeTimerWindow();
+  const sparkles = Array.from({ length: 6 }, () => new FakeCelebrationNode());
+  const sparkleController = new ResultCelebrationController({
+    cardSurfaces: [],
+    sparkles,
+    canSchedule: () => true,
+    windowRef: sparkleWindow,
+    motionMedia: new FakeMotionMedia(false),
+    random: createSeededRng(17)
+  });
+  assert.equal(sparkleController.enter(), true);
+  assert.equal(sparkles.every((sparkle) => sparkle.animations.length === 1), true,
+    "result entry must trigger a finite local sparkle burst around the score/divider");
+  assert.equal(sparkleWindow.timers.size, 1,
+    "settled celebration must schedule only one next occasional sparkle at a time");
+  sparkleController.leave();
+  assert.equal(sparkleWindow.timers.size, 0,
+    "leaving celebration must disarm future ambient sparkles");
+  assert.equal(sparkles.every((sparkle) => sparkle.animations.every((animation) => !animation.cancelled)), true,
+    "already-started sparkles may finish naturally on exit");
+  sparkleController.destroy();
+
+  controller.destroy();
+}
+
 async function testSourceContracts() {
   const html = await fs.readFile(path.join(projectRoot, "index.html"), "utf8");
   const css = await fs.readFile(path.join(projectRoot, "css", "style.css"), "utf8");
@@ -2777,6 +2942,7 @@ async function testSourceContracts() {
   const themeControllerSource = await fs.readFile(path.join(projectRoot, "js", "theme-controller.js"), "utf8");
   const gameModesSource = await fs.readFile(path.join(projectRoot, "js", "game-modes.js"), "utf8");
   const preGameTransitionSource = await fs.readFile(path.join(projectRoot, "js", "pre-game-transition.js"), "utf8");
+  const resultCelebrationSource = await fs.readFile(path.join(projectRoot, "js", "result-celebration.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
@@ -2895,8 +3061,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('id="game-atmosphere" aria-hidden="true"') &&
     /\.game-atmosphere\s*\{[\s\S]*?pointer-events:\s*none/m.test(css),
     "floating cards must be accessibility-hidden and pointer-inert");
-  assert.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.floating-card,[\s\S]*?\.cosmic-orbit,[\s\S]*?animation:\s*none\s*!important/m.test(css),
-    "reduced motion must stop continuous floating-card and result-orbit celebration animation");
+  assert.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.floating-card,[\s\S]*?\.cosmic-orbit,[\s\S]*?animation:\s*none\s*!important/m.test(css) &&
+    resultCelebrationSource.includes('prefers-reduced-motion: reduce'),
+    "reduced motion must stop continuous atmosphere motion and suppress new random celebration schedules");
   assert.ok(html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp"') &&
     html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp"'),
     "both inverse-theme card backs must be preloaded before the first theme toggle");
@@ -2908,9 +3075,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.2"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.2"'),
-    "V1.6.3 test.2 must version changed public CSS/JS URLs so GitHub Pages/browser caches cannot mix presentation generations");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.4"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.4"') &&
+    game.includes('./result-celebration.js?v=1.6.3-test.4'),
+    "V1.6.3 test.4 must version the changed CSS/JS entry graph so phone caches cannot mix celebration generations");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -2938,16 +3106,40 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(/\.result-action-stage\s*\{[\s\S]*?display:\s*grid/m.test(css) &&
     /\.result-action-panel\s*\{[\s\S]*?grid-area:\s*1 \/ 1/m.test(css),
     "celebration/replay controls must share one stable action-stage geometry instead of vertically appending setup");
-  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface[\s\S]*?result-card-turn/m.test(css) &&
-    /body\[data-public-view="result"\] \.cosmic-orbit--outer[\s\S]*?result-orbit-outer/m.test(css) &&
-    /result-score-stage::before[\s\S]*?result-score-halo/m.test(css),
-    "result celebration must reuse the existing cards/orbits with controlled transform-based motion and score halo");
+  assert.ok(/body\[data-public-view="result"\] \.cosmic-orbit--outer[\s\S]*?result-orbit-outer/m.test(css) &&
+    /result-score-stage::before[\s\S]*?result-score-halo/m.test(css) &&
+    /body\[data-public-view="result"\] \.result-title[\s\S]*?result-title-settle/m.test(css),
+    "result celebration must preserve the accepted orbit authority and add finite title/score/halo entrance emphasis");
+  assert.ok(!/body\[data-public-view="result"\] \.floating-card__surface[\s\S]*?animation:/m.test(css),
+    "result cards must not use one synchronized infinite CSS turn loop");
+  assert.ok(resultCelebrationSource.includes('class ResultCelebrationController') &&
+    resultCelebrationSource.includes('scheduleAllCards') &&
+    resultCelebrationSource.includes('activeCardAnimations') &&
+    resultCelebrationSource.includes('animationFinished(animation)') &&
+    resultCelebrationSource.includes('this.clearPendingSchedules()'),
+    "V1.6.3 test.4 must own finite independent card schedules in one focused celebration controller");
+  assert.ok(game.includes('state === "result"') && game.includes('resultSubstate === "celebration"') &&
+    game.includes('document.body.dataset.publicView === "result"'),
+    "new result motion starts must be gated by the internal celebration substate, not public-view=result alone");
+  assert.ok(game.includes('resultCelebration?.leave();') && game.includes('resultCelebration?.enter();'),
+    "game lifecycle must explicitly arm/disarm celebration scheduling");
+  assert.ok(resultCelebrationSource.includes('if (!this.isSchedulingAllowed()) return;') &&
+    !resultCelebrationSource.includes('.cancel()'),
+    "leaving result must stop future schedules without cancelling already-started finite turns");
+  assert.ok(resultCelebrationSource.includes('* 360') && !resultCelebrationSource.includes('requestAnimationFrame'),
+    "card turns must finish on full-turn-equivalent geometry without introducing a RAF animation loop");
+  assert.ok(/\.floating-card__surface::before,[\s\S]*?\.floating-card__surface::after[\s\S]*?backface-visibility:\s*hidden/m.test(css) &&
+    /\.floating-card__surface::after[\s\S]*?rotateY\(180deg\)/m.test(css),
+    "full card turns must use two faces of the existing card-back artwork instead of disappearing/mirroring on the back half");
+  assert.equal((html.match(/data-result-sparkle/g) || []).length, 6,
+    "result hero must expose a small local decorative sparkle layer around score/divider");
+  assert.ok(resultCelebrationSource.includes('playEntrySparkles') && resultCelebrationSource.includes('scheduleAmbientSparkle'),
+    "result sparkles must have one finite entry burst plus occasional settled twinkles");
   assert.ok(/\.floating-card\s*\{[\s\S]*?animation-play-state:\s*paused/m.test(css) &&
     /body\[data-public-view="mode-select"\] \.floating-card,[\s\S]*?body\[data-public-view="result"\] \.floating-card[\s\S]*?animation-play-state:\s*running/m.test(css),
     "decorative card motion must be view-scoped so invisible gameplay does not keep the homepage animation running");
-  assert.ok(/@keyframes result-card-turn\s*\{[\s\S]*?rotateY/m.test(css) &&
-    !html.includes('<canvas'),
-    "V1.6.3 celebration must stay CSS-transform based without a canvas/WebGL loop");
+  assert.ok(!html.includes('<canvas') && !resultCelebrationSource.includes('WebGL') && !resultCelebrationSource.includes('requestAnimationFrame'),
+    "V1.6.3 celebration must stay finite compositor-friendly transform/opacity motion without canvas/WebGL/RAF loops");
   assert.ok(/@media \(max-height: 740px\) and \(orientation: portrait\)[\s\S]*?\.result-action-stage/m.test(css),
     "short portrait phones must have an explicit compact result/replay profile");
   assert.ok(!html.includes("data-session-liquid"), "obsolete morph SVG markup must be removed");
@@ -3498,6 +3690,7 @@ await testSwipeLifecycle();
 await testImageReadinessContract();
 await testAnswerFeedbackLifecycle();
 await testPublicThemeController();
+await testResultCelebrationLifecycle();
 await testSourceContracts();
 
 console.log("TEST PASS");
@@ -3530,4 +3723,5 @@ console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
+console.log("V1.6.3-test.4 independent five-card celebration motion + graceful exit: PASS");
 console.log("UI/deploy source contracts: PASS");

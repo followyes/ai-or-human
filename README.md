@@ -73,7 +73,9 @@ Przy okazji motion atmosphere jest teraz faktycznie view-scoped: dekoracyjne flo
 
 Pakiet wymaga real-phone visual QA przed jakimkolwiek PASS: finał ostatniej karty, czytelność i intensywność celebracji, oba CTA, reveal replay setup bez pionowego skoku, 320/360/390/430 px, krótki portrait z browser chrome, light/dark, reduced motion oraz powrót do homepage i replay do gameplayu.
 
-Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po real-phone smoke pierwszej paczki testowej: zmienione publiczne `style.css` i `game.js` mają wersjonowane URL-e w `index.html`, a result substate synchronizuje także natywne `hidden`. Dzięki temu nowy HTML nie może pokazać jednocześnie celebration actions i replay setup tylko dlatego, że telefon zachował poprzedni CSS w cache. Nie zmienia to projektu celebracji ani logiki gry.
+Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po real-phone smoke pierwszej paczki testowej: zmienione publiczne `style.css` i `game.js` mają wersjonowane URL-e w `index.html`, a result substate synchronizuje także natywne `hidden`. Dzięki temu nowy HTML nie może pokazać jednocześnie celebration actions i replay setup tylko dlatego, że telefon zachował poprzedni CSS w cache.
+
+`1.6.3-test.4` rozwija wyłącznie zaakceptowaną kompozycję wyniku o uzgodniony motion. Każda z dokładnie pięciu kart ma własny niezależny losowy scheduler pełnych obrotów `rotateY`; dzięki temu liczba jednocześnie poruszających się kart wynika naturalnie z nakładania losowych startów, a nie ze zsynchronizowanych burstów. Wyjście z głównej celebracji natychmiast blokuje nowe starty, ale już rozpoczęte obroty zawsze kończą pełną wielokrotność 360° bez snapu. `Twój wynik` i rezultat dostają krótki scale-in/settle + subtelny pulse, halo jest krótkim gold/blue flashem, a lokalna warstwa sześciu sparkli daje krótki burst wejściowy i później pojedyncze sporadyczne migotania. Tekst zależny od wyniku nadal pozostaje poza zakresem. Motion authority jest wydzielone do `js/result-celebration.js`; nie używa canvas/WebGL/RAF i respektuje `prefers-reduced-motion`.
 
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
@@ -161,7 +163,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; not yet accepted as the final result design.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.4`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; final celebration motion still requires real-phone acceptance.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective

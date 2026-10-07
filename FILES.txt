@@ -1,6 +1,6 @@
-AI OR HUMAN — V1.6.3 TEST RESULTS CELEBRATION / REPLAY FLOW — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.4 RESULT CELEBRATION MOTION — UPDATED_FILES
 
-Exact REPO delta versus V1.6.2.2: 6 files (6 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.2: 7 files (6 modified, 1 added, 0 removed).
 
 MODIFIED
 README.md
@@ -10,17 +10,20 @@ js/game.js
 package.json
 scripts/test-project.js
 
+ADDED
+js/result-celebration.js
+
 Scope:
-- rebuild the default result as a score-first V1.6 celebration instead of an always-visible replay configurator;
-- add separate `Zagraj ponownie` and `Wróć do strony głównej` result decisions;
-- reveal 10/20/50 only after explicit replay intent and keep `Rozpocznij` as the actual prepare/start trigger;
-- return result -> canonical mode-select without page reload or unnecessary manifest reset/refetch;
-- reuse the existing global card/orbit/star atmosphere on result with restrained CSS-only celebration motion;
-- pause decorative floating-card motion while the atmosphere is hidden during gameplay;
-- preserve inverse light/dark card mapping, theme authority and reduced-motion behavior;
-- add short-phone result/replay geometry and source/lifecycle regression gates;
-- cache-bust changed public CSS/JS entry URLs and synchronize native `hidden` for result substates so a stale phone cache cannot render both result panels at once;
-- no Supabase, SQL, Admin, content-classification, swipe, answer-feedback, manifest-source or V1.7 changes.
+- preserve accepted test.2 result/replay layout and cache-coherence contract;
+- add independent random full-turn scheduling for all five existing result cards;
+- stop only future card/sparkle starts on replay/home while active turns finish naturally without snap;
+- add focused `ResultCelebrationController` without RAF/canvas/WebGL;
+- use two CSS faces of the existing inverse-theme card art for complete Y turns;
+- refine `Twój wynik` + score entrance, subtle pulse and finite gold/blue halo flash;
+- add local entry sparkle burst + occasional single twinkles only in primary celebration;
+- preserve slow result orbits, replay 10/20/50 semantics, homepage return, theme authority and reduced-motion;
+- advance cache version to `1.6.3-test.4`;
+- no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
 Status: TEST / LOCAL QA PASS only after final package verification. Real-phone visual acceptance is still required.
 
