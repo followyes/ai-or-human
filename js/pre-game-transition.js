@@ -41,7 +41,7 @@ export class PreGameTransitionCoordinator {
     }
   }
 
-  async transition(fromScreen, toScreen, { focusTarget = null } = {}) {
+  async transition(fromScreen, toScreen, { focusTarget = null, direction = "forward" } = {}) {
     if (this.busy || !fromScreen || !toScreen || fromScreen === toScreen) return false;
 
     this.busy = true;
@@ -54,17 +54,18 @@ export class PreGameTransitionCoordinator {
     fromScreen.classList?.add("is-pre-game-transitioning");
     toScreen.classList?.add("is-pre-game-transitioning");
 
+    const directionSign = direction === "back" ? -1 : 1;
     const outgoingFrames = reduced
       ? [{ opacity: 1 }, { opacity: 0 }]
       : [
           { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
-          { opacity: 0, transform: "translate3d(0, -14px, 0) scale(.985)" }
+          { opacity: 0, transform: `translate3d(${-18 * directionSign}px, 0, 0) scale(.985)` }
         ];
 
     const incomingFrames = reduced
       ? [{ opacity: 0 }, { opacity: 1 }]
       : [
-          { opacity: 0, transform: "translate3d(0, 18px, 0) scale(.985)" },
+          { opacity: 0, transform: `translate3d(${22 * directionSign}px, 0, 0) scale(.975)` },
           { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" }
         ];
 

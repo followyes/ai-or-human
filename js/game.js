@@ -14,12 +14,14 @@ import {
   resolveSessionSize
 } from "./session-config.js";
 
-const modeSelectScreen = document.querySelector("#mode-select-screen");
-const modeSetupScreen = document.querySelector("#mode-setup-screen");
+const preGameScreen = document.querySelector("#pre-game-screen");
+const modeSelectPanel = document.querySelector("#mode-select-panel");
+const modeSetupPanel = document.querySelector("#mode-setup-panel");
 const gameScreen = document.querySelector("#game-screen");
 const endScreen = document.querySelector("#end-screen");
 const errorScreen = document.querySelector("#error-screen");
-const publicScreens = [modeSelectScreen, modeSetupScreen, gameScreen, endScreen, errorScreen];
+const publicScreens = [preGameScreen, gameScreen, endScreen, errorScreen];
+const preGamePanels = [modeSelectPanel, modeSetupPanel];
 
 const classicModeButton = document.querySelector('#classic-mode-button[data-game-mode="classic"]');
 const modeSetupTitle = document.querySelector("#mode-setup-title");
@@ -71,8 +73,7 @@ let state = "boot";
 let presentationRevision = 0;
 
 function publicViewForScreen(screen) {
-  if (screen === modeSelectScreen) return "mode-select";
-  if (screen === modeSetupScreen) return "mode-setup";
+  if (screen === preGameScreen) return state === "mode-setup" ? "mode-setup" : "mode-select";
   if (screen === gameScreen) return "gameplay";
   if (screen === endScreen) return "result";
   if (screen === errorScreen) return "error";
@@ -86,12 +87,12 @@ function refreshSessionSizePickersSoon() {
   });
 }
 
-function applyPublicView(screen, { themeSwitchVisible = screen === modeSelectScreen } = {}) {
-  document.body.dataset.publicView = publicViewForScreen(screen);
+function applyPublicView(screen, { view = publicViewForScreen(screen), themeSwitchVisible = view === "mode-select" } = {}) {
+  document.body.dataset.publicView = view;
   themeController?.setVisible(themeSwitchVisible);
 }
 
-function showOnly(screen) {
+function showOnly(screen, options = {}) {
   if (preGameTransition) {
     preGameTransition.showImmediately(screen, publicScreens);
   } else {
@@ -103,7 +104,7 @@ function showOnly(screen) {
     });
   }
 
-  applyPublicView(screen);
+  applyPublicView(screen, options);
   refreshSessionSizePickersSoon();
 }
 
@@ -331,12 +332,12 @@ async function openGameMode(modeId) {
     selectedGameMode = mode.id;
     setState("mode-setup");
     syncClassicSetupControls();
-    themeController?.setVisible(false);
-    document.body.dataset.publicView = "mode-setup";
+    applyPublicView(preGameScreen, { view: "mode-setup", themeSwitchVisible: false });
     void ensureClassicManifest();
 
-    const moved = await preGameTransition.transition(modeSelectScreen, modeSetupScreen, {
-      focusTarget: modeSetupTitle
+    const moved = await preGameTransition.transition(modeSelectPanel, modeSetupPanel, {
+      focusTarget: modeSetupTitle,
+      direction: "forward"
     });
 
     if (moved) refreshSessionSizePickersSoon();
@@ -352,11 +353,11 @@ async function returnToModeSelect() {
   preGameNavigationPending = true;
   try {
     setState("mode-select");
-    themeController?.setVisible(false);
-    document.body.dataset.publicView = "mode-select";
+    applyPublicView(preGameScreen, { view: "mode-select", themeSwitchVisible: false });
 
-    const moved = await preGameTransition.transition(modeSetupScreen, modeSelectScreen, {
-      focusTarget: classicModeButton
+    const moved = await preGameTransition.transition(modeSetupPanel, modeSelectPanel, {
+      focusTarget: classicModeButton,
+      direction: "back"
     });
 
     if (moved) {
@@ -492,6 +493,7 @@ function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
   preGameTransition = new PreGameTransitionCoordinator({ windowRef: window });
+  preGameTransition.showImmediately(modeSelectPanel, preGamePanels);
   swipe = new SwipeController(imageCard, {
     onDecision: (type) => answer(type),
     onProgress: updateSwipeHints
@@ -503,7 +505,7 @@ function bootstrap() {
   initializeInteractions();
   themeController = initializeThemeController();
   setState("mode-select");
-  showOnly(modeSelectScreen);
+  showOnly(preGameScreen, { view: "mode-select" });
   syncClassicSetupControls();
   prefetchClassicManifestAfterFirstPaint();
 }

@@ -19,7 +19,7 @@ Nie ma repozytoryjnego katalogu contentu, `data/images.json` ani runtime fallbac
 
 ## Gra
 
-Publiczny flow rozpoczyna się od ekranu `Wybierz tryb gry`. V1.6.1 pokazuje wyłącznie aktualny tryb `Klasyczny`; po jego wyborze gracz przechodzi do osobnego setupu i wybiera 10, 20 albo 50 obrazów. Sesja zawiera dokładnie wybraną liczbę unikalnych obrazów, bez wymuszonego balansu AI/HUMAN. Mobile obsługuje swipe lewo = CZŁOWIEK i prawo = AI; desktop korzysta z przycisków.
+Publiczny flow rozpoczyna się od ekranu `Wybierz tryb gry`. V1.6.2 pokazuje wyłącznie aktualny tryb `Klasyczny`; po jego wyborze ten sam pre-game shell płynnie zmienia się w konfigurację 10, 20 albo 50 obrazów zamiast wyglądać jak przejście na osobną stronę. Sesja zawiera dokładnie wybraną liczbę unikalnych obrazów, bez wymuszonego balansu AI/HUMAN. Mobile obsługuje swipe lewo = CZŁOWIEK i prawo = AI; desktop korzysta z przycisków.
 
 Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo jest niedostępny, aplikacja pokazuje kontrolowany ekran błędu. Nie przełącza się na drugie źródło contentu.
 
@@ -46,6 +46,14 @@ Pierwszy ekran ma pięć dekoracyjnych rewersów na viewport-level atmosphere. R
 Theme switch jest widoczny tylko na ekranie wyboru gry. Po wejściu do setupu/gameplay/result/error znika z UI i focus order, ale wybrany motyw nadal obowiązuje. Admin pozostaje drugim zatwierdzonym miejscem dla przyszłego/dedykowanego switcha; ten etap nie przebudowuje Admin UI.
 
 Build publikuje teraz również `assets/`. Mobile acceptance: 320/360/390/430 px + safe-area/dynamic browser chrome przed desktopową akceptacją.
+
+### V1.6.2 — Mode Setup Morph / Shared Pre-Game Shell
+
+V1.6.2 scala wybór trybu i konfigurację klasyka w jeden publiczny `pre-game-screen`. Wewnątrz tego samego shell działają dwa wzajemnie wykluczające się panele: `mode-select` oraz `mode-setup`. Kliknięcie `Klasyczny` nie przełącza już pełnego publicznego ekranu; centralna zawartość morphuje kierunkowo do konfiguracji 10/20/50, a `Wróć` odwraca ten sam lifecycle.
+
+Atmosfera V1.6.1 pozostaje widoczna w obu stanach pre-game, dzięki czemu lewitujące rewersy i orbitalna oprawa nie znikają podczas konfiguracji. W setupie warstwa może być delikatnie wyciszona, ale zachowuje ciągłość kompozycji. Theme switch nadal występuje wyłącznie w `mode-select` i znika natychmiast po wejściu do setupu bez resetowania motywu.
+
+Wspólny `pre-game-stage` ma zarezerwowaną stabilną wysokość, aby różnica rozmiaru obu paneli nie powodowała pionowego skoku podczas animacji. `PreGameTransitionCoordinator` pozostaje jedyną authority animacji/accessibility i obsługuje jawny kierunek `forward` / `back`, `inert`, `aria-hidden`, rapid-tap lock, focus handoff oraz reduced-motion. Manifest klasyka, retry, 10/20/50 i gameplay pozostają bez zmian.
 
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
@@ -133,5 +141,5 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — LOCAL QA PASS / deploy + real-phone visual smoke pending.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.1: Mobile Game Selection / Floating Cards Foundation — absorbed into V1.6.2 baseline. V1.6.2: Mode Setup Morph / Shared Pre-Game Shell — LOCAL QA PASS / deploy + real-phone visual smoke pending.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.

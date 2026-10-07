@@ -56,58 +56,60 @@
   </button>
 
   <main class="app-shell">
-    <section class="screen screen-mode-select" id="mode-select-screen" aria-labelledby="mode-select-title">
-      <div class="mode-select-panel">
-        <div class="mode-select-brand">
-          <p class="eyebrow mode-select-eyebrow">AI OR HUMAN</p>
-          <span class="cosmic-divider" aria-hidden="true"><span></span></span>
-          <h1 id="mode-select-title">Wybierz tryb gry</h1>
+    <section class="screen screen-pre-game" id="pre-game-screen" aria-label="Ustawienia przed grą">
+      <div class="pre-game-stage">
+        <div class="pre-game-panel mode-select-panel" id="mode-select-panel" aria-labelledby="mode-select-title">
+          <div class="mode-select-brand">
+            <p class="eyebrow mode-select-eyebrow">AI OR HUMAN</p>
+            <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+            <h1 id="mode-select-title">Wybierz tryb gry</h1>
+          </div>
+
+          <div class="game-mode-list" aria-label="Tryby gry">
+            <button class="game-mode-card" id="classic-mode-button" type="button" data-game-mode="classic">
+              <span class="game-mode-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false">
+                  <path d="M18.2 2.7 7.8 17h7.1l-1.2 12.3L24.3 14h-7.2l1.1-11.3Z"></path>
+                </svg>
+              </span>
+              <span class="game-mode-card__copy">
+                <strong>Klasyczny</strong>
+                <span>Zgaduj, kto stworzył obraz</span>
+              </span>
+              <span class="game-mode-card__arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg>
+              </span>
+            </button>
+          </div>
         </div>
 
-        <div class="game-mode-list" aria-label="Tryby gry">
-          <button class="game-mode-card" id="classic-mode-button" type="button" data-game-mode="classic">
-            <span class="game-mode-card__icon" aria-hidden="true">
-              <svg viewBox="0 0 32 32" focusable="false">
-                <path d="M18.2 2.7 7.8 17h7.1l-1.2 12.3L24.3 14h-7.2l1.1-11.3Z"></path>
-              </svg>
-            </span>
-            <span class="game-mode-card__copy">
-              <strong>Klasyczny</strong>
-              <span>Zgaduj, kto stworzył obraz</span>
-            </span>
-            <span class="game-mode-card__arrow" aria-hidden="true">
-              <svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg>
-            </span>
+        <div class="pre-game-panel mode-setup-panel is-hidden" id="mode-setup-panel" aria-labelledby="mode-setup-title" aria-hidden="true" inert>
+          <button class="setup-back-button" id="mode-setup-back" type="button" aria-label="Wróć do wyboru trybu">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"></path></svg>
+            <span>Wróć</span>
           </button>
+
+          <div class="brand-block mode-setup-brand">
+            <p class="eyebrow">AI OR HUMAN</p>
+            <h1 id="mode-setup-title" tabindex="-1">Klasyczny</h1>
+            <p class="setup-lede">Wybierz liczbę obrazów</p>
+          </div>
+
+          <div class="session-size-picker" aria-labelledby="start-size-label">
+            <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
+            <div class="session-size-options" aria-label="Liczba obrazów">
+              <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
+              <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false" disabled>10</button>
+              <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
+              <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
+            </div>
+          </div>
+
+          <div class="setup-status" id="classic-setup-status" aria-live="polite">Ładowanie obrazów…</div>
+          <button class="setup-retry-button is-hidden" id="setup-retry-button" type="button">Spróbuj ponownie</button>
+          <button class="primary-button" id="start-button" type="button" disabled>Rozpocznij</button>
         </div>
       </div>
-    </section>
-
-    <section class="screen screen-setup is-hidden" id="mode-setup-screen" aria-labelledby="mode-setup-title" aria-hidden="true" inert>
-      <button class="setup-back-button" id="mode-setup-back" type="button" aria-label="Wróć do wyboru trybu">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"></path></svg>
-        <span>Wróć</span>
-      </button>
-
-      <div class="brand-block">
-        <p class="eyebrow">AI OR HUMAN</p>
-        <h1 id="mode-setup-title" tabindex="-1">Klasyczny</h1>
-        <p class="setup-lede">Wybierz liczbę obrazów</p>
-      </div>
-
-      <div class="session-size-picker" aria-labelledby="start-size-label">
-        <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
-        <div class="session-size-options" aria-label="Liczba obrazów">
-          <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
-          <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false" disabled>10</button>
-          <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
-          <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
-        </div>
-      </div>
-
-      <div class="setup-status" id="classic-setup-status" aria-live="polite">Ładowanie obrazów…</div>
-      <button class="setup-retry-button is-hidden" id="setup-retry-button" type="button">Spróbuj ponownie</button>
-      <button class="primary-button" id="start-button" type="button" disabled>Rozpocznij</button>
     </section>
 
     <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite" aria-hidden="true" inert>

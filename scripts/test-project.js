@@ -2553,7 +2553,7 @@ async function testSequentialUploadBatchContinuity() {
 
 function testGameModeRegistryContract() {
   const modes = getGameModes();
-  assert.equal(modes.length, 1, "V1.6.1 must expose only the approved current mode");
+  assert.equal(modes.length, 1, "V1.6.2 must expose only the approved current mode");
   assert.equal(modes[0].id, GAME_MODE_IDS.CLASSIC);
   assert.equal(modes[0].enabled, true);
   assert.equal(getGameModeDefinition("classic")?.label, "Klasyczny");
@@ -2803,12 +2803,14 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes("data-feedback-icon"));
   assert.ok(html.includes("data-feedback-label"));
   assert.ok(html.includes('rel="icon"'));
-  assert.ok(html.includes('id="mode-select-screen"') && html.includes('id="mode-setup-screen"'),
-    "V1.6.1 must separate game-mode selection from classic session setup");
+  assert.ok(html.includes('id="pre-game-screen"') && html.includes('id="mode-select-panel"') && html.includes('id="mode-setup-panel"'),
+    "V1.6.2 must keep selection and classic setup as two states inside one pre-game shell");
+  assert.ok(!html.includes('id="mode-select-screen"') && !html.includes('id="mode-setup-screen"'),
+    "V1.6.2 must not model select/setup as separate public screens");
   assert.ok(html.includes('id="classic-mode-button"') && html.includes('data-game-mode="classic"'),
     "the current classic mode must be a semantic selectable mode tile");
   assert.equal((html.match(/data-game-mode=/g) || []).length, 1,
-    "V1.6.1 must not expose or tease a second game mode before V1.7");
+    "V1.6.2 must not expose or tease a second game mode before V1.7");
   assert.ok(!html.includes("Pojedynek") && !html.includes("Wkrótce"),
     "public V1.6.1 copy must not spoil an unimplemented future mode");
   assert.ok(html.includes('id="theme-switch"') && html.includes('role="switch"'),
@@ -2840,6 +2842,18 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(preGameTransitionSource.includes('class PreGameTransitionCoordinator') &&
     preGameTransitionSource.includes('inert') && preGameTransitionSource.includes('.animate'),
     "pre-game navigation must have one animation/accessibility coordinator rather than timeout-driven hiding");
+  assert.ok(game.includes('const preGameScreen = document.querySelector("#pre-game-screen")') &&
+    game.includes('const preGamePanels = [modeSelectPanel, modeSetupPanel]'),
+    "V1.6.2 must keep one public pre-game screen with internal select/setup panels");
+  assert.ok(game.includes('transition(modeSelectPanel, modeSetupPanel') && game.includes('direction: "forward"') &&
+    game.includes('transition(modeSetupPanel, modeSelectPanel') && game.includes('direction: "back"'),
+    "select/setup navigation must morph internal panels with explicit forward/back direction");
+  assert.ok(/\.pre-game-stage\s*\{[\s\S]*?min-height:\s*clamp\(410px, 62svh, 500px\)/m.test(css),
+    "pre-game shell must reserve stable geometry so select/setup morph does not vertically jump");
+  assert.ok(/body\[data-public-view="mode-select"\] \.game-atmosphere,[\s\S]*?body\[data-public-view="mode-setup"\] \.game-atmosphere/m.test(css),
+    "floating-card atmosphere must remain present through both pre-game states");
+  assert.ok(/body:not\(\[data-public-view="mode-select"\]\) \.theme-switch[\s\S]*?display:\s*none/m.test(css),
+    "theme switch must still disappear as soon as the shell morphs into mode setup");
   assert.ok(css.includes('--floating-card-image: url("../assets/game/card-back-dark.webp")') &&
     /:root\[data-theme="dark"\][\s\S]*?--floating-card-image:\s*url\("\.\.\/assets\/game\/card-back-light\.webp"\)/m.test(css),
     "theme/art mapping must be inverse: light UI -> dark back, dark UI -> light back");
@@ -3435,5 +3449,5 @@ console.log("Visible image decode readiness: PASS");
 console.log("Mobile pointer capture/cancel recovery: PASS");
 console.log("Answer feedback semantic lifecycle: PASS");
 console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
-console.log("V1.6.1 mobile game selection + pre-game transition + floating cards: PASS");
+console.log("V1.6.2 pre-game shell + mode setup morph: PASS");
 console.log("UI/deploy source contracts: PASS");
