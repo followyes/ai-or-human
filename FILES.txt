@@ -1,0 +1,26 @@
+AI OR HUMAN — V1.6.0 LIGHT / DARK THEME FOUNDATION — UPDATED_FILES
+
+Exact REPO delta versus V1.5 FINAL CLOSED BASELINE: 7 files (6 modified + 1 added).
+
+MODIFIED
+README.md
+css/style.css
+index.html
+js/game.js
+package.json
+scripts/test-project.js
+
+ADDED
+js/theme-controller.js
+
+Scope:
+- tokenized light/dark public theme authority;
+- accessible persistent theme switch;
+- pre-paint saved-theme restore;
+- circular View Transition reveal from the switch with fallback fade;
+- reduced-motion handling;
+- theme lifecycle/source/build regression tests;
+- no Admin/runtime data/SQL changes;
+- no card-back asset usage yet.
+
+Gate: every listed file above must be byte-identical to the corresponding REPO file.

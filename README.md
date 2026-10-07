@@ -25,7 +25,15 @@ Jeżeli publiczny katalog Supabase zawiera mniej niż 10 aktywnych obrazów albo
 
 V1.5.9 zmienia także prezentację obrazów w publicznej grze: pełny oryginał nadal jest źródłem obrazu, ale karta renderuje go przez `object-fit: cover` i centralne kadrowanie. Poziome obrazy proporcjonalnie wypełniają kartę bez białych pasów; nadmiar jest przycinany zamiast rozciągania obrazu. Swipe, preload, losowanie i klasyfikacja pozostają bez zmian.
 
-## `/admin` — V1.5.9.6
+## V1.6.0 — Light / Dark Theme Foundation
+
+V1.6 rozpoczyna przebudowę publicznego doświadczenia od wspólnej authority motywu. Publiczna strona ma teraz pełne warianty jasny i ciemny oparte na jednym zestawie tokenów CSS zamiast niezależnych, ręcznie wpisywanych kolorów. Motyw obejmuje ekran startowy, grę, wynik i błąd; Admin pozostaje poza tym etapem.
+
+W prawym górnym rogu publicznej strony znajduje się dostępny klawiaturowo suwak motywu. Wybór jest zapamiętywany w `localStorage` pod jedną kluczową preferencją i odtwarzany jeszcze w `<head>`, zanim UI zostanie pokazane, żeby uniknąć błysku złego motywu. Zmiana aktualizuje także `color-scheme` oraz `meta[name=theme-color]`.
+
+Na wspieranych przeglądarkach nowy motyw rozchodzi się od położenia suwaka jako kołowy View Transition reveal. Na pozostałych przeglądarkach działa kontrolowany fallback fade. `prefers-reduced-motion` omija reveal i przełącza motyw bez rozbudowanej animacji. Mechanika sesji, swipe, feedback, preload, Supabase i Admin nie są zmieniane przez ten etap. Rewersy jasny/ciemny nie są jeszcze używane w runtime.
+
+## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
 
@@ -103,17 +111,13 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 
 ## Status roadmapy
 
+- **V1.5 — PASS/CLOSED.** Finalny runtime baseline: V1.5.9.6.
 - V1.5.6 — PASS/CLOSED.
 - V1.5.7A — Admin Workspace Redesign — PASS/CLOSED.
 - V1.5.7B + V1.5.7B.1 Library Optimization + Admin Motion Corrective — PASS/CLOSED.
 - V1.5.8 — Admin Storage Capacity Indicator + Library Bulk Delete UX — PASS/CLOSED.
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
-- V1.5.9.1 — Admin Delete Marker Consistency Corrective — included in V1.5.9.2; standalone package superseded before production closure.
-- V1.5.9.2 — Admin Upload Category Gate Corrective — PASS/CLOSED.
-- V1.5.9.3 — Admin Mutation Queue + Upload Pipeline Corrective — superseded before production closure by V1.5.9.3.1.
-- V1.5.9.3.1 — Delete Marker + Mobile Library Grid Corrective — superseded before production closure by V1.5.9.3.2.
-- V1.5.9.3.2 — Stable Library Status Slot Corrective — superseded before production closure by V1.5.9.4 after deep delete-lifecycle audit.
-- V1.5.9.4 — Delete Drain-Until-Quiescent Corrective — superseded before production closure by V1.5.9.5; delete lifecycle contracts preserved.
-- V1.5.9.5 — Upload Worker / Main-Thread Isolation Corrective — included in V1.5.9.6; production performance smoke carried into the combined closure gate.
-- V1.5.9.6 — Admin Move / Separate Multi-Action Modes — LOCAL QA PASS / READY FOR DEPLOY / PRODUCTION FUNCTIONAL + PERFORMANCE SMOKE PENDING; no SQL.
-- V1.6 — Multi-Mode, po zamknięciu V1.5.9.6.
+- V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
+- V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.0: Light / Dark Theme Foundation — LOCAL QA PASS / deploy smoke pending.
+- **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.

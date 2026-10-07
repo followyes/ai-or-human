@@ -4,6 +4,7 @@ import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
+import { initializeThemeController } from "./theme-controller.js";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -363,4 +364,5 @@ retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));
 
+initializeThemeController();
 bootstrap();

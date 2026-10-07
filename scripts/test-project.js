@@ -75,6 +75,16 @@ import {
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
+import {
+  DEFAULT_THEME,
+  THEME_STORAGE_KEY,
+  applyTheme,
+  calculateThemeRevealRadius,
+  getNextTheme,
+  initializeThemeController,
+  normalizeTheme,
+  resolveStoredTheme
+} from "../js/theme-controller.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, "..");
@@ -2558,6 +2568,7 @@ async function testSupabaseOnlyBuild() {
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "index.html")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "admin", "admin.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "content-source.js")));
+  assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "theme-controller.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "admin-content.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-worker-client.js")));
   assert.ok(await fs.stat(path.join(tempRoot, "dist", "js", "upload-preparation-worker.js")));
@@ -2570,10 +2581,98 @@ async function testSupabaseOnlyBuild() {
   await fs.rm(tempRoot, { recursive: true, force: true });
 }
 
+async function testPublicThemeController() {
+  assert.equal(normalizeTheme("light"), "light");
+  assert.equal(normalizeTheme("dark"), "dark");
+  assert.equal(normalizeTheme("sepia"), null);
+  assert.equal(getNextTheme("light"), "dark");
+  assert.equal(getNextTheme("dark"), "light");
+  assert.equal(getNextTheme("invalid"), "dark");
+  assert.equal(resolveStoredTheme({ getItem: () => "dark" }), "dark");
+  assert.equal(resolveStoredTheme({ getItem: () => "invalid" }), DEFAULT_THEME);
+  assert.equal(resolveStoredTheme({ getItem: () => { throw new Error("blocked"); } }), DEFAULT_THEME);
+
+  const radius = calculateThemeRevealRadius(10, 20, 100, 200);
+  assert.ok(radius >= Math.hypot(90, 180), "theme reveal must cover the farthest viewport corner");
+
+  const persisted = new Map();
+  const root = {
+    dataset: {},
+    classList: new FakeClassList(),
+    offsetWidth: 100,
+    style: {
+      colorScheme: "",
+      values: new Map(),
+      setProperty(name, value) { this.values.set(name, value); }
+    }
+  };
+  const meta = {
+    content: "",
+    setAttribute(name, value) { if (name === "content") this.content = value; }
+  };
+  const attributes = new Map();
+  let clickHandler = null;
+  const button = {
+    title: "",
+    setAttribute(name, value) { attributes.set(name, value); },
+    addEventListener(type, handler) { if (type === "click") clickHandler = handler; },
+    getBoundingClientRect() { return { left: 80, top: 10, width: 40, height: 30 }; }
+  };
+  const storage = {
+    getItem(key) { return persisted.get(key) ?? null; },
+    setItem(key, value) { persisted.set(key, value); }
+  };
+  let transitionCalls = 0;
+  const documentRef = {
+    documentElement: root,
+    querySelector(selector) {
+      if (selector === "#theme-switch") return button;
+      if (selector === 'meta[name="theme-color"]') return meta;
+      return null;
+    },
+    startViewTransition(callback) {
+      transitionCalls += 1;
+      callback();
+      return { finished: Promise.resolve() };
+    }
+  };
+  const windowRef = {
+    innerWidth: 320,
+    innerHeight: 640,
+    matchMedia: () => ({ matches: false }),
+    setTimeout(callback) { callback(); }
+  };
+
+  root.dataset.theme = "light";
+  const controller = initializeThemeController({ documentRef, windowRef, storage });
+  assert.equal(controller.theme, "light");
+  assert.equal(attributes.get("aria-checked"), "false");
+  assert.equal(typeof clickHandler, "function");
+
+  clickHandler();
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(controller.theme, "dark");
+  assert.equal(root.dataset.theme, "dark");
+  assert.equal(root.style.colorScheme, "dark");
+  assert.equal(meta.content, "#0c1116");
+  assert.equal(attributes.get("aria-checked"), "true");
+  assert.equal(persisted.get(THEME_STORAGE_KEY), "dark");
+  assert.equal(transitionCalls, 1);
+  assert.ok(root.style.values.has("--theme-origin-x"));
+  assert.ok(root.style.values.has("--theme-reveal-radius"));
+
+  const directRoot = { dataset: {}, style: {} };
+  applyTheme("light", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
+  assert.equal(directRoot.dataset.theme, "light");
+}
+
 async function testSourceContracts() {
   const html = await fs.readFile(path.join(projectRoot, "index.html"), "utf8");
   const css = await fs.readFile(path.join(projectRoot, "css", "style.css"), "utf8");
   const game = await fs.readFile(path.join(projectRoot, "js", "game.js"), "utf8");
+  const themeControllerSource = await fs.readFile(path.join(projectRoot, "js", "theme-controller.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
@@ -2600,6 +2699,22 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes("data-feedback-icon"));
   assert.ok(html.includes("data-feedback-label"));
   assert.ok(html.includes('rel="icon"'));
+  assert.ok(html.includes('id="theme-switch"') && html.includes('role="switch"'),
+    "public UI must expose one accessible light/dark theme switch");
+  assert.ok(html.includes('ai-or-human.theme'),
+    "head bootstrap must restore the saved theme before the public UI is painted");
+  assert.ok(css.includes(':root[data-theme="dark"]') && css.includes('--primary-bg:'),
+    "public presentation must define complete tokenized light/dark palettes");
+  assert.ok(css.includes('::view-transition-new(root)') && css.includes('@keyframes theme-reveal'),
+    "theme change must use progressive circular View Transition reveal when supported");
+  assert.ok(css.includes('.theme-fallback-transition'),
+    "theme change must keep a non-View-Transition fallback");
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'),
+    "theme motion must respect reduced-motion preference");
+  assert.ok(game.includes('initializeThemeController()'),
+    "public game bootstrap must initialize the theme controller without owning theme storage itself");
+  assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('startViewTransition'),
+    "theme controller must own durable preference and progressive transition orchestration");
   assert.ok(html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
@@ -3149,6 +3264,7 @@ await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
 await testImageReadinessContract();
 await testAnswerFeedbackLifecycle();
+await testPublicThemeController();
 await testSourceContracts();
 
 console.log("TEST PASS");
@@ -3177,4 +3293,5 @@ console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");
 console.log("Mobile pointer capture/cancel recovery: PASS");
 console.log("Answer feedback semantic lifecycle: PASS");
+console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("UI/deploy source contracts: PASS");
