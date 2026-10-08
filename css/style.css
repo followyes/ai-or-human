@@ -765,7 +765,7 @@ h2 {
   z-index: 2;
 }
 
-/* V1.6.3-test.9 — viewport-wide bounded mini-firework celebration */
+/* V1.6.3-test.10 — spectacle-intensity viewport-wide mini-firework celebration */
 .result-fireworks {
   position: fixed;
   z-index: 8;
@@ -802,50 +802,50 @@ h2 {
   height: var(--firework-particle-size, 6px);
   background: var(--firework-particle-color, var(--accent-gold-bright));
   clip-path: polygon(50% 0, 59% 41%, 100% 50%, 59% 59%, 50% 100%, 41% 59%, 0 50%, 41% 41%);
-  filter: drop-shadow(0 0 5px var(--firework-particle-shadow, color-mix(in srgb, var(--accent-gold) 34%, transparent)));
+  filter: drop-shadow(0 0 9px var(--firework-particle-shadow, color-mix(in srgb, var(--accent-gold) 52%, transparent)));
 }
 
 .result-firework__particle[data-firework-tone="gold"] {
   --firework-particle-color: var(--accent-gold-bright);
-  --firework-particle-shadow: color-mix(in srgb, var(--accent-gold) 48%, transparent);
+  --firework-particle-shadow: color-mix(in srgb, var(--accent-gold) 62%, transparent);
 }
 
 .result-firework__particle[data-firework-tone="cream"] {
   --firework-particle-color: color-mix(in srgb, var(--landing-title) 82%, var(--accent-gold-bright) 18%);
-  --firework-particle-shadow: color-mix(in srgb, var(--landing-title) 28%, transparent);
+  --firework-particle-shadow: color-mix(in srgb, var(--landing-title) 42%, transparent);
 }
 
 .result-firework__particle[data-firework-tone="blue"] {
   --firework-particle-color: var(--accent-blue);
-  --firework-particle-shadow: color-mix(in srgb, var(--accent-blue) 44%, transparent);
+  --firework-particle-shadow: color-mix(in srgb, var(--accent-blue) 58%, transparent);
 }
 
 .result-firework__particle[data-firework-tone="ice"] {
   --firework-particle-color: color-mix(in srgb, var(--landing-title) 76%, var(--accent-blue) 24%);
-  --firework-particle-shadow: color-mix(in srgb, var(--accent-blue) 34%, transparent);
+  --firework-particle-shadow: color-mix(in srgb, var(--accent-blue) 46%, transparent);
 }
 
 .result-firework__core {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--firework-core-color, var(--accent-gold-bright));
-  box-shadow: 0 0 16px var(--firework-core-shadow, color-mix(in srgb, var(--accent-gold) 38%, transparent));
+  box-shadow: 0 0 26px var(--firework-core-shadow, color-mix(in srgb, var(--accent-gold) 48%, transparent));
 }
 
 .result-firework[data-firework-family="warm"] {
   --firework-core-color: var(--accent-gold-bright);
-  --firework-core-shadow: color-mix(in srgb, var(--accent-gold) 48%, transparent);
+  --firework-core-shadow: color-mix(in srgb, var(--accent-gold) 66%, transparent);
 }
 
 .result-firework[data-firework-family="cool"] {
   --firework-core-color: color-mix(in srgb, var(--accent-blue) 84%, var(--landing-title) 16%);
-  --firework-core-shadow: color-mix(in srgb, var(--accent-blue) 44%, transparent);
+  --firework-core-shadow: color-mix(in srgb, var(--accent-blue) 60%, transparent);
 }
 
 .result-firework[data-firework-family="mixed"] {
   --firework-core-color: color-mix(in srgb, var(--accent-gold-bright) 52%, var(--accent-blue) 48%);
-  --firework-core-shadow: color-mix(in srgb, var(--accent-blue) 46%, var(--accent-gold) 54%);
+  --firework-core-shadow: color-mix(in srgb, var(--accent-blue) 50%, var(--accent-gold) 50%);
 }
 
 .result-brand {
@@ -1192,8 +1192,8 @@ body[data-public-view="result"] .game-atmosphere {
 .cosmic-star--three { bottom: 12%; left: 44%; width: 17px; height: 17px; }
 
 .cosmic-dot {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--accent-blue);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-gold) 36%, transparent);

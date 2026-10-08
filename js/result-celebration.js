@@ -7,22 +7,23 @@ const DEFAULT_OPTIONS = Object.freeze({
   oneTurnDurationMaxMs: 1450,
   extraTurnDurationMinMs: 650,
   extraTurnDurationMaxMs: 900,
-  firstAmbientFireworkDelayMinMs: 1800,
+  firstAmbientFireworkDelayMinMs: 2200,
   firstAmbientFireworkDelayMaxMs: 3000,
-  ambientFireworkDelayMinMs: 1000,
-  ambientFireworkDelayMaxMs: 2600,
-  followUpFireworkChance: 0.28,
-  followUpFireworkDelayMinMs: 180,
-  followUpFireworkDelayMaxMs: 450,
-  fireworkParticleDurationMinMs: 850,
-  fireworkParticleDurationMaxMs: 1350,
-  entryFireworkParticleDurationMinMs: 1000,
-  entryFireworkParticleDurationMaxMs: 1450,
-  fireworkParticleStaggerMinMs: 18,
-  fireworkParticleStaggerMaxMs: 58,
-  fireworkDistanceMinPx: 24,
-  fireworkDistanceMaxPx: 64,
-  fireworkCandidateAttempts: 24,
+  ambientFireworkDelayMinMs: 500,
+  ambientFireworkDelayMaxMs: 1350,
+  followUpFireworkChance: 0.62,
+  secondFollowUpFireworkChance: 0.30,
+  followUpFireworkDelayMinMs: 120,
+  followUpFireworkDelayMaxMs: 360,
+  fireworkParticleDurationMinMs: 1050,
+  fireworkParticleDurationMaxMs: 1800,
+  entryFireworkParticleDurationMinMs: 1300,
+  entryFireworkParticleDurationMaxMs: 2100,
+  fireworkParticleStaggerMinMs: 8,
+  fireworkParticleStaggerMaxMs: 30,
+  fireworkDistanceMinPx: 48,
+  fireworkDistanceMaxPx: 120,
+  fireworkCandidateAttempts: 32,
   ambientHaloDelayMinMs: 4000,
   ambientHaloDelayMaxMs: 8000,
   haloDurationMinMs: 1500,
@@ -71,11 +72,12 @@ export function getFullTurnAngle(random, turns = chooseFullTurns(random)) {
 
 export function chooseFireworkParticleCount(random) {
   const roll = random();
-  if (roll < 0.15) return 4;
-  if (roll < 0.43) return 5;
-  if (roll < 0.72) return 6;
-  if (roll < 0.92) return 7;
-  return 8;
+  if (roll < 0.10) return 7;
+  if (roll < 0.24) return 8;
+  if (roll < 0.42) return 9;
+  if (roll < 0.62) return 10;
+  if (roll < 0.82) return 11;
+  return 12;
 }
 
 export function chooseFireworkFamily(random) {
@@ -121,9 +123,9 @@ export function isFireworkCenterSafe({ x, y, width, height, edgePadding, exclusi
 export function createFireworkGeometry({ width, height, exclusionRects = [] } = {}) {
   const viewportWidth = Math.max(0, Number(width) || 0);
   const viewportHeight = Math.max(0, Number(height) || 0);
-  const maxDistance = viewportWidth <= 340 ? 42 : viewportWidth <= 390 ? 52 : 64;
-  const edgePadding = maxDistance + 10;
-  const exclusionPadding = maxDistance + 10;
+  const maxDistance = viewportWidth <= 340 ? 74 : viewportWidth <= 390 ? 92 : viewportWidth <= 430 ? 108 : 120;
+  const edgePadding = viewportWidth <= 340 ? 18 : 22;
+  const exclusionPadding = viewportWidth <= 340 ? 32 : 40;
   return Object.freeze({
     width: viewportWidth,
     height: viewportHeight,
@@ -161,17 +163,17 @@ export function createFireworkParticlePresentation(random, {
   index,
   count,
   family,
-  maxDistance = 64,
-  minDistance = 24
+  maxDistance = 120,
+  minDistance = 48
 } = {}) {
   const particleCount = Math.max(1, Math.round(count || 1));
   const particleIndex = Math.max(0, Math.round(index || 0));
   const baseAngle = (360 / particleCount) * particleIndex;
-  const jitter = randomInteger(random, -11, 11);
+  const jitter = randomInteger(random, -14, 14);
   const angle = baseAngle + jitter;
   const radians = angle * Math.PI / 180;
   const distance = randomInteger(random, Math.min(minDistance, maxDistance), Math.max(minDistance, maxDistance));
-  const size = random() < 0.14 ? randomInteger(random, 10, 11) : randomInteger(random, 4, 9);
+  const size = random() < 0.20 ? randomInteger(random, 14, 18) : randomInteger(random, 6, 13);
   const tone = chooseFireworkTone(random, family, particleIndex);
   return Object.freeze({
     angle,
@@ -179,7 +181,7 @@ export function createFireworkParticlePresentation(random, {
     dx: Math.round(Math.cos(radians) * distance),
     dy: Math.round(Math.sin(radians) * distance),
     size,
-    rotation: randomInteger(random, -36, 36),
+    rotation: randomInteger(random, -52, 52),
     tone
   });
 }
@@ -479,9 +481,13 @@ export class ResultCelebrationController {
   playEntryFireworks() {
     if (!this.isSchedulingAllowed() || !this.fireworkSlots.length) return false;
     const delays = [
-      randomInteger(this.random, 260, 380),
-      randomInteger(this.random, 700, 1000),
-      randomInteger(this.random, 1200, 1650)
+      randomInteger(this.random, 120, 220),
+      randomInteger(this.random, 300, 440),
+      randomInteger(this.random, 520, 700),
+      randomInteger(this.random, 760, 980),
+      randomInteger(this.random, 1040, 1280),
+      randomInteger(this.random, 1360, 1640),
+      randomInteger(this.random, 1740, 2050)
     ];
     delays.forEach((delay) => {
       this.scheduleFireworkEvent(delay, () => this.startFireworkBurst({ entry: true }));
@@ -506,15 +512,22 @@ export class ResultCelebrationController {
   playAmbientFireworkEvent() {
     if (!this.isSchedulingAllowed()) return false;
     const started = this.startFireworkBurst({ entry: false });
-    if (started && this.random() < this.options.followUpFireworkChance) {
-      const delay = randomInteger(
+    if (!started) return false;
+
+    let followUpCount = 0;
+    if (this.random() < this.options.followUpFireworkChance) followUpCount = 1;
+    if (followUpCount && this.random() < this.options.secondFollowUpFireworkChance) followUpCount = 2;
+
+    let accumulatedDelay = 0;
+    for (let index = 0; index < followUpCount; index += 1) {
+      accumulatedDelay += randomInteger(
         this.random,
         this.options.followUpFireworkDelayMinMs,
         this.options.followUpFireworkDelayMaxMs
       );
-      this.scheduleFireworkEvent(delay, () => this.startFireworkBurst({ entry: false }));
+      this.scheduleFireworkEvent(accumulatedDelay, () => this.startFireworkBurst({ entry: false }));
     }
-    return started;
+    return true;
   }
 
   startFireworkBurst({ entry = false } = {}) {
@@ -527,8 +540,8 @@ export class ResultCelebrationController {
     if (!center) return false;
 
     const family = chooseFireworkFamily(this.random);
-    const particleCount = entry ? randomInteger(this.random, 6, 8) : chooseFireworkParticleCount(this.random);
-    const activeParticles = slot.particles.slice(0, Math.min(8, particleCount));
+    const particleCount = entry ? randomInteger(this.random, 10, 12) : chooseFireworkParticleCount(this.random);
+    const activeParticles = slot.particles.slice(0, Math.min(12, particleCount));
     if (!activeParticles.length) return false;
 
     this.activeFireworkSlots.add(slot);
@@ -539,12 +552,13 @@ export class ResultCelebrationController {
 
     const animations = [];
     if (slot.core && typeof slot.core.animate === "function") {
-      const coreDuration = entry ? randomInteger(this.random, 820, 1120) : randomInteger(this.random, 650, 920);
+      const coreDuration = entry ? randomInteger(this.random, 1050, 1450) : randomInteger(this.random, 820, 1180);
       const coreAnimation = slot.core.animate(
         [
-          { opacity: 0, transform: "translate(-50%, -50%) scale(.20)" },
-          { opacity: entry ? 0.98 : 0.88, transform: `translate(-50%, -50%) scale(${entry ? 1.75 : 1.45})`, offset: 0.28 },
-          { opacity: 0, transform: "translate(-50%, -50%) scale(2.20)" }
+          { opacity: 0, transform: "translate(-50%, -50%) scale(.18)" },
+          { opacity: 1, transform: `translate(-50%, -50%) scale(${entry ? 2.45 : 1.95})`, offset: 0.24 },
+          { opacity: 0.72, transform: `translate(-50%, -50%) scale(${entry ? 3.05 : 2.50})`, offset: 0.52 },
+          { opacity: 0, transform: `translate(-50%, -50%) scale(${entry ? 3.85 : 3.20})` }
         ],
         { duration: coreDuration, easing: "cubic-bezier(.16, .82, .22, 1)", fill: "none" }
       );
@@ -581,17 +595,17 @@ export class ResultCelebrationController {
           },
           {
             opacity: 1,
-            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.18)}px, ${Math.round(presentation.dy * 0.18)}px, 0) scale(1.18) rotate(${presentation.rotation}deg)`,
-            offset: 0.20
+            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.18)}px, ${Math.round(presentation.dy * 0.18)}px, 0) scale(1.42) rotate(${presentation.rotation}deg)`,
+            offset: 0.18
           },
           {
             opacity: 0.84,
-            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.72)}px, ${Math.round(presentation.dy * 0.72)}px, 0) scale(.94) rotate(${presentation.rotation + 12}deg)`,
-            offset: 0.66
+            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.72)}px, ${Math.round(presentation.dy * 0.72)}px, 0) scale(1.08) rotate(${presentation.rotation + 12}deg)`,
+            offset: 0.62
           },
           {
             opacity: 0,
-            transform: `translate(-50%, -50%) translate3d(${presentation.dx}px, ${presentation.dy}px, 0) scale(.34) rotate(${rotateEnd}deg)`
+            transform: `translate(-50%, -50%) translate3d(${presentation.dx}px, ${presentation.dy}px, 0) scale(.44) rotate(${rotateEnd}deg)`
           }
         ],
         { duration, delay, easing: "cubic-bezier(.18, .78, .20, 1)", fill: "none" }

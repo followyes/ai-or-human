@@ -1,6 +1,6 @@
-AI OR HUMAN — V1.6.3-test.9 PERSISTENT FIREWORK SPARKLE CELEBRATION — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.10 SPECTACLE CELEBRATION INTENSITY CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.8: 7 files (7 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.9: 7 files (7 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
@@ -12,18 +12,18 @@ package.json
 scripts/test-project.js
 
 Scope:
-- replace the test.8 single-sparkle pool with one bounded viewport-wide mini-firework authority;
-- use exactly 3 reusable burst slots, each with 8 reusable particle nodes plus one bounded core flash;
-- one burst uses 4-8 particles with radial transform/opacity motion and a coherent warm/cool/mixed semantic family;
-- stage 3 entry bursts, then persist random bursts during primary result/celebration at ~1.0-2.6 s cadence with occasional close follow-up;
-- cap concurrency at 3 active bursts and never grow particle DOM dynamically;
-- place burst centers outside expanded title/score/action/theme-switch exclusion rectangles and viewport-edge safety margins;
-- refresh geometry only on result enter and resize/orientation, with no RAF/per-frame geometry reads;
-- on replay/home stop only future burst events; already-started bursts own delayed particles and finish naturally;
-- preserve accepted five-card random rotation, test.8 first-turn delay ~1.7-3.5 s, halo/star, replay flow, theme architecture and test.7 homepage/setup flat renderer;
-- advance cache version to `1.6.3-test.9`;
+- keep the test.9 bounded viewport-wide firework architecture and tune intensity only;
+- increase the reusable pool to exactly 5 burst slots, each with 12 reusable particle nodes plus one core flash (60 bounded particle nodes total);
+- use 7-12 particles for ambient bursts and 10-12 particles for entry bursts;
+- enlarge responsive burst travel to approximately 74/92/108/120 px, with larger particle sizes, stronger core flash and longer visible decay;
+- stage 7 entry burst attempts across the first ~2 s, then persist bursts at ~0.5-1.35 s cadence;
+- allow frequent one-follow-up and bounded occasional two-follow-up sequences while hard-capping concurrency at 5 slots;
+- keep safe center sampling outside result/title/action/theme-switch exclusion rectangles, but allow centers closer to viewport edges so large rays may naturally clip;
+- preserve replay/home graceful finish: stop only future events, never cancel an already-started explosion;
+- preserve accepted five-card rotation, ~1.7-3.5 s first-turn delay, halo/star, replay flow, theme architecture, reduced-motion and test.7 homepage/setup flat renderer;
+- advance cache version to `1.6.3-test.10`;
 - no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
-Status: TEST / LOCAL QA PASS only after final package verification. Real-phone celebration QA remains required.
+Status: TEST / LOCAL QA PASS only after final package verification. Real-phone spectacle-intensity QA remains required.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.
