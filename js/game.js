@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.10";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.11";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -580,45 +580,6 @@ function finishSession() {
   resultCelebration?.enter();
 }
 
-let themeMotionHoldApplied = false;
-
-function isPrimaryResultCelebration() {
-  return state === "result" &&
-    resultSubstate === "celebration" &&
-    document.body.dataset.publicView === "result";
-}
-
-function shouldUseRootThemeViewTransition() {
-  // The root View Transition snapshots the whole document. During the result
-  // finale that conflicts with live 3D card turns (including turns finishing
-  // after the user opened replay setup), so keep that state on the live CSS
-  // fallback instead of snapshotting an in-between rotateY frame.
-  return !isPrimaryResultCelebration() && !resultCelebration?.hasActiveAnimations;
-}
-
-function suspendPublicMotionForTheme({ transitionMode } = {}) {
-  const snapshotTransition = transitionMode === "view-transition";
-  themeMotionHoldApplied = snapshotTransition;
-
-  if (snapshotTransition) {
-    document.documentElement.classList.add("theme-motion-hold");
-  }
-
-  resultCelebration?.suspendForThemeTransition({
-    // A live fallback must never freeze a card in an edge-on/back-face angle.
-    // Only an actual document snapshot needs timeline pausing.
-    pauseActiveAnimations: snapshotTransition
-  });
-}
-
-function resumePublicMotionAfterTheme() {
-  resultCelebration?.resumeAfterThemeTransition();
-  if (themeMotionHoldApplied) {
-    document.documentElement.classList.remove("theme-motion-hold");
-  }
-  themeMotionHoldApplied = false;
-}
-
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
@@ -645,11 +606,7 @@ function initializeInteractions() {
 
 function bootstrap() {
   initializeInteractions();
-  themeController = initializeThemeController({
-    beforeChange: suspendPublicMotionForTheme,
-    afterChange: resumePublicMotionAfterTheme,
-    shouldUseViewTransition: shouldUseRootThemeViewTransition
-  });
+  themeController = initializeThemeController();
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select" });
   syncClassicSetupControls();

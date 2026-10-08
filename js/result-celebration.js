@@ -190,10 +190,6 @@ function animationFinished(animation) {
   return Promise.resolve(animation?.finished).catch(() => undefined);
 }
 
-function canPauseAnimation(animation) {
-  return animation && typeof animation.pause === "function" && typeof animation.play === "function";
-}
-
 function normalizeFireworkSlot(slot) {
   if (!slot) return null;
   if (slot.element && Array.isArray(slot.particles)) {
@@ -235,14 +231,12 @@ export class ResultCelebrationController {
     this.options = Object.freeze({ ...DEFAULT_OPTIONS, ...options });
 
     this.active = false;
-    this.suspended = false;
     this.cardTimers = new Map();
     this.activeCardAnimations = new Map();
     this.activeDecorationAnimations = new Set();
     this.activeFireworkSlots = new Set();
     this.fireworkEventTimers = new Set();
     this.ambientFireworkTimer = null;
-    this.pausedAnimations = new Set();
     this.haloTimer = null;
     this.starTimer = null;
     this.fireworkGeometry = null;
@@ -263,12 +257,8 @@ export class ResultCelebrationController {
     return Boolean(this.motionMedia?.matches);
   }
 
-  get hasActiveAnimations() {
-    return this.activeCardAnimations.size > 0 || this.activeDecorationAnimations.size > 0;
-  }
-
   isSchedulingAllowed() {
-    return !this.destroyed && this.active && !this.suspended && !this.reducedMotion && Boolean(this.canSchedule?.());
+    return !this.destroyed && this.active && !this.reducedMotion && Boolean(this.canSchedule?.());
   }
 
   enter() {
@@ -295,8 +285,6 @@ export class ResultCelebrationController {
   destroy() {
     this.leave();
     this.destroyed = true;
-    this.suspended = false;
-    this.pausedAnimations.clear();
 
     if (this.motionMedia?.removeEventListener) {
       this.motionMedia.removeEventListener("change", this.handleMotionPreferenceChange);
@@ -322,54 +310,11 @@ export class ResultCelebrationController {
     this.armPersistentSchedules();
   }
 
-  suspendForThemeTransition({ pauseActiveAnimations = true } = {}) {
-    if (this.destroyed || this.suspended) return false;
-    this.suspended = true;
-    this.clearPendingSchedules();
-    if (pauseActiveAnimations) this.pauseActiveAnimations();
-    return true;
-  }
-
-  resumeAfterThemeTransition() {
-    if (this.destroyed || !this.suspended) return false;
-    this.suspended = false;
-    this.resumePausedAnimations();
-    if (this.isSchedulingAllowed()) {
-      this.updateFireworkGeometry();
-      this.armPersistentSchedules();
-    }
-    return true;
-  }
-
-  pauseActiveAnimations() {
-    const activeAnimations = [...this.activeCardAnimations.values(), ...this.activeDecorationAnimations];
-    for (const animation of activeAnimations) {
-      if (!canPauseAnimation(animation)) continue;
-      const playState = animation.playState;
-      if (playState === "finished" || playState === "idle") continue;
-      try {
-        animation.pause();
-        this.pausedAnimations.add(animation);
-      } catch {}
-    }
-  }
-
-  resumePausedAnimations() {
-    for (const animation of this.pausedAnimations) {
-      if (!canPauseAnimation(animation)) continue;
-      const playState = animation.playState;
-      if (playState === "finished" || playState === "idle") continue;
-      try { animation.play(); } catch {}
-    }
-    this.pausedAnimations.clear();
-  }
-
   trackDecorationAnimation(animation, onFinish = null) {
     if (!animation) return null;
     this.activeDecorationAnimations.add(animation);
     animationFinished(animation).finally(() => {
       this.activeDecorationAnimations.delete(animation);
-      this.pausedAnimations.delete(animation);
       onFinish?.();
     });
     return animation;
@@ -441,7 +386,6 @@ export class ResultCelebrationController {
     surface.dataset.resultTurnCard = String(index + 1);
     animationFinished(animation).finally(() => {
       if (this.activeCardAnimations.get(surface) === animation) this.activeCardAnimations.delete(surface);
-      this.pausedAnimations.delete(animation);
       delete surface.dataset.resultTurnCard;
       if (!this.isSchedulingAllowed()) return;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);

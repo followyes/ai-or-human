@@ -1354,16 +1354,6 @@ body[data-public-view="result"] .cosmic-orbit--inner {
   to { transform: translate(-50%, -50%) rotate(-349deg); }
 }
 
-/* Theme reveal snapshots and live motion must stay on the same visual frame. */
-:root.theme-motion-hold .floating-card,
-:root.theme-motion-hold .cosmic-orbit,
-:root.theme-motion-hold .result-title,
-:root.theme-motion-hold .result-score-stage::before,
-:root.theme-motion-hold .result-score-stage strong {
-  animation-play-state: paused !important;
-}
-
-
 .screen-pre-game {
   position: relative;
   z-index: 12;
