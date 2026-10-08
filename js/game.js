@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.6";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.7";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,

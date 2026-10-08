@@ -3312,10 +3312,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.6"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.6"') &&
-    game.includes('./result-celebration.js?v=1.6.3-test.6'),
-    "V1.6.3 test.6 must version the changed CSS/JS entry graph so phone caches cannot mix corrective generations");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.7"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.7"') &&
+    game.includes('./result-celebration.js?v=1.6.3-test.7'),
+    "V1.6.3 test.7 must version the changed CSS/JS entry graph so phone caches cannot mix corrective generations");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3347,14 +3347,15 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     /result-score-stage::before[\s\S]*?result-score-halo/m.test(css) &&
     /body\[data-public-view="result"\] \.result-title[\s\S]*?result-title-settle/m.test(css),
     "result celebration must preserve the accepted orbit authority and add finite title/score/halo entrance emphasis");
-  assert.ok(!/body\[data-public-view="result"\] \.floating-card__surface[\s\S]*?animation:/m.test(css),
+  const resultCardSurfaceRule = css.match(/body\[data-public-view="result"\] \.floating-card__surface\s*\{([\s\S]*?)\}/m)?.[1] || "";
+  assert.ok(resultCardSurfaceRule && !resultCardSurfaceRule.includes("animation:"),
     "result cards must not use one synchronized infinite CSS turn loop");
   assert.ok(resultCelebrationSource.includes('class ResultCelebrationController') &&
     resultCelebrationSource.includes('scheduleAllCards') &&
     resultCelebrationSource.includes('activeCardAnimations') &&
     resultCelebrationSource.includes('animationFinished(animation)') &&
     resultCelebrationSource.includes('this.clearPendingSchedules()'),
-    "V1.6.3 test.6 must preserve finite independent card schedules in one focused celebration controller");
+    "V1.6.3 test.7 must preserve finite independent card schedules in one focused celebration controller");
   assert.ok(game.includes('state === "result"') && game.includes('resultSubstate === "celebration"') &&
     game.includes('document.body.dataset.publicView === "result"'),
     "new result motion starts must be gated by the internal celebration substate, not public-view=result alone");
@@ -3365,9 +3366,18 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "leaving result must stop future schedules without cancelling already-started finite turns");
   assert.ok(resultCelebrationSource.includes('* 360') && !resultCelebrationSource.includes('requestAnimationFrame'),
     "card turns must finish on full-turn-equivalent geometry without introducing a RAF animation loop");
-  assert.ok(/\.floating-card__surface::before,[\s\S]*?\.floating-card__surface::after[\s\S]*?backface-visibility:\s*hidden/m.test(css) &&
-    /\.floating-card__surface::after[\s\S]*?rotateY\(180deg\)/m.test(css),
-    "full card turns must use two faces of the existing card-back artwork instead of disappearing/mirroring on the back half");
+  const flatCardSurfaceRule = css.match(/\.floating-card__surface\s*\{([\s\S]*?)\}/m)?.[1] || "";
+  assert.ok(flatCardSurfaceRule.includes("background-image: var(--floating-card-image)") &&
+    !flatCardSurfaceRule.includes("transform-style: preserve-3d"),
+    "homepage/setup card authority must stay flat with one direct theme-dependent background image");
+  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface\s*\{[\s\S]*?background-image:\s*none;[\s\S]*?transform-style:\s*preserve-3d/m.test(css),
+    "only result view may promote the shared card surface into a preserve-3d turn container");
+  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface::before,[\s\S]*?body\[data-public-view="result"\] \.floating-card__surface::after[\s\S]*?backface-visibility:\s*hidden/m.test(css) &&
+    /body\[data-public-view="result"\] \.floating-card__surface::after[\s\S]*?rotateY\(180deg\)/m.test(css),
+    "result-only full card turns must keep two faces of the existing card-back artwork");
+  assert.ok(!/(^|\n)\.floating-card__surface::before,/m.test(css) &&
+    !/body\[data-public-view="mode-(?:select|setup)"\] \.floating-card__surface[\s\S]{0,160}?preserve-3d/m.test(css),
+    "result 3D face authority must not leak back into homepage or mode setup");
   assert.equal((html.match(/data-result-sparkle/g) || []).length, 8,
     "result hero must expose a visible local decorative sparkle layer around score/divider");
   assert.ok(html.includes('data-result-halo') && css.includes('.result-ambient-halo'),
@@ -3991,5 +4001,5 @@ console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
-console.log("V1.6.3-test.6 live result theme transition corrective: PASS");
+console.log("V1.6.3-test.7 homepage flat card renderer corrective: PASS");
 console.log("UI/deploy source contracts: PASS");

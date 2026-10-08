@@ -79,6 +79,8 @@ Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po re
 
 `1.6.3-test.6` koryguje real-phone konflikt między aktywną rotacją kart a root View Transition. Pauzowanie karty w losowym kącie `rotateY()` powodowało podczas LIGHT/DARK wrażenie pokazania odbicia/tylnej płaszczyzny i późniejszego powrotu do układu. Primary result celebration oraz każdy jeszcze kończący się result effect omijają teraz snapshot całego dokumentu i używają live CSS fallbacku. Na czas zmiany motywu blokowane są wyłącznie nowe losowe starty; rozpoczęte obroty i finite decoration motion biegną dalej bez zatrzymania w pół ruchu. Root View Transition i `theme-motion-hold` pozostają dostępne dla stanów, w których nie ma aktywnego result motion. Rotacja pięciu kart i intensywność celebracji z test.5 nie zostały zmienione.
 
+`1.6.3-test.7` naprawia właściwą regresję LIGHT/DARK zgłoszoną na homepage i `mode-setup`: dwustronny renderer 3D, dodany wyłącznie dla pełnych obrotów celebracji, był aktywny globalnie także na pre-game. Homepage/setup wracają do zaakceptowanej płaskiej powierzchni z jednym bezpośrednim `background-image`; `preserve-3d` oraz pseudo-front/back są teraz aktywne wyłącznie w `data-public-view="result"`. Circular theme reveal oraz inverse LIGHT UI -> DARK back / DARK UI -> LIGHT back pozostają bez zmian. Nie dodano kolejnego theme workaroundu.
+
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
@@ -165,7 +167,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.6`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; celebration remains visually pending and LIGHT/DARK live-motion corrective requires real-phone acceptance.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.7`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; celebration remains visually pending and homepage/setup LIGHT/DARK renderer isolation requires real-phone acceptance.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective

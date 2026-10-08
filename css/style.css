@@ -1168,14 +1168,25 @@ body[data-public-view="result"] .game-atmosphere {
   inset: 0;
   display: block;
   border-radius: 7.5%;
+  background-image: var(--floating-card-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   box-shadow: 0 18px 40px color-mix(in srgb, var(--text) 18%, transparent);
   transform-origin: 50% 50%;
-  transform-style: preserve-3d;
   will-change: transform;
 }
 
-.floating-card__surface::before,
-.floating-card__surface::after {
+/* Full two-sided 3D card faces belong to result celebration only. Homepage and
+   setup stay on the accepted flat renderer so LIGHT/DARK snapshots never
+   composite duplicate/back-face artwork. */
+body[data-public-view="result"] .floating-card__surface {
+  background-image: none;
+  transform-style: preserve-3d;
+}
+
+body[data-public-view="result"] .floating-card__surface::before,
+body[data-public-view="result"] .floating-card__surface::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1188,11 +1199,11 @@ body[data-public-view="result"] .game-atmosphere {
   -webkit-backface-visibility: hidden;
 }
 
-.floating-card__surface::before {
+body[data-public-view="result"] .floating-card__surface::before {
   transform: rotateY(0deg) translateZ(.1px);
 }
 
-.floating-card__surface::after {
+body[data-public-view="result"] .floating-card__surface::after {
   transform: rotateY(180deg) translateZ(.1px);
 }
 

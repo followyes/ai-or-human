@@ -1,26 +1,25 @@
-AI OR HUMAN — V1.6.3-test.6 LIVE RESULT THEME TRANSITION CORRECTIVE — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.7 HOMEPAGE FLAT CARD RENDERER CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.5: 7 files (7 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.6: 6 files (6 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
+css/style.css
 index.html
 js/game.js
-js/result-celebration.js
-js/theme-controller.js
 package.json
 scripts/test-project.js
 
 Scope:
-- preserve test.5 result layout, victory impact, persistent sparkle/halo/star and accepted five-card random rotation;
-- correct the real-phone LIGHT/DARK reflection/jump artifact caused by freezing/snapshotting a card mid-rotateY;
-- bypass root View Transition while primary result celebration is active or while any result animation is still finishing;
-- use the existing live CSS theme fallback in that state: stop only future celebration schedules while already-started turns/effects continue naturally;
-- keep root View Transition + theme-motion-hold + exact WAAPI pause/resume for states with no active result motion;
-- keep rapid theme-toggle serialization and inverse LIGHT/DARK card-back mapping;
-- advance cache version to `1.6.3-test.6`;
-- no celebration redesign, Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
+- fix the actual LIGHT/DARK artifact reported on homepage and mode-setup;
+- restore the accepted flat single-layer `.floating-card__surface` renderer for pre-game;
+- scope `preserve-3d` plus duplicated front/back pseudo-faces strictly to `data-public-view="result"` where full random Y turns need them;
+- keep the circular homepage theme reveal and inverse LIGHT UI -> DARK back / DARK UI -> LIGHT back mapping unchanged;
+- preserve test.5/test.6 result celebration, five-card random rotation, replay flow and result theme behavior;
+- add regression tests that enforce flat homepage/setup authority and result-only 3D faces;
+- advance cache version to `1.6.3-test.7`;
+- no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
-Status: TEST / LOCAL QA PASS only after final package verification. Real-phone LIGHT/DARK acceptance is still required.
+Status: TEST / LOCAL QA PASS only after final package verification. Real-phone homepage/setup LIGHT/DARK acceptance is still required.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.
