@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.11";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -218,9 +218,18 @@ function returnResultToHome() {
   });
 }
 
-function updateSwipeHints(progress) {
-  humanHint.style.opacity = String(Math.max(0, Math.min(1, -progress * 3)));
-  aiHint.style.opacity = String(Math.max(0, Math.min(1, progress * 3)));
+function updateSwipeHints(progress, { decisionProgress = null } = {}) {
+  const normalizedDecision = Math.max(0, Math.min(1,
+    Number.isFinite(decisionProgress) ? decisionProgress : Math.abs(progress) * 3
+  ));
+  const visualStrength = Math.min(1, Math.pow(normalizedDecision, 0.72) * 1.04);
+  const humanStrength = progress < 0 ? visualStrength : 0;
+  const aiStrength = progress > 0 ? visualStrength : 0;
+
+  humanHint.style.opacity = String(humanStrength);
+  aiHint.style.opacity = String(aiStrength);
+  humanHint.style.setProperty("--swipe-commit", String(progress < 0 ? normalizedDecision : 0));
+  aiHint.style.setProperty("--swipe-commit", String(progress > 0 ? normalizedDecision : 0));
 }
 
 function clearCardOverlays() {

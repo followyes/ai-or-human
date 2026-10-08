@@ -350,6 +350,31 @@ async function testSwipeLifecycle() {
 
     controller.destroy();
 
+    // V1.6.4: the hint commitment signal must be normalized to the actual decision threshold,
+    // without changing the decision threshold itself.
+    const progressCard = new FakeCard();
+    const progressSamples = [];
+    const progressController = new SwipeController(progressCard, {
+      onDecision: () => {},
+      onProgress: (progress, metadata) => progressSamples.push({ progress, ...metadata })
+    });
+    progressCard.dispatch("pointerdown", {
+      pointerId: 11, clientX: 100, clientY: 100, isPrimary: true, pointerType: "touch"
+    });
+    progressCard.dispatch("pointermove", {
+      pointerId: 11, clientX: 140, clientY: 101, isPrimary: true, pointerType: "touch", cancelable: true, preventDefault() {}
+    });
+    assert.ok(Math.abs(progressSamples.at(-1).decisionProgress - 0.5) < 0.001,
+      "half of the real decision distance must report 0.5 decisionProgress");
+    progressCard.dispatch("pointermove", {
+      pointerId: 11, clientX: 180, clientY: 101, isPrimary: true, pointerType: "touch", cancelable: true, preventDefault() {}
+    });
+    assert.equal(progressSamples.at(-1).decisionProgress, 1,
+      "the real decision threshold must report fully committed hint progress");
+    assert.equal(progressSamples.at(-1).threshold, 80,
+      "V1.6.4 hint normalization must preserve the existing 20%-of-card decision threshold");
+    progressController.destroy();
+
     // Reduced-motion keeps the exact same hidden-handoff contract, only with shorter timings.
     globalThis.window.matchMedia = () => ({ matches: true });
     const reducedCard = new FakeCard();
@@ -427,10 +452,25 @@ class FakeFeedbackElement {
     this.classList = new FakeClassList();
     this.dataset = {};
     this.attributes = new Map();
+    this.childAnimations = [];
+
+    const animatedChild = (name, extra = {}) => ({
+      ...extra,
+      animate: (keyframes, options) => {
+        const animation = new FakeAnimation();
+        animation.keyframes = keyframes;
+        animation.options = options;
+        this.childAnimations.push({ name, animation });
+        return animation;
+      }
+    });
+
     this.children = {
-      icon: { textContent: "" },
+      icon: animatedChild("icon", { textContent: "" }),
       label: { textContent: "" },
-      ring: { animate: () => new FakeAnimation() }
+      ring: animatedChild("ring"),
+      burst: animatedChild("burst"),
+      pill: animatedChild("pill")
     };
     this.lastAnimationOptions = null;
   }
@@ -439,6 +479,8 @@ class FakeFeedbackElement {
     if (selector === "[data-feedback-icon]") return this.children.icon;
     if (selector === "[data-feedback-label]") return this.children.label;
     if (selector === "[data-feedback-ring]") return this.children.ring;
+    if (selector === "[data-feedback-burst]") return this.children.burst;
+    if (selector === "[data-feedback-pill]") return this.children.pill;
     return null;
   }
 
@@ -470,6 +512,8 @@ async function testAnswerFeedbackLifecycle() {
     assert.equal(root.classList.contains("is-incorrect"), true);
     assert.equal(root.dataset.result, "incorrect");
     assert.equal(root.attributes.get("aria-hidden"), "false");
+    assert.deepEqual(root.childAnimations.map(({ name }) => name).sort(), ["burst", "icon", "pill", "ring"],
+      "full-motion feedback must animate the dedicated burst, ring, pill and icon channels");
     assert.equal(await promise, true);
     assert.equal(root.attributes.get("aria-hidden"), "true");
     assert.equal(root.children.label.textContent, "");
@@ -3234,12 +3278,39 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.equal((html.match(/data-session-indicator aria-hidden/g) || []).length, 2,
     "both pickers must have one moving pill indicator");
 
+  assert.ok(html.includes('class="game-stat game-stat-progress"') && html.includes('class="game-stat game-stat-score score-box"'),
+    "V1.6.4 gameplay HUD must use the compact V1.6 stat surface authority without changing progress/score IDs");
+  assert.ok(html.includes('class="choice-button choice-button-human"') && html.includes('class="choice-button choice-button-ai"'),
+    "V1.6.4 gameplay actions must expose equal warm HUMAN and cool AI visual identities");
+  assert.ok(html.includes('class="swipe-help" aria-label="Sterowanie gestem"') &&
+    html.includes('swipe-help__item-human') && html.includes('swipe-help__item-ai'),
+    "mobile swipe help must be a compact V1.6 semantic legend rather than legacy plain copy");
+  assert.ok(html.includes('data-feedback-burst') && html.includes('data-feedback-pill'),
+    "V1.6.4 feedback must expose dedicated burst and pill animation targets");
+  assert.ok(/\.question-block h2\s*\{[\s\S]*?font-family:\s*Georgia/m.test(css) &&
+    /\.game-stat\s*\{[\s\S]*?var\(--landing-panel\)/m.test(css),
+    "gameplay question/HUD must reuse accepted V1.6 typography and landing surface tokens");
+  assert.ok(/\.choice-button-human\s*\{[\s\S]*?var\(--accent-gold\)/m.test(css) &&
+    /\.choice-button-ai\s*\{[\s\S]*?var\(--accent-blue\)/m.test(css),
+    "HUMAN and AI controls must use distinct warm/cool V1.6 accent families with equal structure");
+  assert.ok(/\.choice-button:focus-visible\s*\{/m.test(css),
+    "gameplay answer controls must expose an explicit keyboard focus-visible treatment");
+  assert.ok(/@media \(max-height: 740px\) and \(orientation: portrait\)[\s\S]*?body\[data-public-view="gameplay"\] \.app-shell[\s\S]*?\.screen-game \.card-stage/m.test(css),
+    "V1.6.4 must include a dedicated short-portrait gameplay profile with height-aware card geometry");
+  assert.ok(swipe.includes('decisionProgress') && swipe.includes('Math.abs(this.deltaX) / threshold'),
+    "swipe controller must expose hint commitment normalized to the actual decision threshold");
+  assert.ok(game.includes('decisionProgress = null') && game.includes('--swipe-commit'),
+    "gameplay hint presentation must consume decisionProgress without changing swipe decision semantics");
+  assert.ok(feedbackSource.includes('data-feedback-burst') && feedbackSource.includes('data-feedback-pill') &&
+    feedbackSource.includes('ringFrames') && feedbackSource.includes('pillFrames'),
+    "feedback controller must own stronger correct/incorrect burst/ring/pill motion channels");
+
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.11"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.11"') &&
-    game.includes('./result-celebration.js?v=1.6.3-test.11'),
-    "V1.6.3 test.11 must version the cleaned theme/CSS/JS entry graph so phone caches cannot mix theme authorities");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.4"') &&
+    html.includes('src="./js/game.js?v=1.6.4"') &&
+    game.includes('./result-celebration.js?v=1.6.4'),
+    "V1.6.4 must version the public CSS/JS entry graph so phone caches cannot mix gameplay presentation authorities");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3968,4 +4039,5 @@ console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
+console.log("V1.6.4 gameplay visual coherence + threshold hint + feedback effects: PASS");
 console.log("UI/deploy source contracts: PASS");

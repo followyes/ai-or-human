@@ -1,28 +1,28 @@
-AI OR HUMAN — V1.6.3-test.11 UNIFIED THEME TRANSITION CLEANUP — UPDATED_FILES
+AI OR HUMAN — V1.6.4 GAMEPLAY VISUAL COHERENCE + FEEDBACK EFFECTS — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.10: 8 files (8 modified, 0 added, 0 removed).
+Exact REPO delta versus accepted V1.6.3-test.11 baseline: 8 files (8 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
+js/answer-feedback.js
 js/game.js
-js/result-celebration.js
-js/theme-controller.js
+js/swipe-controller.js
 package.json
 scripts/test-project.js
 
 Scope:
-- restore the accepted homepage circular root View Transition as the single public LIGHT/DARK transition authority for homepage, mode-setup and result;
-- remove the result-only `shouldUseViewTransition` branch and live-fallback selection;
-- remove theme `beforeChange` / `afterChange` lifecycle hooks added for result synchronization;
-- remove `theme-motion-hold` CSS and the `game.js` result-theme bridge;
-- remove theme suspend/resume/pause bookkeeping from `ResultCelebrationController`;
-- keep one normal CSS fallback and reduced-motion path in the screen-agnostic ThemeController;
-- preserve test.10 spectacle celebration, five-card rotation, bounded firework architecture, replay flow and test.7 homepage/setup flat renderer;
-- advance cache version to `1.6.3-test.11`;
-- no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
+- align the gameplay HUD, question hierarchy, image frame, HUMAN/AI controls and mobile swipe legend with the accepted V1.6 visual language;
+- keep gameplay mechanics, scoring, content/session selection, preload/reveal, throw/handoff and result flow unchanged;
+- add a dedicated short-portrait gameplay profile with height-aware card-stage sizing and >=44 px interaction targets;
+- expose SwipeController `decisionProgress` normalized to the existing real decision threshold and drive hint commitment from that signal without changing the threshold;
+- strengthen `DOBRZE / ŹLE` game-feel with dedicated burst/ring/pill/icon finite animations while preserving green/red correctness semantics and parallel feedback+throw lifecycle;
+- keep HUMAN warm/gold and AI cool/blue as equal category identities, never correctness semantics;
+- keep V1.6.3 result celebration/replay and homepage/setup/result theme behavior unchanged;
+- advance public cache version to `1.6.4`;
+- no Supabase, SQL, Storage, Admin, classification or V1.7 changes.
 
-Status: TEST / LOCAL QA PASS only after final package verification. Real-phone theme-parity + celebration smoke remains required.
+Status: LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA. V1.6.4 is not PASS/CLOSED until real-phone gameplay smoke is accepted.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

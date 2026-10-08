@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.6.3-test.11">
+  <link rel="stylesheet" href="./css/style.css?v=1.6.4">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -191,12 +191,12 @@
     </section>
 
     <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite" aria-hidden="true" inert>
-      <header class="game-header">
-        <div>
+      <header class="game-header" aria-label="Stan rundy">
+        <div class="game-stat game-stat-progress">
           <span class="meta-label">POSTĘP</span>
           <strong id="round-counter">1 / 20</strong>
         </div>
-        <div class="score-box">
+        <div class="game-stat game-stat-score score-box">
           <span class="meta-label">WYNIK</span>
           <strong id="score">0</strong>
         </div>
@@ -218,8 +218,9 @@
         </article>
 
         <div class="answer-feedback" id="answer-feedback" aria-live="assertive" aria-atomic="true" aria-hidden="true">
+          <div class="answer-feedback__burst" data-feedback-burst aria-hidden="true"></div>
           <div class="answer-feedback__ring" data-feedback-ring aria-hidden="true"></div>
-          <div class="answer-feedback__pill">
+          <div class="answer-feedback__pill" data-feedback-pill>
             <span class="answer-feedback__icon" data-feedback-icon aria-hidden="true"></span>
             <span class="answer-feedback__label" data-feedback-label></span>
           </div>
@@ -227,11 +228,15 @@
       </div>
 
       <div class="controls" aria-label="Wybór odpowiedzi">
-        <button class="choice-button" id="human-button" type="button">CZŁOWIEK</button>
-        <button class="choice-button" id="ai-button" type="button">AI</button>
+        <button class="choice-button choice-button-human" id="human-button" type="button">CZŁOWIEK</button>
+        <button class="choice-button choice-button-ai" id="ai-button" type="button">AI</button>
       </div>
 
-      <p class="swipe-help">Przesuń w lewo: człowiek · w prawo: AI</p>
+      <div class="swipe-help" aria-label="Sterowanie gestem">
+        <span class="swipe-help__item swipe-help__item-human"><span aria-hidden="true">←</span> CZŁOWIEK</span>
+        <span class="swipe-help__separator" aria-hidden="true">·</span>
+        <span class="swipe-help__item swipe-help__item-ai">AI <span aria-hidden="true">→</span></span>
+      </div>
     </section>
 
     <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert data-result-state="celebration">
@@ -277,6 +282,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/game.js?v=1.6.3-test.11"></script>
+  <script type="module" src="./js/game.js?v=1.6.4"></script>
 </body>
 </html>

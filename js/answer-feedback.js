@@ -7,6 +7,10 @@ function prefersReducedMotion() {
   return Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 }
 
+function compactAnimations(...animations) {
+  return animations.filter(Boolean);
+}
+
 export class AnswerFeedbackController {
   constructor(root, { options = {} } = {}) {
     if (!root) throw new Error("AnswerFeedbackController requires a root element");
@@ -15,6 +19,8 @@ export class AnswerFeedbackController {
     this.icon = root.querySelector("[data-feedback-icon]");
     this.label = root.querySelector("[data-feedback-label]");
     this.ring = root.querySelector("[data-feedback-ring]");
+    this.burst = root.querySelector("[data-feedback-burst]");
+    this.pill = root.querySelector("[data-feedback-pill]");
     this.options = { ...DEFAULTS, ...options };
     this.animations = [];
     this.revision = 0;
@@ -67,42 +73,90 @@ export class AnswerFeedbackController {
       );
       this.animations = [animation];
     } else {
-      const frames = correct
+      const main = this.root.animate(
+        [
+          { opacity: 0, transform: "translate3d(0,0,0) scale(.985)" },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.12 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.78 },
+          { opacity: 0, transform: "translate3d(0,0,0) scale(1.008)" }
+        ],
+        { duration, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" }
+      );
+
+      const ringFrames = correct
         ? [
-            { opacity: 0, transform: "translate3d(0,0,0) scale(.92)" },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1.045)", offset: 0.14 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.34 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
-            { opacity: 0, transform: "translate3d(0,0,0) scale(1.015)" }
+            { opacity: 0, transform: "translate(-50%, -50%) scale(.56)" },
+            { opacity: 1, transform: "translate(-50%, -50%) scale(.88)", offset: 0.16 },
+            { opacity: .72, transform: "translate(-50%, -50%) scale(1.14)", offset: 0.50 },
+            { opacity: 0, transform: "translate(-50%, -50%) scale(1.48)" }
           ]
         : [
-            { opacity: 0, transform: "translate3d(0,0,0) scale(.97)" },
-            { opacity: 1, transform: "translate3d(-8px,0,0) scale(1)", offset: 0.12 },
-            { opacity: 1, transform: "translate3d(8px,0,0) scale(1)", offset: 0.22 },
-            { opacity: 1, transform: "translate3d(-5px,0,0) scale(1)", offset: 0.32 },
-            { opacity: 1, transform: "translate3d(5px,0,0) scale(1)", offset: 0.42 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.54 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
-            { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
+            { opacity: 0, transform: "translate(-50%, -50%) scale(.62)" },
+            { opacity: 1, transform: "translate(-50%, -50%) scale(.94)", offset: 0.14 },
+            { opacity: .78, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.34 },
+            { opacity: .42, transform: "translate(-50%, -50%) scale(1.18)", offset: 0.58 },
+            { opacity: 0, transform: "translate(-50%, -50%) scale(1.42)" }
           ];
 
-      const main = this.root.animate(frames, {
+      const ring = this.ring?.animate?.(ringFrames, {
         duration,
-        easing: "cubic-bezier(.2,.75,.3,1)",
+        easing: "cubic-bezier(.15,.7,.25,1)",
         fill: "forwards"
       });
 
-      const ring = this.ring?.animate(
+      const burst = this.burst?.animate?.(
         [
-          { opacity: 0, transform: "translate(-50%, -50%) scale(.72)" },
-          { opacity: .95, transform: "translate(-50%, -50%) scale(.90)", offset: 0.14 },
-          { opacity: .62, transform: "translate(-50%, -50%) scale(1.12)", offset: 0.56 },
-          { opacity: 0, transform: "translate(-50%, -50%) scale(1.38)" }
+          { opacity: 0, transform: "translate(-50%, -50%) scale(.38)" },
+          { opacity: correct ? .92 : .88, transform: "translate(-50%, -50%) scale(.82)", offset: 0.16 },
+          { opacity: correct ? .48 : .54, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.48 },
+          { opacity: 0, transform: "translate(-50%, -50%) scale(1.34)" }
         ],
-        { duration, easing: "cubic-bezier(.15,.7,.25,1)", fill: "forwards" }
+        { duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
       );
 
-      this.animations = ring ? [main, ring] : [main];
+      const pillFrames = correct
+        ? [
+            { opacity: 0, transform: "translate3d(0,10px,0) scale(.78)" },
+            { opacity: 1, transform: "translate3d(0,-2px,0) scale(1.08)", offset: 0.16 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.34 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.78 },
+            { opacity: 0, transform: "translate3d(0,-2px,0) scale(1.02)" }
+          ]
+        : [
+            { opacity: 0, transform: "translate3d(0,0,0) scale(.88)" },
+            { opacity: 1, transform: "translate3d(-11px,0,0) scale(1.02)", offset: 0.13 },
+            { opacity: 1, transform: "translate3d(10px,0,0) scale(1.02)", offset: 0.22 },
+            { opacity: 1, transform: "translate3d(-7px,0,0) scale(1)", offset: 0.31 },
+            { opacity: 1, transform: "translate3d(6px,0,0) scale(1)", offset: 0.40 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.52 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.78 },
+            { opacity: 0, transform: "translate3d(0,0,0) scale(1.015)" }
+          ];
+
+      const pill = this.pill?.animate?.(pillFrames, {
+        duration,
+        easing: "cubic-bezier(.2,.78,.28,1)",
+        fill: "forwards"
+      });
+
+      const icon = this.icon?.animate?.(
+        correct
+          ? [
+              { transform: "rotate(-18deg) scale(.55)" },
+              { transform: "rotate(4deg) scale(1.25)", offset: 0.22 },
+              { transform: "rotate(0deg) scale(1)", offset: 0.42 },
+              { transform: "rotate(0deg) scale(1)" }
+            ]
+          : [
+              { transform: "rotate(-10deg) scale(.68)" },
+              { transform: "rotate(7deg) scale(1.20)", offset: 0.22 },
+              { transform: "rotate(0deg) scale(1)", offset: 0.44 },
+              { transform: "rotate(0deg) scale(1)" }
+            ],
+        { duration, easing: "cubic-bezier(.2,.78,.28,1)", fill: "forwards" }
+      );
+
+      this.animations = compactAnimations(main, ring, burst, pill, icon);
     }
 
     try {

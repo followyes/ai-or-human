@@ -131,6 +131,17 @@ Produkcja została uzupełniona o małe zasoby biblioteczne dla istniejącego ka
 
 V1.5.7B.1 zachowuje transition/polish z V1.5.7B: ręczne logowanie płynnie rozszerza kartę logowania do pełnego workspace, szybki restore zapisanej sesji pozostaje wizualnie cichy, a wolniejsza weryfikacja pokazuje `Sprawdzanie sesji…`. Corrective usuwa też konflikt szerokości formularza logowania bez zmiany morphu.
 
+### V1.6.4 — Gameplay Visual Coherence + Feedback Effects
+
+V1.6.3 jest PASS/CLOSED. V1.6.4 domyka wizualnie ostatni legacy-looking stan publicznego lifecycle — właściwą rozgrywkę — bez przepisywania mechaniki gry. HUD `POSTĘP/WYNIK`, pytanie, frame obrazu, odpowiedzi HUMAN/AI oraz swipe help korzystają teraz ze wspólnego języka V1.6. HUMAN ma ciepłą złotą identyfikację kategorii, AI chłodną niebieską; obie odpowiedzi pozostają równorzędne. Zielony/czerwony są zarezerwowane wyłącznie dla semantyki `DOBRZE/ŹLE`.
+
+Gameplay dostał własny short-portrait profile dla wysokości <=740 px: kompaktuje HUD/pytanie/marginesy i wylicza stage karty z dostępnej wysokości, bez ukrywania kontrolek i bez globalnego skalowania aplikacji. SwipeController zachowuje dotychczasowy decision threshold, ale przekazuje dodatkowe `decisionProgress` znormalizowane dokładnie do tego progu, dzięki czemu hint osiąga pełne potwierdzenie wizualne w momencie, w którym gest faktycznie staje się odpowiedzią.
+
+Feedback odpowiedzi nadal jest osobnym overlayem poza rzucaną kartą i nadal biegnie równolegle z throw. V1.6.4 wzmacnia jego game-feel przez osobne kanały burst/ring/pill/icon: poprawna odpowiedź ma zielony pulse/settle, błędna czerwony lokalny shake/pulse. Nie zmienia to punktacji, kolejności kart ani czasu mechanicznego handoffu.
+
+Status: **LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA**.
+
+
 ## Supabase
 
 Publiczna gra ma anonimowy odczyt tylko aktywnych rekordów przez RLS. Admin ma CRUD po potwierdzeniu `private.is_admin()`.
@@ -178,7 +189,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.11`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; one canonical circular LIGHT/DARK transition is now shared by homepage, setup and result, while the test.10 spectacle celebration remains the current visual QA target.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2 PASS/CLOSED; V1.6.3 Results Celebration / Replay Flow PASS/CLOSED; V1.6.4 Gameplay Visual Coherence + Feedback Effects LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective

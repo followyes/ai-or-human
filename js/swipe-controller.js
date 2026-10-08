@@ -144,7 +144,13 @@ export class SwipeController {
     const rotation = progress * this.options.maxRotation;
 
     this.card.style.transform = `translate3d(${this.deltaX}px, 0, 0) rotate(${rotation}deg)`;
-    this.onProgress(progress);
+    const threshold = Math.max(this.decisionThreshold(), 1);
+    const decisionProgress = clamp(Math.abs(this.deltaX) / threshold, 0, 1);
+    this.onProgress(progress, {
+      decisionProgress,
+      threshold,
+      deltaX: this.deltaX
+    });
   }
 
   handlePointerUp(event) {
@@ -226,7 +232,7 @@ export class SwipeController {
     this.animation = null;
     this.card.style.transform = "";
     this.card.style.opacity = "";
-    this.onProgress(0);
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
     this.returning = false;
     return true;
   }
@@ -263,7 +269,7 @@ export class SwipeController {
 
     this.card.style.transform = targetTransform;
     this.card.style.opacity = "0";
-    this.onProgress(0);
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
     this.handoffPending = true;
 
     try { animation.cancel(); } catch {}
@@ -279,7 +285,7 @@ export class SwipeController {
     this.cleanupGestureState();
     this.card.style.transform = "";
     this.card.style.opacity = "0";
-    this.onProgress(0);
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
   }
 
   async reveal() {
@@ -320,7 +326,7 @@ export class SwipeController {
     this.cleanupGestureState();
     this.card.style.transform = "";
     this.card.style.opacity = "";
-    this.onProgress(0);
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
   }
 
   stopAnimation() {
