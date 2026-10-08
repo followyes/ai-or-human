@@ -1,25 +1,27 @@
-AI OR HUMAN — V1.6.3-test.7 HOMEPAGE FLAT CARD RENDERER CORRECTIVE — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.8 RANDOM SPARKLE CELEBRATION / MOTION HIERARCHY CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.6: 6 files (6 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.7: 7 files (7 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
 js/game.js
+js/result-celebration.js
 package.json
 scripts/test-project.js
 
 Scope:
-- fix the actual LIGHT/DARK artifact reported on homepage and mode-setup;
-- restore the accepted flat single-layer `.floating-card__surface` renderer for pre-game;
-- scope `preserve-3d` plus duplicated front/back pseudo-faces strictly to `data-public-view="result"` where full random Y turns need them;
-- keep the circular homepage theme reveal and inverse LIGHT UI -> DARK back / DARK UI -> LIGHT back mapping unchanged;
-- preserve test.5/test.6 result celebration, five-card random rotation, replay flow and result theme behavior;
-- add regression tests that enforce flat homepage/setup authority and result-only 3D faces;
-- advance cache version to `1.6.3-test.7`;
+- preserve the accepted homepage/mode-setup flat card renderer from test.7;
+- replace eight fixed sparkle positions/colors with one bounded reusable eight-slot pool;
+- randomize sparkle safe-zone position, size, rotation and semantic CSS tone (gold/blue/cream/ice);
+- use bounded 1-3 ambient sparkle micro-clusters with short stagger and busy-slot ownership;
+- keep entry burst finite using 6-8 randomized pool slots;
+- delay only the initial five-card turn window to ~1.7-3.5 s so score/title/sparkle impact gets visual priority;
+- keep ongoing five-card cadence, graceful leave, halo/star channels, theme architecture and replay flow unchanged;
+- advance cache version to `1.6.3-test.8`;
 - no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
-Status: TEST / LOCAL QA PASS only after final package verification. Real-phone homepage/setup LIGHT/DARK acceptance is still required.
+Status: TEST / LOCAL QA PASS only after final package verification. Real-phone celebration QA remains required.
 
 Gate: every listed file must be byte-identical to the corresponding REPO file.

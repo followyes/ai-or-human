@@ -779,24 +779,37 @@ h2 {
 .result-sparkle {
   position: absolute;
   display: block;
-  width: 11px;
-  height: 11px;
+  left: var(--sparkle-x, 50%);
+  top: var(--sparkle-y, 12%);
+  width: var(--sparkle-size, 11px);
+  height: var(--sparkle-size, 11px);
   opacity: 0;
-  background: var(--accent-gold-bright);
+  background: var(--sparkle-color, var(--accent-gold-bright));
   clip-path: polygon(50% 0, 59% 41%, 100% 50%, 59% 59%, 50% 100%, 41% 59%, 0 50%, 41% 41%);
-  filter: drop-shadow(0 2px 7px color-mix(in srgb, var(--accent-gold) 42%, transparent));
+  filter: drop-shadow(0 2px 7px var(--sparkle-shadow, color-mix(in srgb, var(--accent-gold) 42%, transparent)));
   transform-origin: 50% 50%;
   will-change: transform, opacity;
 }
 
-.result-sparkle--one { top: 22%; left: 12%; width: 10px; height: 10px; }
-.result-sparkle--two { top: 11%; right: 16%; width: 14px; height: 14px; }
-.result-sparkle--three { top: 47%; left: 4%; width: 8px; height: 8px; background: var(--accent-blue); }
-.result-sparkle--four { top: 52%; right: 7%; width: 10px; height: 10px; background: var(--accent-blue); }
-.result-sparkle--five { top: 72%; left: 19%; width: 13px; height: 13px; }
-.result-sparkle--six { top: 76%; right: 20%; width: 8px; height: 8px; }
-.result-sparkle--seven { top: 35%; left: 27%; width: 9px; height: 9px; background: var(--accent-blue); }
-.result-sparkle--eight { top: 38%; right: 28%; width: 12px; height: 12px; }
+.result-sparkle[data-sparkle-tone="gold"] {
+  --sparkle-color: var(--accent-gold-bright);
+  --sparkle-shadow: color-mix(in srgb, var(--accent-gold) 46%, transparent);
+}
+
+.result-sparkle[data-sparkle-tone="blue"] {
+  --sparkle-color: var(--accent-blue);
+  --sparkle-shadow: color-mix(in srgb, var(--accent-blue) 42%, transparent);
+}
+
+.result-sparkle[data-sparkle-tone="cream"] {
+  --sparkle-color: color-mix(in srgb, var(--landing-title) 84%, var(--accent-gold-bright) 16%);
+  --sparkle-shadow: color-mix(in srgb, var(--landing-title) 28%, transparent);
+}
+
+.result-sparkle[data-sparkle-tone="ice"] {
+  --sparkle-color: color-mix(in srgb, var(--landing-title) 76%, var(--accent-blue) 24%);
+  --sparkle-shadow: color-mix(in srgb, var(--accent-blue) 30%, transparent);
+}
 
 .result-brand {
   width: 100%;

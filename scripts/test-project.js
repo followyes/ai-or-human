@@ -77,7 +77,14 @@ import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from ".
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectable } from "../js/game-modes.js";
 import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
-import { ResultCelebrationController, getFullTurnAngle } from "../js/result-celebration.js";
+import {
+  ResultCelebrationController,
+  SPARKLE_SAFE_ZONES,
+  SPARKLE_TONES,
+  chooseSparkleClusterCount,
+  createSparklePresentation,
+  getFullTurnAngle
+} from "../js/result-celebration.js";
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -2930,6 +2937,10 @@ async function testResultCelebrationLifecycle() {
     constructor() {
       this.dataset = {};
       this.animations = [];
+      this.styleValues = new Map();
+      this.style = {
+        setProperty: (name, value) => this.styleValues.set(name, value)
+      };
     }
 
     animate(keyframes, options) {
@@ -3107,6 +3118,33 @@ async function testResultCelebrationLifecycle() {
     "enabling reduced motion must stop future starts without hard-resetting active motion");
   reducedController.destroy();
 
+  const presentationRng = createSeededRng(777);
+  for (let index = 0; index < 240; index += 1) {
+    const presentation = createSparklePresentation(presentationRng);
+    assert.ok(SPARKLE_TONES.includes(presentation.tone),
+      "sparkle presentation must use only approved semantic tone keys");
+    const zone = SPARKLE_SAFE_ZONES.find((candidate) => candidate.id === presentation.zoneId);
+    assert.ok(zone, "sparkle presentation must belong to an approved safe zone");
+    assert.ok(
+      presentation.x >= zone.xMin && presentation.x <= zone.xMax &&
+      presentation.y >= zone.yMin && presentation.y <= zone.yMax,
+      "sparkle position must stay inside its approved safe-zone bounds"
+    );
+    assert.ok(
+      presentation.y <= 12 || presentation.x <= 28 || presentation.x >= 72,
+      "sparkles below the upper rail must stay outside the central result-reading corridor"
+    );
+    assert.ok(presentation.size >= 8 && presentation.size <= 15,
+      "sparkle size must stay inside the bounded celebration range");
+  }
+
+  const clusterRng = createSeededRng(778);
+  const sampledClusterCounts = new Set(
+    Array.from({ length: 240 }, () => chooseSparkleClusterCount(clusterRng))
+  );
+  assert.deepEqual([...sampledClusterCounts].sort(), [1, 2, 3],
+    "ambient sparkle events must support bounded 1-3 sparkle micro-clusters");
+
   const decorationWindow = new FakeTimerWindow();
   const sparkles = Array.from({ length: 8 }, () => new FakeCelebrationNode());
   const halo = new FakeCelebrationNode();
@@ -3122,31 +3160,69 @@ async function testResultCelebrationLifecycle() {
     random: createSeededRng(17)
   });
   assert.equal(decorationController.enter(), true);
-  assert.equal(sparkles.every((sparkle) => sparkle.animations.length === 1), true,
-    "result entry must trigger a finite local sparkle burst around the score/divider");
-  assert.equal(sparkles.every((sparkle) => sparkle.animations[0].options.duration >= 1100), true,
-    "entry sparkle burst must remain visible long enough to register on a real phone");
+  assert.ok(decorationController.activeSparkleSlots.size >= 6 && decorationController.activeSparkleSlots.size <= 8,
+    "entry celebration must reserve a bounded 6-8 sparkle burst from the fixed pool");
   assert.equal(dividerStar.animations.length, 1,
     "result entry must flare the existing divider star once");
-  assert.equal(decorationWindow.timers.size, 3,
-    "settled celebration must independently schedule sparkle, halo and divider-star ambient events");
 
-  const [sparkleTimerId, haloTimerId, starTimerId] = [...decorationWindow.timers.keys()];
-  decorationWindow.run(sparkleTimerId);
-  assert.equal(sparkles.some((sparkle) => sparkle.animations.length > 1), true,
-    "ambient sparkle scheduling must continue while primary celebration stays active");
+  for (const timerId of [...decorationController.sparkleStartTimers.keys()]) {
+    decorationWindow.run(timerId);
+  }
+  const entryAnimations = sparkles.flatMap((sparkle) => sparkle.animations);
+  assert.equal(entryAnimations.length, decorationController.activeSparkleSlots.size,
+    "every reserved entry sparkle slot must receive exactly one finite animation");
+  assert.equal(entryAnimations.every((animation) => animation.options.duration >= 1180), true,
+    "entry sparkle burst must remain visible long enough to register on a real phone");
+  assert.equal(sparkles.filter((sparkle) => sparkle.animations.length).every((sparkle) =>
+    SPARKLE_TONES.includes(sparkle.dataset.sparkleTone) &&
+    SPARKLE_SAFE_ZONES.some((zone) => zone.id === sparkle.dataset.sparkleZone) &&
+    sparkle.styleValues.has("--sparkle-x") &&
+    sparkle.styleValues.has("--sparkle-y") &&
+    sparkle.styleValues.has("--sparkle-size")
+  ), true, "entry sparkles must receive randomized safe positions, sizes and semantic tones");
+
+  for (const animation of entryAnimations) animation.finish();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(decorationController.activeSparkleSlots.size, 0,
+    "finished sparkle animations must release their reusable pool slots");
+
+  decorationController.clearPendingSchedules();
+  const reservedAll = decorationController.reserveSparkleSlots(8);
+  assert.equal(reservedAll.length, 8, "bounded sparkle pool must expose all eight idle slots");
+  assert.equal(decorationController.reserveSparkleSlots(3).length, 0,
+    "an already-busy sparkle slot must never be selected again");
+  reservedAll.forEach((sparkle) => decorationController.releaseSparkleSlot(sparkle));
+
+  assert.equal(decorationController.playAmbientSparkleEvent(), true);
+  assert.ok(decorationController.activeSparkleSlots.size >= 1 && decorationController.activeSparkleSlots.size <= 3,
+    "one ambient sparkle event must reserve only a bounded 1-3 slot cluster");
+  const ambientStarted = sparkles.flatMap((sparkle) => sparkle.animations).filter((animation) => !entryAnimations.includes(animation));
+  assert.ok(ambientStarted.length >= 1,
+    "ambient sparkle cluster must start at least one visible sparkle immediately");
+  for (const timerId of [...decorationController.sparkleStartTimers.keys()]) {
+    decorationWindow.run(timerId);
+  }
+  const ambientAnimations = sparkles.flatMap((sparkle) => sparkle.animations).filter((animation) => !entryAnimations.includes(animation));
+  assert.equal(ambientAnimations.length, decorationController.activeSparkleSlots.size,
+    "staggered cluster starts must use only the slots reserved for that event");
+
+  decorationController.scheduleAmbientHalo();
+  decorationController.scheduleAmbientStar();
+  const haloTimerId = decorationController.haloTimer;
+  const starTimerId = decorationController.starTimer;
+  assert.ok(haloTimerId !== null && starTimerId !== null,
+    "persistent halo and divider-star channels must remain independently scheduled");
   decorationWindow.run(haloTimerId);
+  decorationWindow.run(starTimerId);
   assert.equal(halo.animations.length, 1,
     "persistent celebration must periodically breathe the local score halo");
-  decorationWindow.run(starTimerId);
   assert.equal(dividerStar.animations.length, 2,
     "persistent celebration must periodically flare the divider star");
-  assert.equal(decorationWindow.timers.size, 3,
-    "each persistent ambient channel must re-arm itself while celebration remains active");
 
   decorationController.suspendForThemeTransition();
   assert.equal(decorationWindow.timers.size, 0,
-    "theme hold must clear pending sparkle/halo/star starts");
+    "theme hold must clear pending sparkle/halo/star/card starts including staggered sparkle starts");
   const activeDecorationAnimations = [
     ...sparkles.flatMap((sparkle) => sparkle.animations),
     ...halo.animations,
@@ -3312,10 +3388,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.7"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.7"') &&
-    game.includes('./result-celebration.js?v=1.6.3-test.7'),
-    "V1.6.3 test.7 must version the changed CSS/JS entry graph so phone caches cannot mix corrective generations");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.8"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.8"') &&
+    game.includes('./result-celebration.js?v=1.6.3-test.8'),
+    "V1.6.3 test.8 must version the changed CSS/JS entry graph so phone caches cannot mix corrective generations");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3355,7 +3431,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     resultCelebrationSource.includes('activeCardAnimations') &&
     resultCelebrationSource.includes('animationFinished(animation)') &&
     resultCelebrationSource.includes('this.clearPendingSchedules()'),
-    "V1.6.3 test.7 must preserve finite independent card schedules in one focused celebration controller");
+    "V1.6.3 test.8 must preserve finite independent card schedules in one focused celebration controller");
   assert.ok(game.includes('state === "result"') && game.includes('resultSubstate === "celebration"') &&
     game.includes('document.body.dataset.publicView === "result"'),
     "new result motion starts must be gated by the internal celebration substate, not public-view=result alone");
@@ -3379,14 +3455,33 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !/body\[data-public-view="mode-(?:select|setup)"\] \.floating-card__surface[\s\S]{0,160}?preserve-3d/m.test(css),
     "result 3D face authority must not leak back into homepage or mode setup");
   assert.equal((html.match(/data-result-sparkle/g) || []).length, 8,
-    "result hero must expose a visible local decorative sparkle layer around score/divider");
+    "result hero must keep one bounded eight-slot sparkle pool");
+  assert.ok(!/result-sparkle--(?:one|two|three|four|five|six|seven|eight)/.test(html) &&
+    !/\.result-sparkle--(?:one|two|three|four|five|six|seven|eight)/.test(css),
+    "test.8 must remove obsolete fixed-position/fixed-color sparkle slot authority");
+  assert.ok(css.includes('[data-sparkle-tone="gold"]') &&
+    css.includes('[data-sparkle-tone="blue"]') &&
+    css.includes('[data-sparkle-tone="cream"]') &&
+    css.includes('[data-sparkle-tone="ice"]'),
+    "sparkle colors must be controlled by a restrained semantic CSS palette");
+  assert.ok(resultCelebrationSource.includes('SPARKLE_SAFE_ZONES') &&
+    resultCelebrationSource.includes('SPARKLE_TONES') &&
+    resultCelebrationSource.includes('activeSparkleSlots') &&
+    resultCelebrationSource.includes('chooseSparkleClusterCount') &&
+    resultCelebrationSource.includes('sparkleStartTimers'),
+    "test.8 random sparkle authority must use safe zones, semantic tones, bounded clusters and busy-slot tracking");
+  assert.ok(!/#(?:[0-9a-fA-F]{3,8})\b|rgba?\(|hsla?\(/.test(resultCelebrationSource),
+    "sparkle JavaScript must not own raw visual color values");
+  assert.ok(/firstTurnDelayMinMs:\s*1700/.test(resultCelebrationSource) &&
+    /firstTurnDelayMaxMs:\s*3500/.test(resultCelebrationSource),
+    "only the first card-turn window must be delayed so victory impact gets visual priority");
   assert.ok(html.includes('data-result-halo') && css.includes('.result-ambient-halo'),
     "persistent celebration must have a dedicated local halo target without affecting score readability");
   assert.ok(resultCelebrationSource.includes('playEntrySparkles') &&
-    resultCelebrationSource.includes('scheduleAmbientSparkle') &&
+    resultCelebrationSource.includes('playAmbientSparkleEvent') &&
     resultCelebrationSource.includes('scheduleAmbientHalo') &&
     resultCelebrationSource.includes('scheduleAmbientStar'),
-    "result celebration must combine one entry burst with persistent stochastic sparkle/halo/star channels");
+    "result celebration must combine a randomized entry burst with persistent stochastic sparkle/halo/star channels");
   assert.ok(/result-title-settle 1200ms/m.test(css) &&
     /result-score-halo 2000ms/m.test(css) &&
     /result-score-settle 1350ms/m.test(css),
@@ -4001,5 +4096,5 @@ console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
-console.log("V1.6.3-test.7 homepage flat card renderer corrective: PASS");
+console.log("V1.6.3-test.8 random sparkle celebration / motion hierarchy corrective: PASS");
 console.log("UI/deploy source contracts: PASS");

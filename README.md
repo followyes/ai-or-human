@@ -81,6 +81,9 @@ Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po re
 
 `1.6.3-test.7` naprawia właściwą regresję LIGHT/DARK zgłoszoną na homepage i `mode-setup`: dwustronny renderer 3D, dodany wyłącznie dla pełnych obrotów celebracji, był aktywny globalnie także na pre-game. Homepage/setup wracają do zaakceptowanej płaskiej powierzchni z jednym bezpośrednim `background-image`; `preserve-3d` oraz pseudo-front/back są teraz aktywne wyłącznie w `data-public-view="result"`. Circular theme reveal oraz inverse LIGHT UI -> DARK back / DARK UI -> LIGHT back pozostają bez zmian. Nie dodano kolejnego theme workaroundu.
 
+`1.6.3-test.8` porządkuje celebrację bez ruszania zaakceptowanego result/replay flow ani homepage LIGHT/DARK. Osiem istniejących elementów sparkle nie ma już stałych pozycji i kolorów: działa jako bounded reusable pool. Każdy event losuje bezpieczną strefę poza centralnym korytarzem wyniku/CTA, rozmiar, obrót i jeden z czterech semantycznych tonów (`gold`, `blue`, `cream`, `ice`) kontrolowanych wyłącznie przez CSS. Ambient uruchamia zwykle 1, czasem 2, rzadko 3 sparkle w krótkim staggerze; zajęty slot nie może zostać użyty drugi raz przed zakończeniem własnej animacji. Pierwszy obrót kart został odsunięty do ok. 1,7–3,5 s, aby wejście tytułu, wyniku i sparkli miało pierwszeństwo wizualne; dalszy rytm pięciu niezależnych kart pozostaje bez zmian. Halo/star oraz theme architecture pozostają bez zmian w tym teście.
+
+
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
 Panel jest niepodlinkowaną publicznie trasą `/admin/` i wymaga Supabase Auth oraz aktywnego wpisu w `private.admin_users`.
@@ -167,7 +170,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.7`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; celebration remains visually pending and homepage/setup LIGHT/DARK renderer isolation requires real-phone acceptance.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.8`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; homepage/setup LIGHT/DARK flat renderer is retained and the current visual QA target is randomized sparkle density/placement plus motion hierarchy.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective
