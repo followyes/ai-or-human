@@ -7,14 +7,22 @@ const DEFAULT_OPTIONS = Object.freeze({
   oneTurnDurationMaxMs: 1450,
   extraTurnDurationMinMs: 650,
   extraTurnDurationMaxMs: 900,
-  ambientSparkleDelayMinMs: 2000,
-  ambientSparkleDelayMaxMs: 5000,
-  sparkleDurationMinMs: 1000,
-  sparkleDurationMaxMs: 1600,
-  sparkleClusterStaggerMinMs: 90,
-  sparkleClusterStaggerMaxMs: 220,
-  entrySparkleCountMin: 6,
-  entrySparkleCountMax: 8,
+  firstAmbientFireworkDelayMinMs: 1800,
+  firstAmbientFireworkDelayMaxMs: 3000,
+  ambientFireworkDelayMinMs: 1000,
+  ambientFireworkDelayMaxMs: 2600,
+  followUpFireworkChance: 0.28,
+  followUpFireworkDelayMinMs: 180,
+  followUpFireworkDelayMaxMs: 450,
+  fireworkParticleDurationMinMs: 850,
+  fireworkParticleDurationMaxMs: 1350,
+  entryFireworkParticleDurationMinMs: 1000,
+  entryFireworkParticleDurationMaxMs: 1450,
+  fireworkParticleStaggerMinMs: 18,
+  fireworkParticleStaggerMaxMs: 58,
+  fireworkDistanceMinPx: 24,
+  fireworkDistanceMaxPx: 64,
+  fireworkCandidateAttempts: 24,
   ambientHaloDelayMinMs: 4000,
   ambientHaloDelayMaxMs: 8000,
   haloDurationMinMs: 1500,
@@ -25,15 +33,23 @@ const DEFAULT_OPTIONS = Object.freeze({
   starDurationMaxMs: 1300
 });
 
-export const SPARKLE_SAFE_ZONES = Object.freeze([
-  Object.freeze({ id: "upper-left", xMin: 5, xMax: 28, yMin: 7, yMax: 28 }),
-  Object.freeze({ id: "upper-center", xMin: 37, xMax: 63, yMin: 2, yMax: 12 }),
-  Object.freeze({ id: "upper-right", xMin: 72, xMax: 95, yMin: 7, yMax: 28 }),
-  Object.freeze({ id: "mid-left", xMin: 3, xMax: 23, yMin: 32, yMax: 69 }),
-  Object.freeze({ id: "mid-right", xMin: 77, xMax: 97, yMin: 32, yMax: 69 })
-]);
+export const FIREWORK_FAMILIES = Object.freeze(["warm", "cool", "mixed"]);
+export const FIREWORK_TONES = Object.freeze(["gold", "cream", "blue", "ice"]);
 
-export const SPARKLE_TONES = Object.freeze(["gold", "blue", "cream", "ice"]);
+const FIREWORK_FAMILY_TONES = Object.freeze({
+  warm: Object.freeze(["gold", "cream"]),
+  cool: Object.freeze(["blue", "ice"]),
+  mixed: Object.freeze(["gold", "blue", "cream", "ice"])
+});
+
+const FIREWORK_FALLBACK_POINTS = Object.freeze([
+  Object.freeze({ x: 0.18, y: 0.18 }),
+  Object.freeze({ x: 0.82, y: 0.22 }),
+  Object.freeze({ x: 0.14, y: 0.50 }),
+  Object.freeze({ x: 0.86, y: 0.50 }),
+  Object.freeze({ x: 0.20, y: 0.78 }),
+  Object.freeze({ x: 0.80, y: 0.78 })
+]);
 
 export function randomInteger(random, min, max) {
   const lower = Math.ceil(min);
@@ -53,31 +69,119 @@ export function getFullTurnAngle(random, turns = chooseFullTurns(random)) {
   return direction * Math.max(1, Math.round(turns)) * 360;
 }
 
-export function chooseSparkleClusterCount(random) {
+export function chooseFireworkParticleCount(random) {
   const roll = random();
-  if (roll < 0.68) return 1;
-  if (roll < 0.93) return 2;
-  return 3;
+  if (roll < 0.15) return 4;
+  if (roll < 0.43) return 5;
+  if (roll < 0.72) return 6;
+  if (roll < 0.92) return 7;
+  return 8;
 }
 
-export function chooseSparkleTone(random) {
+export function chooseFireworkFamily(random) {
   const roll = random();
-  if (roll < 0.46) return "gold";
-  if (roll < 0.75) return "blue";
-  if (roll < 0.90) return "cream";
-  return "ice";
+  if (roll < 0.42) return "warm";
+  if (roll < 0.84) return "cool";
+  return "mixed";
 }
 
-export function createSparklePresentation(random) {
-  const zone = SPARKLE_SAFE_ZONES[randomInteger(random, 0, SPARKLE_SAFE_ZONES.length - 1)];
-  return {
-    zoneId: zone.id,
-    x: randomInteger(random, zone.xMin, zone.xMax),
-    y: randomInteger(random, zone.yMin, zone.yMax),
-    size: randomInteger(random, 8, 15),
-    rotation: randomInteger(random, -24, 24),
-    tone: chooseSparkleTone(random)
-  };
+export function chooseFireworkTone(random, family = "warm", particleIndex = 0) {
+  if (family === "mixed") {
+    const mixedBase = particleIndex % 2 === 0 ? ["gold", "cream"] : ["blue", "ice"];
+    return mixedBase[randomInteger(random, 0, mixedBase.length - 1)];
+  }
+  const tones = FIREWORK_FAMILY_TONES[family] ?? FIREWORK_FAMILY_TONES.warm;
+  return tones[randomInteger(random, 0, tones.length - 1)];
+}
+
+export function expandRect(rect, padding = 0) {
+  const safePadding = Math.max(0, Number(padding) || 0);
+  const left = Number(rect?.left) || 0;
+  const top = Number(rect?.top) || 0;
+  const right = Number(rect?.right) || left + (Number(rect?.width) || 0);
+  const bottom = Number(rect?.bottom) || top + (Number(rect?.height) || 0);
+  return Object.freeze({
+    left: left - safePadding,
+    top: top - safePadding,
+    right: right + safePadding,
+    bottom: bottom + safePadding
+  });
+}
+
+export function isPointInsideRect(x, y, rect) {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+export function isFireworkCenterSafe({ x, y, width, height, edgePadding, exclusions = [] }) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  if (x < edgePadding || x > width - edgePadding || y < edgePadding || y > height - edgePadding) return false;
+  return !exclusions.some((rect) => isPointInsideRect(x, y, rect));
+}
+
+export function createFireworkGeometry({ width, height, exclusionRects = [] } = {}) {
+  const viewportWidth = Math.max(0, Number(width) || 0);
+  const viewportHeight = Math.max(0, Number(height) || 0);
+  const maxDistance = viewportWidth <= 340 ? 42 : viewportWidth <= 390 ? 52 : 64;
+  const edgePadding = maxDistance + 10;
+  const exclusionPadding = maxDistance + 10;
+  return Object.freeze({
+    width: viewportWidth,
+    height: viewportHeight,
+    maxDistance,
+    edgePadding,
+    exclusions: Object.freeze(exclusionRects.map((rect) => expandRect(rect, exclusionPadding)))
+  });
+}
+
+export function chooseFireworkCenter(random, geometry, attempts = 24) {
+  const width = geometry?.width ?? 0;
+  const height = geometry?.height ?? 0;
+  const edgePadding = geometry?.edgePadding ?? 0;
+  const exclusions = geometry?.exclusions ?? [];
+  if (width <= edgePadding * 2 || height <= edgePadding * 2) return null;
+
+  const maxAttempts = Math.max(1, Math.round(attempts));
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const x = randomInteger(random, edgePadding, width - edgePadding);
+    const y = randomInteger(random, edgePadding, height - edgePadding);
+    if (isFireworkCenterSafe({ x, y, width, height, edgePadding, exclusions })) return { x, y };
+  }
+
+  const offset = randomInteger(random, 0, FIREWORK_FALLBACK_POINTS.length - 1);
+  for (let index = 0; index < FIREWORK_FALLBACK_POINTS.length; index += 1) {
+    const point = FIREWORK_FALLBACK_POINTS[(index + offset) % FIREWORK_FALLBACK_POINTS.length];
+    const x = Math.round(width * point.x);
+    const y = Math.round(height * point.y);
+    if (isFireworkCenterSafe({ x, y, width, height, edgePadding, exclusions })) return { x, y };
+  }
+  return null;
+}
+
+export function createFireworkParticlePresentation(random, {
+  index,
+  count,
+  family,
+  maxDistance = 64,
+  minDistance = 24
+} = {}) {
+  const particleCount = Math.max(1, Math.round(count || 1));
+  const particleIndex = Math.max(0, Math.round(index || 0));
+  const baseAngle = (360 / particleCount) * particleIndex;
+  const jitter = randomInteger(random, -11, 11);
+  const angle = baseAngle + jitter;
+  const radians = angle * Math.PI / 180;
+  const distance = randomInteger(random, Math.min(minDistance, maxDistance), Math.max(minDistance, maxDistance));
+  const size = random() < 0.14 ? randomInteger(random, 10, 11) : randomInteger(random, 4, 9);
+  const tone = chooseFireworkTone(random, family, particleIndex);
+  return Object.freeze({
+    angle,
+    distance,
+    dx: Math.round(Math.cos(radians) * distance),
+    dy: Math.round(Math.sin(radians) * distance),
+    size,
+    rotation: randomInteger(random, -36, 36),
+    tone
+  });
 }
 
 function animationFinished(animation) {
@@ -88,10 +192,27 @@ function canPauseAnimation(animation) {
   return animation && typeof animation.pause === "function" && typeof animation.play === "function";
 }
 
+function normalizeFireworkSlot(slot) {
+  if (!slot) return null;
+  if (slot.element && Array.isArray(slot.particles)) {
+    return {
+      element: slot.element,
+      core: slot.core ?? null,
+      particles: [...slot.particles]
+    };
+  }
+  return {
+    element: slot,
+    core: slot.querySelector?.("[data-firework-core]") ?? null,
+    particles: [...(slot.querySelectorAll?.("[data-firework-particle]") ?? [])]
+  };
+}
+
 export class ResultCelebrationController {
   constructor({
     cardSurfaces = [],
-    sparkles = [],
+    fireworkBursts = [],
+    fireworkExclusions = [],
     halo = null,
     dividerStar = null,
     canSchedule = () => true,
@@ -101,7 +222,8 @@ export class ResultCelebrationController {
     options = {}
   } = {}) {
     this.cardSurfaces = [...cardSurfaces];
-    this.sparkles = [...sparkles];
+    this.fireworkSlots = fireworkBursts.map(normalizeFireworkSlot).filter(Boolean);
+    this.fireworkExclusions = [...fireworkExclusions].filter(Boolean);
     this.halo = halo;
     this.dividerStar = dividerStar;
     this.canSchedule = canSchedule;
@@ -115,24 +237,32 @@ export class ResultCelebrationController {
     this.cardTimers = new Map();
     this.activeCardAnimations = new Map();
     this.activeDecorationAnimations = new Set();
-    this.activeSparkleSlots = new Set();
-    this.sparkleStartTimers = new Map();
+    this.activeFireworkSlots = new Set();
+    this.fireworkEventTimers = new Set();
+    this.ambientFireworkTimer = null;
     this.pausedAnimations = new Set();
-    this.sparkleTimer = null;
     this.haloTimer = null;
     this.starTimer = null;
+    this.fireworkGeometry = null;
     this.destroyed = false;
 
     this.handleMotionPreferenceChange = this.handleMotionPreferenceChange.bind(this);
+    this.handleViewportChange = this.handleViewportChange.bind(this);
     if (this.motionMedia?.addEventListener) {
       this.motionMedia.addEventListener("change", this.handleMotionPreferenceChange);
     } else if (this.motionMedia?.addListener) {
       this.motionMedia.addListener(this.handleMotionPreferenceChange);
     }
+    this.windowRef?.addEventListener?.("resize", this.handleViewportChange, { passive: true });
+    this.windowRef?.addEventListener?.("orientationchange", this.handleViewportChange, { passive: true });
   }
 
   get reducedMotion() {
     return Boolean(this.motionMedia?.matches);
+  }
+
+  get hasActiveAnimations() {
+    return this.activeCardAnimations.size > 0 || this.activeDecorationAnimations.size > 0;
   }
 
   isSchedulingAllowed() {
@@ -142,12 +272,13 @@ export class ResultCelebrationController {
   enter() {
     if (this.destroyed) return false;
     this.active = true;
+    this.updateFireworkGeometry();
     if (!this.isSchedulingAllowed()) return false;
 
-    this.playEntrySparkles();
+    this.playEntryFireworks();
     this.playDividerFlare({ entry: true });
     this.scheduleAllCards({ first: true });
-    this.scheduleAmbientSparkle();
+    this.scheduleAmbientFirework({ first: true });
     this.scheduleAmbientHalo();
     this.scheduleAmbientStar();
     return true;
@@ -170,6 +301,13 @@ export class ResultCelebrationController {
     } else if (this.motionMedia?.removeListener) {
       this.motionMedia.removeListener(this.handleMotionPreferenceChange);
     }
+    this.windowRef?.removeEventListener?.("resize", this.handleViewportChange);
+    this.windowRef?.removeEventListener?.("orientationchange", this.handleViewportChange);
+  }
+
+  handleViewportChange() {
+    if (!this.active) return;
+    this.updateFireworkGeometry();
   }
 
   handleMotionPreferenceChange() {
@@ -178,6 +316,7 @@ export class ResultCelebrationController {
       return;
     }
     if (!this.isSchedulingAllowed()) return;
+    this.updateFireworkGeometry();
     this.armPersistentSchedules();
   }
 
@@ -189,15 +328,14 @@ export class ResultCelebrationController {
     return true;
   }
 
-  get hasActiveAnimations() {
-    return this.activeCardAnimations.size > 0 || this.activeDecorationAnimations.size > 0;
-  }
-
   resumeAfterThemeTransition() {
     if (this.destroyed || !this.suspended) return false;
     this.suspended = false;
     this.resumePausedAnimations();
-    if (this.isSchedulingAllowed()) this.armPersistentSchedules();
+    if (this.isSchedulingAllowed()) {
+      this.updateFireworkGeometry();
+      this.armPersistentSchedules();
+    }
     return true;
   }
 
@@ -239,13 +377,11 @@ export class ResultCelebrationController {
     for (const timerId of this.cardTimers.values()) this.windowRef?.clearTimeout?.(timerId);
     this.cardTimers.clear();
 
-    for (const [timerId, sparkle] of this.sparkleStartTimers) {
-      this.windowRef?.clearTimeout?.(timerId);
-      this.activeSparkleSlots.delete(sparkle);
-    }
-    this.sparkleStartTimers.clear();
+    for (const timerId of this.fireworkEventTimers) this.windowRef?.clearTimeout?.(timerId);
+    this.fireworkEventTimers.clear();
+    this.ambientFireworkTimer = null;
 
-    for (const timerKey of ["sparkleTimer", "haloTimer", "starTimer"]) {
+    for (const timerKey of ["haloTimer", "starTimer"]) {
       const timerId = this[timerKey];
       if (timerId !== null) {
         this.windowRef?.clearTimeout?.(timerId);
@@ -256,7 +392,7 @@ export class ResultCelebrationController {
 
   armPersistentSchedules() {
     this.scheduleAllCards({ first: false });
-    this.scheduleAmbientSparkle();
+    this.scheduleAmbientFirework({ first: false });
     this.scheduleAmbientHalo();
     this.scheduleAmbientStar();
   }
@@ -312,117 +448,171 @@ export class ResultCelebrationController {
     return true;
   }
 
-  getIdleSparkleSlots() {
-    return this.sparkles.filter((sparkle) => !this.activeSparkleSlots.has(sparkle));
+  updateFireworkGeometry() {
+    const width = Number(this.windowRef?.innerWidth) || 390;
+    const height = Number(this.windowRef?.innerHeight) || 844;
+    const exclusionRects = this.fireworkExclusions
+      .filter((element) => !element.hidden)
+      .map((element) => element.getBoundingClientRect?.())
+      .filter((rect) => rect && Number(rect.width) > 0 && Number(rect.height) > 0);
+    this.fireworkGeometry = createFireworkGeometry({ width, height, exclusionRects });
+    return this.fireworkGeometry;
   }
 
-  reserveSparkleSlots(requestedCount) {
-    const available = this.getIdleSparkleSlots();
-    const count = Math.min(Math.max(0, requestedCount), available.length);
-    const reserved = [];
-    for (let i = 0; i < count; i += 1) {
-      const pickIndex = randomInteger(this.random, 0, available.length - 1);
-      const [sparkle] = available.splice(pickIndex, 1);
-      this.activeSparkleSlots.add(sparkle);
-      reserved.push(sparkle);
-    }
-    return reserved;
+  getIdleFireworkSlot() {
+    const available = this.fireworkSlots.filter((slot) => !this.activeFireworkSlots.has(slot));
+    if (!available.length) return null;
+    return available[randomInteger(this.random, 0, available.length - 1)];
   }
 
-  prepareSparkleSlot(sparkle) {
-    if (!sparkle) return null;
-    const presentation = createSparklePresentation(this.random);
-    sparkle.dataset.sparkleTone = presentation.tone;
-    sparkle.dataset.sparkleZone = presentation.zoneId;
-    sparkle.style?.setProperty?.("--sparkle-x", `${presentation.x}%`);
-    sparkle.style?.setProperty?.("--sparkle-y", `${presentation.y}%`);
-    sparkle.style?.setProperty?.("--sparkle-size", `${presentation.size}px`);
-    return presentation;
-  }
-
-  releaseSparkleSlot(sparkle) {
-    if (!sparkle) return;
-    this.activeSparkleSlots.delete(sparkle);
-  }
-
-  scheduleSparkleStart(sparkle, delayMs, { entry = false } = {}) {
-    if (!sparkle || !this.activeSparkleSlots.has(sparkle)) return false;
-    if (delayMs <= 0) return this.startSparkleAnimation(sparkle, { entry });
-
+  scheduleFireworkEvent(delayMs, callback) {
+    if (!this.isSchedulingAllowed()) return null;
     const timerId = this.windowRef.setTimeout(() => {
-      this.sparkleStartTimers.delete(timerId);
-      if (!this.isSchedulingAllowed()) {
-        this.releaseSparkleSlot(sparkle);
-        return;
-      }
-      this.startSparkleAnimation(sparkle, { entry });
-    }, delayMs);
-    this.sparkleStartTimers.set(timerId, sparkle);
+      this.fireworkEventTimers.delete(timerId);
+      if (!this.isSchedulingAllowed()) return;
+      callback?.();
+    }, Math.max(0, delayMs));
+    this.fireworkEventTimers.add(timerId);
+    return timerId;
+  }
+
+  playEntryFireworks() {
+    if (!this.isSchedulingAllowed() || !this.fireworkSlots.length) return false;
+    const delays = [
+      randomInteger(this.random, 260, 380),
+      randomInteger(this.random, 700, 1000),
+      randomInteger(this.random, 1200, 1650)
+    ];
+    delays.forEach((delay) => {
+      this.scheduleFireworkEvent(delay, () => this.startFireworkBurst({ entry: true }));
+    });
     return true;
   }
 
-  startSparkleAnimation(sparkle, { entry = false } = {}) {
-    if (!sparkle || typeof sparkle.animate !== "function") {
-      this.releaseSparkleSlot(sparkle);
+  scheduleAmbientFirework({ first = false } = {}) {
+    if (!this.isSchedulingAllowed() || !this.fireworkSlots.length || this.ambientFireworkTimer !== null) return false;
+    const delay = first
+      ? randomInteger(this.random, this.options.firstAmbientFireworkDelayMinMs, this.options.firstAmbientFireworkDelayMaxMs)
+      : randomInteger(this.random, this.options.ambientFireworkDelayMinMs, this.options.ambientFireworkDelayMaxMs);
+    const timerId = this.scheduleFireworkEvent(delay, () => {
+      if (this.ambientFireworkTimer === timerId) this.ambientFireworkTimer = null;
+      this.playAmbientFireworkEvent();
+      this.scheduleAmbientFirework({ first: false });
+    });
+    this.ambientFireworkTimer = timerId;
+    return timerId !== null;
+  }
+
+  playAmbientFireworkEvent() {
+    if (!this.isSchedulingAllowed()) return false;
+    const started = this.startFireworkBurst({ entry: false });
+    if (started && this.random() < this.options.followUpFireworkChance) {
+      const delay = randomInteger(
+        this.random,
+        this.options.followUpFireworkDelayMinMs,
+        this.options.followUpFireworkDelayMaxMs
+      );
+      this.scheduleFireworkEvent(delay, () => this.startFireworkBurst({ entry: false }));
+    }
+    return started;
+  }
+
+  startFireworkBurst({ entry = false } = {}) {
+    if (!this.isSchedulingAllowed() || !this.fireworkSlots.length) return false;
+    const slot = this.getIdleFireworkSlot();
+    if (!slot || !slot.particles.length) return false;
+
+    const geometry = this.fireworkGeometry ?? this.updateFireworkGeometry();
+    const center = chooseFireworkCenter(this.random, geometry, this.options.fireworkCandidateAttempts);
+    if (!center) return false;
+
+    const family = chooseFireworkFamily(this.random);
+    const particleCount = entry ? randomInteger(this.random, 6, 8) : chooseFireworkParticleCount(this.random);
+    const activeParticles = slot.particles.slice(0, Math.min(8, particleCount));
+    if (!activeParticles.length) return false;
+
+    this.activeFireworkSlots.add(slot);
+    slot.element.dataset.fireworkFamily = family;
+    slot.element.dataset.fireworkActive = "true";
+    slot.element.style?.setProperty?.("--firework-x", `${center.x}px`);
+    slot.element.style?.setProperty?.("--firework-y", `${center.y}px`);
+
+    const animations = [];
+    if (slot.core && typeof slot.core.animate === "function") {
+      const coreDuration = entry ? randomInteger(this.random, 820, 1120) : randomInteger(this.random, 650, 920);
+      const coreAnimation = slot.core.animate(
+        [
+          { opacity: 0, transform: "translate(-50%, -50%) scale(.20)" },
+          { opacity: entry ? 0.98 : 0.88, transform: `translate(-50%, -50%) scale(${entry ? 1.75 : 1.45})`, offset: 0.28 },
+          { opacity: 0, transform: "translate(-50%, -50%) scale(2.20)" }
+        ],
+        { duration: coreDuration, easing: "cubic-bezier(.16, .82, .22, 1)", fill: "none" }
+      );
+      animations.push(coreAnimation);
+      this.trackDecorationAnimation(coreAnimation);
+    }
+
+    activeParticles.forEach((particle, index) => {
+      if (typeof particle.animate !== "function") return;
+      const presentation = createFireworkParticlePresentation(this.random, {
+        index,
+        count: activeParticles.length,
+        family,
+        maxDistance: Math.min(this.options.fireworkDistanceMaxPx, geometry.maxDistance),
+        minDistance: this.options.fireworkDistanceMinPx
+      });
+      particle.dataset.fireworkTone = presentation.tone;
+      particle.style?.setProperty?.("--firework-particle-size", `${presentation.size}px`);
+      const duration = entry
+        ? randomInteger(this.random, this.options.entryFireworkParticleDurationMinMs, this.options.entryFireworkParticleDurationMaxMs)
+        : randomInteger(this.random, this.options.fireworkParticleDurationMinMs, this.options.fireworkParticleDurationMaxMs);
+      const delay = index * randomInteger(
+        this.random,
+        this.options.fireworkParticleStaggerMinMs,
+        this.options.fireworkParticleStaggerMaxMs
+      );
+      const rotateStart = presentation.rotation - 16;
+      const rotateEnd = presentation.rotation + 22;
+      const animation = particle.animate(
+        [
+          {
+            opacity: 0,
+            transform: `translate(-50%, -50%) translate3d(0px, 0px, 0) scale(.22) rotate(${rotateStart}deg)`
+          },
+          {
+            opacity: 1,
+            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.18)}px, ${Math.round(presentation.dy * 0.18)}px, 0) scale(1.18) rotate(${presentation.rotation}deg)`,
+            offset: 0.20
+          },
+          {
+            opacity: 0.84,
+            transform: `translate(-50%, -50%) translate3d(${Math.round(presentation.dx * 0.72)}px, ${Math.round(presentation.dy * 0.72)}px, 0) scale(.94) rotate(${presentation.rotation + 12}deg)`,
+            offset: 0.66
+          },
+          {
+            opacity: 0,
+            transform: `translate(-50%, -50%) translate3d(${presentation.dx}px, ${presentation.dy}px, 0) scale(.34) rotate(${rotateEnd}deg)`
+          }
+        ],
+        { duration, delay, easing: "cubic-bezier(.18, .78, .20, 1)", fill: "none" }
+      );
+      animations.push(animation);
+      this.trackDecorationAnimation(animation);
+    });
+
+    if (!animations.length) {
+      this.releaseFireworkSlot(slot);
       return false;
     }
 
-    const presentation = this.prepareSparkleSlot(sparkle);
-    const duration = entry
-      ? randomInteger(this.random, 1180, 1700)
-      : randomInteger(this.random, this.options.sparkleDurationMinMs, this.options.sparkleDurationMaxMs);
-    const baseRotation = presentation?.rotation ?? 0;
-    const peakScale = entry ? 1.68 : 1.34;
-    const peakOpacity = entry ? 1 : 0.94;
-
-    const animation = sparkle.animate(
-      [
-        { opacity: 0, transform: `scale(.28) rotate(${baseRotation - 18}deg)` },
-        { opacity: peakOpacity, transform: `scale(${peakScale}) rotate(${baseRotation + 5}deg)`, offset: entry ? 0.42 : 0.46 },
-        { opacity: entry ? 0.62 : 0.52, transform: `scale(${entry ? 1.16 : 1.02}) rotate(${baseRotation + 12}deg)`, offset: 0.70 },
-        { opacity: 0, transform: `scale(.74) rotate(${baseRotation + 22}deg)` }
-      ],
-      { duration, easing: "cubic-bezier(.18, .82, .24, 1)", fill: "none" }
-    );
-    this.trackDecorationAnimation(animation, () => this.releaseSparkleSlot(sparkle));
+    Promise.all(animations.map(animationFinished)).finally(() => this.releaseFireworkSlot(slot));
     return true;
   }
 
-  playEntrySparkles() {
-    if (!this.isSchedulingAllowed() || !this.sparkles.length) return false;
-    const requestedCount = randomInteger(this.random, this.options.entrySparkleCountMin, this.options.entrySparkleCountMax);
-    const slots = this.reserveSparkleSlots(requestedCount);
-    slots.forEach((sparkle, index) => {
-      const stagger = index === 0 ? 0 : index * randomInteger(this.random, 105, 185);
-      this.scheduleSparkleStart(sparkle, stagger, { entry: true });
-    });
-    return slots.length > 0;
-  }
-
-  scheduleAmbientSparkle() {
-    if (!this.isSchedulingAllowed() || !this.sparkles.length || this.sparkleTimer !== null) return false;
-    const delay = randomInteger(this.random, this.options.ambientSparkleDelayMinMs, this.options.ambientSparkleDelayMaxMs);
-    this.sparkleTimer = this.windowRef.setTimeout(() => {
-      this.sparkleTimer = null;
-      if (!this.isSchedulingAllowed()) return;
-      this.playAmbientSparkleEvent();
-      this.scheduleAmbientSparkle();
-    }, delay);
-    return true;
-  }
-
-  playAmbientSparkleEvent() {
-    if (!this.isSchedulingAllowed()) return false;
-    const slots = this.reserveSparkleSlots(chooseSparkleClusterCount(this.random));
-    slots.forEach((sparkle, index) => {
-      const stagger = index === 0 ? 0 : index * randomInteger(
-        this.random,
-        this.options.sparkleClusterStaggerMinMs,
-        this.options.sparkleClusterStaggerMaxMs
-      );
-      this.scheduleSparkleStart(sparkle, stagger, { entry: false });
-    });
-    return slots.length > 0;
+  releaseFireworkSlot(slot) {
+    if (!slot) return;
+    this.activeFireworkSlots.delete(slot);
+    delete slot.element.dataset.fireworkActive;
   }
 
   scheduleAmbientHalo() {

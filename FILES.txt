@@ -1,6 +1,6 @@
-AI OR HUMAN — V1.6.3-test.8 RANDOM SPARKLE CELEBRATION / MOTION HIERARCHY CORRECTIVE — UPDATED_FILES
+AI OR HUMAN — V1.6.3-test.9 PERSISTENT FIREWORK SPARKLE CELEBRATION — UPDATED_FILES
 
-Exact REPO delta versus V1.6.3-test.7: 7 files (7 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.3-test.8: 7 files (7 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
@@ -12,14 +12,16 @@ package.json
 scripts/test-project.js
 
 Scope:
-- preserve the accepted homepage/mode-setup flat card renderer from test.7;
-- replace eight fixed sparkle positions/colors with one bounded reusable eight-slot pool;
-- randomize sparkle safe-zone position, size, rotation and semantic CSS tone (gold/blue/cream/ice);
-- use bounded 1-3 ambient sparkle micro-clusters with short stagger and busy-slot ownership;
-- keep entry burst finite using 6-8 randomized pool slots;
-- delay only the initial five-card turn window to ~1.7-3.5 s so score/title/sparkle impact gets visual priority;
-- keep ongoing five-card cadence, graceful leave, halo/star channels, theme architecture and replay flow unchanged;
-- advance cache version to `1.6.3-test.8`;
+- replace the test.8 single-sparkle pool with one bounded viewport-wide mini-firework authority;
+- use exactly 3 reusable burst slots, each with 8 reusable particle nodes plus one bounded core flash;
+- one burst uses 4-8 particles with radial transform/opacity motion and a coherent warm/cool/mixed semantic family;
+- stage 3 entry bursts, then persist random bursts during primary result/celebration at ~1.0-2.6 s cadence with occasional close follow-up;
+- cap concurrency at 3 active bursts and never grow particle DOM dynamically;
+- place burst centers outside expanded title/score/action/theme-switch exclusion rectangles and viewport-edge safety margins;
+- refresh geometry only on result enter and resize/orientation, with no RAF/per-frame geometry reads;
+- on replay/home stop only future burst events; already-started bursts own delayed particles and finish naturally;
+- preserve accepted five-card random rotation, test.8 first-turn delay ~1.7-3.5 s, halo/star, replay flow, theme architecture and test.7 homepage/setup flat renderer;
+- advance cache version to `1.6.3-test.9`;
 - no Supabase, SQL, Admin, manifest/content, classification, swipe, feedback or V1.7 changes.
 
 Status: TEST / LOCAL QA PASS only after final package verification. Real-phone celebration QA remains required.

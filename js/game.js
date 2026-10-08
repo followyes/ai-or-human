@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.8";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.3-test.9";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -51,9 +51,21 @@ const imageCard = document.querySelector("#image-card");
 const gameImage = document.querySelector("#game-image");
 const answerFeedbackElement = document.querySelector("#answer-feedback");
 const resultFloatingCardSurfaces = [...document.querySelectorAll(".floating-card__surface")];
-const resultSparkles = [...document.querySelectorAll("[data-result-sparkle]")];
+const resultFireworkBursts = [...document.querySelectorAll("[data-result-firework]")].map((element) => ({
+  element,
+  core: element.querySelector("[data-firework-core]"),
+  particles: [...element.querySelectorAll("[data-firework-particle]")]
+}));
 const resultAmbientHalo = document.querySelector("[data-result-halo]");
 const resultDividerStar = document.querySelector("#end-screen .result-brand .cosmic-divider > span");
+const resultFireworkExclusions = [
+  document.querySelector("#end-screen .result-eyebrow"),
+  document.querySelector("#end-screen .result-brand .cosmic-divider"),
+  document.querySelector("#end-screen .result-title"),
+  document.querySelector("#end-screen .result-score-stage"),
+  document.querySelector("#end-screen .result-action-stage"),
+  document.querySelector("#theme-switch")
+].filter(Boolean);
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
@@ -614,7 +626,8 @@ function initializeInteractions() {
   preGameTransition.showImmediately(modeSelectPanel, preGamePanels);
   resultCelebration = new ResultCelebrationController({
     cardSurfaces: resultFloatingCardSurfaces,
-    sparkles: resultSparkles,
+    fireworkBursts: resultFireworkBursts,
+    fireworkExclusions: resultFireworkExclusions,
     halo: resultAmbientHalo,
     dividerStar: resultDividerStar,
     windowRef: window,

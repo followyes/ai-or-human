@@ -79,11 +79,15 @@ import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectabl
 import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
 import {
   ResultCelebrationController,
-  SPARKLE_SAFE_ZONES,
-  SPARKLE_TONES,
-  chooseSparkleClusterCount,
-  createSparklePresentation,
-  getFullTurnAngle
+  FIREWORK_FAMILIES,
+  FIREWORK_TONES,
+  chooseFireworkCenter,
+  chooseFireworkFamily,
+  chooseFireworkParticleCount,
+  createFireworkGeometry,
+  createFireworkParticlePresentation,
+  getFullTurnAngle,
+  isFireworkCenterSafe
 } from "../js/result-celebration.js";
 import {
   DEFAULT_THEME,
@@ -2934,13 +2938,20 @@ async function testResultCelebrationLifecycle() {
   }
 
   class FakeCelebrationNode {
-    constructor() {
+    constructor(rect = null) {
       this.dataset = {};
       this.animations = [];
       this.styleValues = new Map();
+      this.hidden = false;
+      this.rect = rect;
       this.style = {
         setProperty: (name, value) => this.styleValues.set(name, value)
       };
+    }
+
+    getBoundingClientRect() {
+      if (this.rect) return this.rect;
+      return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
     }
 
     animate(keyframes, options) {
@@ -2965,7 +2976,7 @@ async function testResultCelebrationLifecycle() {
   let eligible = true;
   const controller = new ResultCelebrationController({
     cardSurfaces: cards,
-    sparkles: [],
+    fireworkBursts: [],
     canSchedule: () => eligible,
     windowRef,
     motionMedia,
@@ -3013,7 +3024,7 @@ async function testResultCelebrationLifecycle() {
   let themeEligible = true;
   const themeController = new ResultCelebrationController({
     cardSurfaces: themeCards,
-    sparkles: [],
+    fireworkBursts: [],
     canSchedule: () => themeEligible,
     windowRef: themeWindow,
     motionMedia: new FakeMotionMedia(false),
@@ -3064,7 +3075,7 @@ async function testResultCelebrationLifecycle() {
   const liveThemeCards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
   const liveThemeController = new ResultCelebrationController({
     cardSurfaces: liveThemeCards,
-    sparkles: [],
+    fireworkBursts: [],
     canSchedule: () => true,
     windowRef: liveThemeWindow,
     motionMedia: new FakeMotionMedia(false),
@@ -3101,7 +3112,7 @@ async function testResultCelebrationLifecycle() {
   const reducedCards = Array.from({ length: 5 }, () => new FakeCelebrationNode());
   const reducedController = new ResultCelebrationController({
     cardSurfaces: reducedCards,
-    sparkles: [],
+    fireworkBursts: [],
     canSchedule: () => true,
     windowRef: reducedWindow,
     motionMedia: reducedMedia,
@@ -3118,131 +3129,146 @@ async function testResultCelebrationLifecycle() {
     "enabling reduced motion must stop future starts without hard-resetting active motion");
   reducedController.destroy();
 
-  const presentationRng = createSeededRng(777);
-  for (let index = 0; index < 240; index += 1) {
-    const presentation = createSparklePresentation(presentationRng);
-    assert.ok(SPARKLE_TONES.includes(presentation.tone),
-      "sparkle presentation must use only approved semantic tone keys");
-    const zone = SPARKLE_SAFE_ZONES.find((candidate) => candidate.id === presentation.zoneId);
-    assert.ok(zone, "sparkle presentation must belong to an approved safe zone");
-    assert.ok(
-      presentation.x >= zone.xMin && presentation.x <= zone.xMax &&
-      presentation.y >= zone.yMin && presentation.y <= zone.yMax,
-      "sparkle position must stay inside its approved safe-zone bounds"
-    );
-    assert.ok(
-      presentation.y <= 12 || presentation.x <= 28 || presentation.x >= 72,
-      "sparkles below the upper rail must stay outside the central result-reading corridor"
-    );
-    assert.ok(presentation.size >= 8 && presentation.size <= 15,
-      "sparkle size must stay inside the bounded celebration range");
+  const particleCountRng = createSeededRng(777);
+  const sampledParticleCounts = new Set(
+    Array.from({ length: 320 }, () => chooseFireworkParticleCount(particleCountRng))
+  );
+  assert.deepEqual([...sampledParticleCounts].sort(), [4, 5, 6, 7, 8],
+    "firework bursts must support the complete bounded 4-8 particle range");
+
+  const familyRng = createSeededRng(778);
+  const sampledFamilies = new Set(
+    Array.from({ length: 320 }, () => chooseFireworkFamily(familyRng))
+  );
+  assert.deepEqual([...sampledFamilies].sort(), [...FIREWORK_FAMILIES].sort(),
+    "firework events must vary only across the approved warm/cool/mixed families");
+
+  const presentationRng = createSeededRng(779);
+  for (const family of FIREWORK_FAMILIES) {
+    for (let index = 0; index < 120; index += 1) {
+      const presentation = createFireworkParticlePresentation(presentationRng, {
+        index: index % 8,
+        count: 8,
+        family,
+        maxDistance: 64,
+        minDistance: 24
+      });
+      assert.ok(FIREWORK_TONES.includes(presentation.tone),
+        "firework particles must use only approved semantic tone keys");
+      if (family === "warm") assert.ok(["gold", "cream"].includes(presentation.tone));
+      if (family === "cool") assert.ok(["blue", "ice"].includes(presentation.tone));
+      assert.ok(presentation.distance >= 24 && presentation.distance <= 64,
+        "particle travel must stay inside the bounded firework radius");
+      assert.ok(presentation.size >= 4 && presentation.size <= 11,
+        "particle size must stay within the bounded mini-firework range");
+    }
   }
 
-  const clusterRng = createSeededRng(778);
-  const sampledClusterCounts = new Set(
-    Array.from({ length: 240 }, () => chooseSparkleClusterCount(clusterRng))
-  );
-  assert.deepEqual([...sampledClusterCounts].sort(), [1, 2, 3],
-    "ambient sparkle events must support bounded 1-3 sparkle micro-clusters");
+  const geometry = createFireworkGeometry({
+    width: 390,
+    height: 844,
+    exclusionRects: [
+      { left: 126, top: 140, right: 264, bottom: 190, width: 138, height: 50 },
+      { left: 118, top: 278, right: 272, bottom: 390, width: 154, height: 112 },
+      { left: 20, top: 544, right: 370, bottom: 720, width: 350, height: 176 },
+      { left: 306, top: 16, right: 374, bottom: 54, width: 68, height: 38 }
+    ]
+  });
+  const centerRng = createSeededRng(780);
+  for (let index = 0; index < 120; index += 1) {
+    const center = chooseFireworkCenter(centerRng, geometry, 24);
+    if (!center) continue;
+    assert.equal(isFireworkCenterSafe({
+      ...center,
+      width: geometry.width,
+      height: geometry.height,
+      edgePadding: geometry.edgePadding,
+      exclusions: geometry.exclusions
+    }), true, "chosen firework center must respect viewport edges and expanded UI exclusions");
+  }
 
   const decorationWindow = new FakeTimerWindow();
-  const sparkles = Array.from({ length: 8 }, () => new FakeCelebrationNode());
+  decorationWindow.innerWidth = 390;
+  decorationWindow.innerHeight = 844;
+  const fireworkBursts = Array.from({ length: 3 }, () => ({
+    element: new FakeCelebrationNode(),
+    core: new FakeCelebrationNode(),
+    particles: Array.from({ length: 8 }, () => new FakeCelebrationNode())
+  }));
+  const exclusions = [
+    new FakeCelebrationNode({ left: 126, top: 140, right: 264, bottom: 190, width: 138, height: 50 }),
+    new FakeCelebrationNode({ left: 118, top: 278, right: 272, bottom: 390, width: 154, height: 112 }),
+    new FakeCelebrationNode({ left: 20, top: 544, right: 370, bottom: 720, width: 350, height: 176 }),
+    new FakeCelebrationNode({ left: 306, top: 16, right: 374, bottom: 54, width: 68, height: 38 })
+  ];
   const halo = new FakeCelebrationNode();
   const dividerStar = new FakeCelebrationNode();
+  let decorationEligible = true;
   const decorationController = new ResultCelebrationController({
     cardSurfaces: [],
-    sparkles,
+    fireworkBursts,
+    fireworkExclusions: exclusions,
     halo,
     dividerStar,
-    canSchedule: () => true,
+    canSchedule: () => decorationEligible,
     windowRef: decorationWindow,
     motionMedia: new FakeMotionMedia(false),
-    random: createSeededRng(17)
+    random: createSeededRng(17),
+    options: {
+      firstAmbientFireworkDelayMinMs: 5000,
+      firstAmbientFireworkDelayMaxMs: 5000,
+      ambientFireworkDelayMinMs: 5000,
+      ambientFireworkDelayMaxMs: 5000
+    }
   });
   assert.equal(decorationController.enter(), true);
-  assert.ok(decorationController.activeSparkleSlots.size >= 6 && decorationController.activeSparkleSlots.size <= 8,
-    "entry celebration must reserve a bounded 6-8 sparkle burst from the fixed pool");
+  assert.equal(decorationController.fireworkSlots.length, 3,
+    "celebration must own exactly three reusable firework burst slots");
+  assert.equal(decorationController.fireworkSlots.every((slot) => slot.particles.length === 8), true,
+    "each reusable firework slot must expose exactly eight bounded particle nodes");
   assert.equal(dividerStar.animations.length, 1,
-    "result entry must flare the existing divider star once");
+    "result entry must preserve the existing divider-star flare channel");
+  assert.equal(decorationController.fireworkEventTimers.size >= 4, true,
+    "entry plus first ambient scheduling must stage future firework events without dynamic DOM creation");
 
-  for (const timerId of [...decorationController.sparkleStartTimers.keys()]) {
-    decorationWindow.run(timerId);
+  const entryTimerIds = [...decorationController.fireworkEventTimers].slice(0, 3);
+  for (const timerId of entryTimerIds) decorationWindow.run(timerId);
+  assert.ok(decorationController.activeFireworkSlots.size >= 1 && decorationController.activeFireworkSlots.size <= 3,
+    "staged entry may use up to the three bounded burst slots but never exceed the pool");
+
+  const activeBursts = fireworkBursts.filter((slot) => slot.element.dataset.fireworkActive === "true");
+  assert.ok(activeBursts.length >= 1, "entry sequence must start at least one visible mini-firework burst");
+  for (const slot of activeBursts) {
+    const particleAnimations = slot.particles.flatMap((particle) => particle.animations);
+    assert.ok(particleAnimations.length >= 6 && particleAnimations.length <= 8,
+      "entry firework must use a stronger bounded 6-8 particle count");
+    assert.equal(particleAnimations.every((animation) =>
+      animation.options.duration >= 1000 && animation.options.duration <= 1450
+    ), true, "entry firework particles must stay inside the audited visible duration range");
+    assert.ok(FIREWORK_FAMILIES.includes(slot.element.dataset.fireworkFamily),
+      "each burst must own one coherent semantic color family");
+    assert.ok(slot.element.styleValues.has("--firework-x") && slot.element.styleValues.has("--firework-y"),
+      "each burst must receive one measured safe viewport center");
   }
-  const entryAnimations = sparkles.flatMap((sparkle) => sparkle.animations);
-  assert.equal(entryAnimations.length, decorationController.activeSparkleSlots.size,
-    "every reserved entry sparkle slot must receive exactly one finite animation");
-  assert.equal(entryAnimations.every((animation) => animation.options.duration >= 1180), true,
-    "entry sparkle burst must remain visible long enough to register on a real phone");
-  assert.equal(sparkles.filter((sparkle) => sparkle.animations.length).every((sparkle) =>
-    SPARKLE_TONES.includes(sparkle.dataset.sparkleTone) &&
-    SPARKLE_SAFE_ZONES.some((zone) => zone.id === sparkle.dataset.sparkleZone) &&
-    sparkle.styleValues.has("--sparkle-x") &&
-    sparkle.styleValues.has("--sparkle-y") &&
-    sparkle.styleValues.has("--sparkle-size")
-  ), true, "entry sparkles must receive randomized safe positions, sizes and semantic tones");
 
-  for (const animation of entryAnimations) animation.finish();
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(decorationController.activeSparkleSlots.size, 0,
-    "finished sparkle animations must release their reusable pool slots");
-
-  decorationController.clearPendingSchedules();
-  const reservedAll = decorationController.reserveSparkleSlots(8);
-  assert.equal(reservedAll.length, 8, "bounded sparkle pool must expose all eight idle slots");
-  assert.equal(decorationController.reserveSparkleSlots(3).length, 0,
-    "an already-busy sparkle slot must never be selected again");
-  reservedAll.forEach((sparkle) => decorationController.releaseSparkleSlot(sparkle));
-
-  assert.equal(decorationController.playAmbientSparkleEvent(), true);
-  assert.ok(decorationController.activeSparkleSlots.size >= 1 && decorationController.activeSparkleSlots.size <= 3,
-    "one ambient sparkle event must reserve only a bounded 1-3 slot cluster");
-  const ambientStarted = sparkles.flatMap((sparkle) => sparkle.animations).filter((animation) => !entryAnimations.includes(animation));
-  assert.ok(ambientStarted.length >= 1,
-    "ambient sparkle cluster must start at least one visible sparkle immediately");
-  for (const timerId of [...decorationController.sparkleStartTimers.keys()]) {
-    decorationWindow.run(timerId);
-  }
-  const ambientAnimations = sparkles.flatMap((sparkle) => sparkle.animations).filter((animation) => !entryAnimations.includes(animation));
-  assert.equal(ambientAnimations.length, decorationController.activeSparkleSlots.size,
-    "staggered cluster starts must use only the slots reserved for that event");
-
-  decorationController.scheduleAmbientHalo();
-  decorationController.scheduleAmbientStar();
-  const haloTimerId = decorationController.haloTimer;
-  const starTimerId = decorationController.starTimer;
-  assert.ok(haloTimerId !== null && starTimerId !== null,
-    "persistent halo and divider-star channels must remain independently scheduled");
-  decorationWindow.run(haloTimerId);
-  decorationWindow.run(starTimerId);
-  assert.equal(halo.animations.length, 1,
-    "persistent celebration must periodically breathe the local score halo");
-  assert.equal(dividerStar.animations.length, 2,
-    "persistent celebration must periodically flare the divider star");
-
-  decorationController.suspendForThemeTransition();
-  assert.equal(decorationWindow.timers.size, 0,
-    "theme hold must clear pending sparkle/halo/star/card starts including staggered sparkle starts");
-  const activeDecorationAnimations = [
-    ...sparkles.flatMap((sparkle) => sparkle.animations),
-    ...halo.animations,
-    ...dividerStar.animations
-  ].filter((animation) => animation.playState !== "finished");
-  assert.equal(activeDecorationAnimations.every((animation) => animation.playState === "paused"), true,
-    "theme hold must pause all tracked finite decorative animations");
-
+  const firstActiveSlot = activeBursts[0];
   decorationController.leave();
-  decorationController.resumeAfterThemeTransition();
   assert.equal(decorationWindow.timers.size, 0,
-    "leaving during theme hold must not restart persistent celebration schedules");
-  assert.equal(activeDecorationAnimations.every((animation) => animation.playState === "running"), true,
-    "already-started non-card effects must resume and finish naturally after theme hold");
-  assert.equal(activeDecorationAnimations.every((animation) => !animation.cancelled), true,
-    "persistent decoration exit must never hard-cancel an already-started effect");
-  for (const animation of activeDecorationAnimations) animation.finish();
+    "leaving primary celebration must clear all future firework/card/halo/star event timers");
+  assert.equal(firstActiveSlot.particles.flatMap((particle) => particle.animations)
+    .every((animation) => !animation.cancelled), true,
+    "an already-started firework must not be cancelled when the player leaves celebration");
+
+  const finishingAnimations = [
+    ...firstActiveSlot.particles.flatMap((particle) => particle.animations),
+    ...firstActiveSlot.core.animations
+  ];
+  for (const animation of finishingAnimations) animation.finish();
   await Promise.resolve();
   await Promise.resolve();
-  assert.equal(decorationWindow.timers.size, 0);
+  assert.equal(decorationWindow.timers.size, 0,
+    "a completed firework after leave must never re-arm persistent celebration scheduling");
+
   decorationController.destroy();
 
   controller.destroy();
@@ -3388,10 +3414,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.8"') &&
-    html.includes('src="./js/game.js?v=1.6.3-test.8"') &&
-    game.includes('./result-celebration.js?v=1.6.3-test.8'),
-    "V1.6.3 test.8 must version the changed CSS/JS entry graph so phone caches cannot mix corrective generations");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.3-test.9"') &&
+    html.includes('src="./js/game.js?v=1.6.3-test.9"') &&
+    game.includes('./result-celebration.js?v=1.6.3-test.9'),
+    "V1.6.3 test.9 must version the changed CSS/JS entry graph so phone caches cannot mix celebration generations");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3422,7 +3448,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(/body\[data-public-view="result"\] \.cosmic-orbit--outer[\s\S]*?result-orbit-outer/m.test(css) &&
     /result-score-stage::before[\s\S]*?result-score-halo/m.test(css) &&
     /body\[data-public-view="result"\] \.result-title[\s\S]*?result-title-settle/m.test(css),
-    "result celebration must preserve the accepted orbit authority and add finite title/score/halo entrance emphasis");
+    "result celebration must preserve the accepted orbit authority and finite title/score/halo entrance emphasis");
   const resultCardSurfaceRule = css.match(/body\[data-public-view="result"\] \.floating-card__surface\s*\{([\s\S]*?)\}/m)?.[1] || "";
   assert.ok(resultCardSurfaceRule && !resultCardSurfaceRule.includes("animation:"),
     "result cards must not use one synchronized infinite CSS turn loop");
@@ -3431,7 +3457,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     resultCelebrationSource.includes('activeCardAnimations') &&
     resultCelebrationSource.includes('animationFinished(animation)') &&
     resultCelebrationSource.includes('this.clearPendingSchedules()'),
-    "V1.6.3 test.8 must preserve finite independent card schedules in one focused celebration controller");
+    "V1.6.3 test.9 must preserve finite independent card schedules in one focused celebration controller");
   assert.ok(game.includes('state === "result"') && game.includes('resultSubstate === "celebration"') &&
     game.includes('document.body.dataset.publicView === "result"'),
     "new result motion starts must be gated by the internal celebration substate, not public-view=result alone");
@@ -3439,7 +3465,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "game lifecycle must explicitly arm/disarm celebration scheduling");
   assert.ok(resultCelebrationSource.includes('if (!this.isSchedulingAllowed()) return;') &&
     !resultCelebrationSource.includes('.cancel()'),
-    "leaving result must stop future schedules without cancelling already-started finite turns");
+    "leaving result must stop future schedules without cancelling already-started finite effects");
   assert.ok(resultCelebrationSource.includes('* 360') && !resultCelebrationSource.includes('requestAnimationFrame'),
     "card turns must finish on full-turn-equivalent geometry without introducing a RAF animation loop");
   const flatCardSurfaceRule = css.match(/\.floating-card__surface\s*\{([\s\S]*?)\}/m)?.[1] || "";
@@ -3454,34 +3480,56 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(!/(^|\n)\.floating-card__surface::before,/m.test(css) &&
     !/body\[data-public-view="mode-(?:select|setup)"\] \.floating-card__surface[\s\S]{0,160}?preserve-3d/m.test(css),
     "result 3D face authority must not leak back into homepage or mode setup");
-  assert.equal((html.match(/data-result-sparkle/g) || []).length, 8,
-    "result hero must keep one bounded eight-slot sparkle pool");
-  assert.ok(!/result-sparkle--(?:one|two|three|four|five|six|seven|eight)/.test(html) &&
-    !/\.result-sparkle--(?:one|two|three|four|five|six|seven|eight)/.test(css),
-    "test.8 must remove obsolete fixed-position/fixed-color sparkle slot authority");
-  assert.ok(css.includes('[data-sparkle-tone="gold"]') &&
-    css.includes('[data-sparkle-tone="blue"]') &&
-    css.includes('[data-sparkle-tone="cream"]') &&
-    css.includes('[data-sparkle-tone="ice"]'),
-    "sparkle colors must be controlled by a restrained semantic CSS palette");
-  assert.ok(resultCelebrationSource.includes('SPARKLE_SAFE_ZONES') &&
-    resultCelebrationSource.includes('SPARKLE_TONES') &&
-    resultCelebrationSource.includes('activeSparkleSlots') &&
-    resultCelebrationSource.includes('chooseSparkleClusterCount') &&
-    resultCelebrationSource.includes('sparkleStartTimers'),
-    "test.8 random sparkle authority must use safe zones, semantic tones, bounded clusters and busy-slot tracking");
-  assert.ok(!/#(?:[0-9a-fA-F]{3,8})\b|rgba?\(|hsla?\(/.test(resultCelebrationSource),
-    "sparkle JavaScript must not own raw visual color values");
+
+  assert.ok(html.includes('class="result-fireworks" data-result-firework-layer aria-hidden="true"') &&
+    /\.result-fireworks\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?pointer-events:\s*none/m.test(css),
+    "test.9 fireworks must use one pointer-inert viewport-wide decorative layer");
+  assert.equal((html.match(/data-result-firework>/g) || []).length, 3,
+    "test.9 must use exactly three reusable firework burst slots");
+  assert.equal((html.match(/data-firework-particle/g) || []).length, 24,
+    "three firework slots must expose a bounded total of 24 reusable particle nodes");
+  assert.equal((html.match(/data-firework-core/g) || []).length, 3,
+    "each reusable burst slot must own one bounded core-flash node");
+  assert.ok(!html.includes('data-result-sparkle') && !css.includes('.result-sparkle') &&
+    !resultCelebrationSource.includes('SPARKLE_SAFE_ZONES') &&
+    !resultCelebrationSource.includes('chooseSparkleClusterCount'),
+    "test.8 single-sparkle authority must be removed rather than layered beside fireworks");
+  assert.ok(css.includes('[data-firework-tone="gold"]') &&
+    css.includes('[data-firework-tone="blue"]') &&
+    css.includes('[data-firework-tone="cream"]') &&
+    css.includes('[data-firework-tone="ice"]') &&
+    css.includes('[data-firework-family="warm"]') &&
+    css.includes('[data-firework-family="cool"]') &&
+    css.includes('[data-firework-family="mixed"]'),
+    "firework colors must stay inside the restrained semantic family/tone palette owned by CSS");
+  assert.ok(resultCelebrationSource.includes('FIREWORK_FAMILIES') &&
+    resultCelebrationSource.includes('chooseFireworkParticleCount') &&
+    resultCelebrationSource.includes('chooseFireworkCenter') &&
+    resultCelebrationSource.includes('activeFireworkSlots') &&
+    resultCelebrationSource.includes('fireworkEventTimers') &&
+    resultCelebrationSource.includes('playEntryFireworks') &&
+    resultCelebrationSource.includes('scheduleAmbientFirework') &&
+    resultCelebrationSource.includes('startFireworkBurst'),
+    "test.9 must own one bounded firework-event authority with safe geometry and explicit slot ownership");
+  assert.ok(resultCelebrationSource.includes('fireworkParticleDurationMinMs: 850') &&
+    resultCelebrationSource.includes('fireworkParticleDurationMaxMs: 1350') &&
+    resultCelebrationSource.includes('ambientFireworkDelayMinMs: 1000') &&
+    resultCelebrationSource.includes('ambientFireworkDelayMaxMs: 2600'),
+    "persistent fireworks must stay inside the audited lifetime/cadence bounds");
+  assert.ok(resultCelebrationSource.includes('createFireworkGeometry') &&
+    resultCelebrationSource.includes('getBoundingClientRect') &&
+    resultCelebrationSource.includes('fireworkCandidateAttempts: 24') &&
+    !resultCelebrationSource.includes('requestAnimationFrame'),
+    "safe firework geometry must be measured on lifecycle/viewport changes only, with bounded center retries and no per-frame layout loop");
+  assert.ok(!/#(?:[0-9a-fA-F]{3,8})|rgba?\(|hsla?\(/.test(resultCelebrationSource),
+    "firework JavaScript must not own raw visual color values");
   assert.ok(/firstTurnDelayMinMs:\s*1700/.test(resultCelebrationSource) &&
     /firstTurnDelayMaxMs:\s*3500/.test(resultCelebrationSource),
-    "only the first card-turn window must be delayed so victory impact gets visual priority");
-  assert.ok(html.includes('data-result-halo') && css.includes('.result-ambient-halo'),
-    "persistent celebration must have a dedicated local halo target without affecting score readability");
-  assert.ok(resultCelebrationSource.includes('playEntrySparkles') &&
-    resultCelebrationSource.includes('playAmbientSparkleEvent') &&
+    "test.8 first-card hierarchy delay must remain unchanged while fireworks are introduced");
+  assert.ok(html.includes('data-result-halo') && css.includes('.result-ambient-halo') &&
     resultCelebrationSource.includes('scheduleAmbientHalo') &&
     resultCelebrationSource.includes('scheduleAmbientStar'),
-    "result celebration must combine a randomized entry burst with persistent stochastic sparkle/halo/star channels");
+    "existing persistent halo/divider-star channels must remain operational beside fireworks");
   assert.ok(/result-title-settle 1200ms/m.test(css) &&
     /result-score-halo 2000ms/m.test(css) &&
     /result-score-settle 1350ms/m.test(css),
@@ -4096,5 +4144,5 @@ console.log("V1.6.0 public light/dark theme lifecycle + persistence: PASS");
 console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
-console.log("V1.6.3-test.8 random sparkle celebration / motion hierarchy corrective: PASS");
+console.log("V1.6.3-test.9 persistent firework sparkle celebration: PASS");
 console.log("UI/deploy source contracts: PASS");

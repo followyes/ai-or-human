@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.6.3-test.8">
+  <link rel="stylesheet" href="./css/style.css?v=1.6.3-test.9">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -40,6 +40,42 @@
     <div class="floating-card floating-card--three"><span class="floating-card__surface"></span></div>
     <div class="floating-card floating-card--four"><span class="floating-card__surface"></span></div>
     <div class="floating-card floating-card--five"><span class="floating-card__surface"></span></div>
+  </div>
+
+  <div class="result-fireworks" data-result-firework-layer aria-hidden="true">
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
   </div>
 
   <button class="theme-switch" id="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Włącz ciemny motyw" title="Ciemny motyw">
@@ -158,17 +194,6 @@
 
     <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert data-result-state="celebration">
       <div class="result-shell">
-        <div class="result-sparkles" aria-hidden="true">
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-          <span class="result-sparkle" data-result-sparkle></span>
-        </div>
-
         <div class="result-brand">
           <p class="eyebrow result-eyebrow">AI OR HUMAN</p>
           <span class="cosmic-divider" aria-hidden="true"><span></span></span>
@@ -210,6 +235,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/game.js?v=1.6.3-test.8"></script>
+  <script type="module" src="./js/game.js?v=1.6.3-test.9"></script>
 </body>
 </html>

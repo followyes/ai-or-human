@@ -83,6 +83,10 @@ Test iteration `1.6.3-test.2` dodaje deployment/cache-coherence corrective po re
 
 `1.6.3-test.8` porządkuje celebrację bez ruszania zaakceptowanego result/replay flow ani homepage LIGHT/DARK. Osiem istniejących elementów sparkle nie ma już stałych pozycji i kolorów: działa jako bounded reusable pool. Każdy event losuje bezpieczną strefę poza centralnym korytarzem wyniku/CTA, rozmiar, obrót i jeden z czterech semantycznych tonów (`gold`, `blue`, `cream`, `ice`) kontrolowanych wyłącznie przez CSS. Ambient uruchamia zwykle 1, czasem 2, rzadko 3 sparkle w krótkim staggerze; zajęty slot nie może zostać użyty drugi raz przed zakończeniem własnej animacji. Pierwszy obrót kart został odsunięty do ok. 1,7–3,5 s, aby wejście tytułu, wyniku i sparkli miało pierwszeństwo wizualne; dalszy rytm pięciu niezależnych kart pozostaje bez zmian. Halo/star oraz theme architecture pozostają bez zmian w tym teście.
 
+`1.6.3-test.9` zastępuje ograniczony single-sparkle subsystem jednym bounded systemem mini-fajerwerków na całym widoku wyniku. Runtime ma dokładnie trzy reużywalne burst-sloty po osiem cząstek i mały core flash; jeden wybuch używa 4–8 cząstek oraz jednej spójnej rodziny kolorów warm (`gold`/`cream`), cool (`blue`/`ice`) albo rzadszej mixed. Entry odpala trzy mocniejsze, rozłożone w czasie bursty, a później fajerwerki pojawiają się losowo przez cały główny `result/celebration` mniej więcej co 1,0–2,6 s, czasem z krótkim drugim wybuchem. Maksymalnie trzy bursty mogą być aktywne jednocześnie.
+
+Centra wybuchów są losowane w pełnym widocznym viewportcie wyniku, ale poza rozszerzonymi prostokątami tytułu, wyniku, CTA i theme switcha oraz z bezpiecznym marginesem od krawędzi. Geometria jest odczytywana tylko przy wejściu do resultu i resize/orientation; nie ma RAF/canvas/WebGL. Po replay/home przestają powstawać nowe fajerwerki, ale już rozpoczęty burst zachowuje ownership swoich cząstek i kończy się naturalnie. Rotacja pięciu kart, opóźnienie pierwszego turnu z test.8, halo/star, replay flow, theme i homepage flat renderer pozostają bez zmian.
+
 
 ## `/admin` — V1.5 final baseline (runtime V1.5.9.6)
 
@@ -170,7 +174,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.8`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; homepage/setup LIGHT/DARK flat renderer is retained and the current visual QA target is randomized sparkle density/placement plus motion hierarchy.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2: Pre-Game Interaction / Copy / Theme Corrective — PASS/CLOSED after real-phone smoke. V1.6.3 TEST: Results Celebration / Replay Flow — current iteration `1.6.3-test.9`, LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA; homepage/setup LIGHT/DARK flat renderer is retained and the current visual QA target is persistent viewport-wide mini-firework readability, density and performance alongside the accepted five-card motion.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective
