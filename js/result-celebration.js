@@ -237,6 +237,10 @@ export class ResultCelebrationController {
     this.active = false;
     this.cardTimers = new Map();
     this.activeCardAnimations = new Map();
+    // A shared theme transaction may request a stable visual frame. This
+    // lease suspends future decorative events but NEVER cancels active turns.
+    this.visualHoldCount = 0;
+    this.visualIdleWaiters = new Set();
     this.activeDecorationAnimations = new Set();
     this.activeFireworkSlots = new Set();
     this.fireworkEventTimers = new Set();
@@ -262,7 +266,7 @@ export class ResultCelebrationController {
   }
 
   isSchedulingAllowed() {
-    return !this.destroyed && this.active && !this.reducedMotion && Boolean(this.canSchedule?.());
+    return !this.destroyed && this.active && this.visualHoldCount === 0 && !this.reducedMotion && Boolean(this.canSchedule?.());
   }
 
   enter() {
@@ -284,6 +288,38 @@ export class ResultCelebrationController {
     this.active = false;
     this.clearPendingSchedules();
     return true;
+  }
+
+  // Screen-agnostic visual-stability lease for the canonical theme reveal.
+  // Acquire synchronously so no new event can begin between the user's click
+  // and the async waiting period. The lease is fulfilled only after every
+  // already-started finite decoration is finished and the cards are flat.
+  acquireVisualStability() {
+    this.visualHoldCount += 1;
+    this.clearPendingSchedules();
+    const ready = new Promise((resolve) => {
+      if (this.activeCardAnimations.size === 0 && this.activeDecorationAnimations.size === 0) {
+        resolve();
+      } else {
+        this.visualIdleWaiters.add(resolve);
+      }
+    });
+    let released = false;
+    return {
+      ready,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.visualHoldCount = Math.max(0, this.visualHoldCount - 1);
+        if (this.isSchedulingAllowed()) this.armPersistentSchedules();
+      }
+    };
+  }
+
+  notifyVisualIdle() {
+    if (this.activeCardAnimations.size || this.activeDecorationAnimations.size) return;
+    for (const resolve of this.visualIdleWaiters) resolve();
+    this.visualIdleWaiters.clear();
   }
 
   destroy() {
@@ -320,6 +356,7 @@ export class ResultCelebrationController {
     animationFinished(animation).finally(() => {
       this.activeDecorationAnimations.delete(animation);
       onFinish?.();
+      this.notifyVisualIdle();
     });
     return animation;
   }
@@ -382,7 +419,8 @@ export class ResultCelebrationController {
     const duration = randomInteger(this.random, this.options.oneTurnDurationMinMs, this.options.oneTurnDurationMaxMs)
       + (turns - 1) * randomInteger(this.random, this.options.extraTurnDurationMinMs, this.options.extraTurnDurationMaxMs);
     const turnTheme = resolveSurfaceTheme(surface);
-    surface.dataset.resultTurnTheme = turnTheme;
+    surface.dataset.cardTurning = "true";
+    surface.dataset.turnArtwork = turnTheme;
 
     let animation;
     try {
@@ -391,7 +429,8 @@ export class ResultCelebrationController {
         { duration, easing: "cubic-bezier(.45, .05, .24, 1)", fill: "none" }
       );
     } catch {
-      delete surface.dataset.resultTurnTheme;
+      delete surface.dataset.cardTurning;
+      delete surface.dataset.turnArtwork;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
       this.scheduleCard(surface, index, nextDelay);
       return false;
@@ -402,7 +441,9 @@ export class ResultCelebrationController {
     animationFinished(animation).finally(() => {
       if (this.activeCardAnimations.get(surface) === animation) this.activeCardAnimations.delete(surface);
       delete surface.dataset.resultTurnCard;
-      delete surface.dataset.resultTurnTheme;
+      delete surface.dataset.cardTurning;
+      delete surface.dataset.turnArtwork;
+      this.notifyVisualIdle();
       if (!this.isSchedulingAllowed()) return;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
       this.scheduleCard(surface, index, nextDelay);

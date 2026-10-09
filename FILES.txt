@@ -1,28 +1,28 @@
-AI OR HUMAN — V1.6.4 GAMEPLAY VISUAL COHERENCE + FEEDBACK EFFECTS — UPDATED_FILES
+AI OR HUMAN — V1.6.4.3 UNIFIED THEME / CARD RENDERER — UPDATED_FILES
 
-Exact REPO delta versus accepted V1.6.3-test.11 baseline: 8 files (8 modified, 0 added, 0 removed).
+Exact REPO delta versus V1.6.4.2: 8 files (8 modified, 0 added, 0 removed).
 
 MODIFIED
 README.md
 css/style.css
 index.html
-js/answer-feedback.js
 js/game.js
-js/swipe-controller.js
+js/result-celebration.js
+js/theme-controller.js
 package.json
 scripts/test-project.js
 
-Scope:
-- align the gameplay HUD, question hierarchy, image frame, HUMAN/AI controls and mobile swipe legend with the accepted V1.6 visual language;
-- keep gameplay mechanics, scoring, content/session selection, preload/reveal, throw/handoff and result flow unchanged;
-- add a dedicated short-portrait gameplay profile with height-aware card-stage sizing and >=44 px interaction targets;
-- expose SwipeController `decisionProgress` normalized to the existing real decision threshold and drive hint commitment from that signal without changing the threshold;
-- strengthen `DOBRZE / ŹLE` game-feel with dedicated burst/ring/pill/icon finite animations while preserving green/red correctness semantics and parallel feedback+throw lifecycle;
-- keep HUMAN warm/gold and AI cool/blue as equal category identities, never correctness semantics;
-- keep V1.6.3 result celebration/replay and homepage/setup/result theme behavior unchanged;
-- advance public cache version to `1.6.4`;
-- no Supabase, SQL, Storage, Admin, classification or V1.7 changes.
+Implementation:
+- restore one neutral flat card surface across HOME, SETUP and idle RESULT;
+- temporary 3D two-face rendering follows each active finite rotation, surviving result -> HOME until full turn completion;
+- pin only a CSS semantic inverse-theme artwork value for the duration of that single turn;
+- serialize one universal circular theme transition and wait for natural completion of active finite celebration motion before the root snapshot; rapid clicks ignored while busy;
+- remove obsolete permanent result-only 3D and loose data-result-turn-theme authority;
+- replace stale source tests with state/ordering regression tests, keep versioned CSS/JS URLs.
 
-Status: LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA. V1.6.4 is not PASS/CLOSED until real-phone gameplay smoke is accepted.
+Constraints:
+No Supabase/Admin/SQL/V1.7/session classification/gameplay/swipe/feedback/result flow changes.
+No new card art, no distinct result theme transition effect.
 
-Gate: every listed file must be byte-identical to the corresponding REPO file.
+Gates:
+Local npm test/build + inline Chromium rendering PASS; iOS Safari real-phone smoke pending.

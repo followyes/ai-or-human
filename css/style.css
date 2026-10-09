@@ -1330,16 +1330,16 @@ body[data-public-view="result"] .game-atmosphere {
   will-change: transform;
 }
 
-/* Full two-sided 3D card faces belong to result celebration only. Homepage and
-   setup stay on the accepted flat renderer so LIGHT/DARK snapshots never
-   composite duplicate/back-face artwork. */
-body[data-public-view="result"] .floating-card__surface {
+/* One neutral, flat card renderer serves homepage, setup and result. 3D is
+   acquired by an individual card only for an actual finite full turn and
+   survives leaving result until that turn has finished. */
+.floating-card__surface[data-card-turning="true"] {
   background-image: none;
   transform-style: preserve-3d;
 }
 
-body[data-public-view="result"] .floating-card__surface::before,
-body[data-public-view="result"] .floating-card__surface::after {
+.floating-card__surface[data-card-turning="true"]::before,
+.floating-card__surface[data-card-turning="true"]::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1352,24 +1352,23 @@ body[data-public-view="result"] .floating-card__surface::after {
   -webkit-backface-visibility: hidden;
 }
 
-/* A full result turn owns the artwork it started with. The global theme remains
-   one canonical authority; an in-flight 360° turn simply defers adopting a new
-   theme image until it returns to its neutral face. */
-body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="light"]::before,
-body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="light"]::after {
+/* Capture only the theme identity of an ongoing full turn. Asset URLs remain
+   owned exclusively by the existing inverse-theme CSS tokens. */
+.floating-card__surface[data-card-turning="true"][data-turn-artwork="light"]::before,
+.floating-card__surface[data-card-turning="true"][data-turn-artwork="light"]::after {
   background-image: var(--floating-card-image-light-ui);
 }
 
-body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="dark"]::before,
-body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="dark"]::after {
+.floating-card__surface[data-card-turning="true"][data-turn-artwork="dark"]::before,
+.floating-card__surface[data-card-turning="true"][data-turn-artwork="dark"]::after {
   background-image: var(--floating-card-image-dark-ui);
 }
 
-body[data-public-view="result"] .floating-card__surface::before {
+.floating-card__surface[data-card-turning="true"]::before {
   transform: rotateY(0deg) translateZ(.1px);
 }
 
-body[data-public-view="result"] .floating-card__surface::after {
+.floating-card__surface[data-card-turning="true"]::after {
   transform: rotateY(180deg) translateZ(.1px);
 }
 

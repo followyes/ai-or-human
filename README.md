@@ -2,6 +2,14 @@
 
 Webowa gra, w której gracz zgaduje, czy obraz został wygenerowany przez AI, czy stworzony przez człowieka.
 
+## V1.6.4.3 — Unified Theme & Card Renderer Corrective (QA pending)
+
+Zamknięte wizualnie V1.6.3 zachowuje pięć losowych obrotów kart i celebrację; V1.6.4.3 naprawia pozostały konflikt LIGHT/DARK z rendererem. **Każda nieruchoma karta** na HOME/SETUP/RESULT używa teraz jednej płaskiej powierzchni i jednego CSS `--floating-card-image` z odwrotnym rewersem LIGHT UI → DARK, DARK UI → LIGHT. Tylko konkretna aktywnie obracana karta przechodzi do tymczasowego dwustronnego `preserve-3d`. Kończy pełny obrót bez resetu także po opuszczeniu resultu; dopiero po neutralnym 360° oddaje renderer do jednej płaskiej powierzchni i aktualnego motywu.
+
+Jedna wspólna transakcja motywu obsługuje HOME, SETUP i RESULT. Jeśli animowane karty/dekoracje są aktywne, przed identycznym circular root reveal przejście czeka na ich naturalne zakończenie, nie pauzuje ich i nie uruchamia nowych. W tym czasie przełącznik jest zajęty, a kolejne szybkie kliknięcia są ignorowane. Po zakończeniu reveal losowe efekty wznawiają planowanie tylko jeśli nadal jesteśmy w celebration. Ta polityka może opóźnić zmianę motywu o czas trwającego obrotu; jest celowa, aby nie pokazywać niezgodnych klatek snapshotu i aktywnego 3D. Nie tworzy innego efektu zmiany motywu na result.
+
+Lokalne testy Node i ograniczony test inline Chromium sprawdzają sekwencję idle/result → obrót → toggle → HOME → neutralna karta → circular reveal. **Nie są równoważne real-phone Safari QA.** Status: LOCAL QA PASS / READY FOR REAL-PHONE VISUAL SMOKE, nie PASS/CLOSED. Gameplay, feedback i Supabase/Admin nie zostały zmienione.
+
 ## Architektura contentu
 
 Supabase jest jedynym produkcyjnym źródłem obrazów.

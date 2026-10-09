@@ -2780,6 +2780,7 @@ async function testPublicThemeController() {
     blurCalls: 0,
     blur() { this.blurCalls += 1; },
     setAttribute(name, value) { attributes.set(name, value); },
+    removeAttribute(name) { attributes.delete(name); },
     addEventListener(type, handler) { if (type === "click") clickHandler = handler; },
     getBoundingClientRect() { return { left: 80, top: 10, width: 40, height: 30 }; }
   };
@@ -2815,8 +2816,7 @@ async function testPublicThemeController() {
   assert.equal(typeof clickHandler, "function");
 
   clickHandler();
-  await Promise.resolve();
-  await Promise.resolve();
+  await controller.whenSettled();
 
   assert.equal(controller.theme, "dark");
   assert.equal(root.dataset.theme, "dark");
@@ -2838,6 +2838,65 @@ async function testPublicThemeController() {
   assert.equal(attributes.get("aria-hidden"), "false");
   setThemeSwitchVisible(button, false);
   assert.equal(button.blurCalls > 0, true);
+
+  // A root circular reveal must never start while any card is still in a
+  // temporary 3D turn. Rapid taps are ignored until the single transaction
+  // commits and all required visual state is stable.
+  const stableAttrs = new Map();
+  const stableButton = {
+    hidden: false,
+    disabled: false,
+    title: "",
+    setAttribute(key, value) { stableAttrs.set(key, value); },
+    removeAttribute(key) { stableAttrs.delete(key); },
+    addEventListener() {},
+    getBoundingClientRect() { return { left: 40, top: 20, width: 44, height: 44 }; }
+  };
+  const stableRoot = {
+    dataset: { theme: "light" },
+    classList: new FakeClassList(),
+    style: { colorScheme: "", setProperty() {} },
+    offsetWidth: 100
+  };
+  const readyGate = Promise.withResolvers();
+  const transitionGate = Promise.withResolvers();
+  let leaseCount = 0;
+  let releaseCount = 0;
+  let stableVtCalls = 0;
+  const stableTheme = initializeThemeController({
+    documentRef: {
+      documentElement: stableRoot,
+      querySelector(selector) { return selector === "#theme-switch" ? stableButton : null; },
+      startViewTransition(callback) {
+        stableVtCalls += 1;
+        callback();
+        return { finished: transitionGate.promise };
+      }
+    },
+    windowRef: { innerWidth: 390, innerHeight: 844, matchMedia: () => ({ matches: false }) },
+    storage,
+    acquireVisualStability() {
+      leaseCount += 1;
+      return { ready: readyGate.promise, release() { releaseCount += 1; } };
+    }
+  });
+  const pendingToggle = stableTheme.toggle();
+  assert.equal(stableTheme.toggle(), pendingToggle, "rapid taps must reuse one in-flight theme transaction");
+  assert.equal(stableVtCalls, 0, "no root snapshot before active 3D turns are finished");
+  assert.equal(stableRoot.dataset.theme, "light", "theme artwork must not change mid-turn");
+  assert.equal(stableButton.disabled, true);
+  readyGate.resolve();
+  await Promise.resolve();
+  assert.equal(stableVtCalls, 1, "canonical circular reveal starts after the stable-frame barrier");
+  assert.equal(stableRoot.dataset.theme, "dark");
+  assert.equal(stableTheme.toggle(), pendingToggle, "new taps while revealing must not start another root snapshot");
+  transitionGate.resolve();
+  await pendingToggle;
+  assert.equal(releaseCount, 1, "stability lease must be released exactly once");
+  assert.equal(leaseCount, 1);
+  assert.equal(stableButton.disabled, false);
+  assert.equal(stableAttrs.has("aria-busy"), false);
+  assert.equal(stableRoot.classList.contains("theme-view-transition"), false);
 
   const directRoot = { dataset: {}, style: {} };
   applyTheme("light", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
@@ -2952,10 +3011,18 @@ async function testResultCelebrationLifecycle() {
   for (const id of initialTimerIds) windowRef.run(id);
   assert.equal(cards.every((card) => card.animations.length === 1), true,
     "all five cards must be eligible to rotate independently");
-  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === "light"), true,
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
     "every active result turn must snapshot the current card-art theme before rotation starts");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true"), true,
+    "only actively turning cards own temporary 3D faces");
+  const visualLease = controller.acquireVisualStability();
+  assert.equal(windowRef.timers.size, 0, "stable-frame barrier clears future card turn timers");
+  let visualReady = false;
+  visualLease.ready.then(() => { visualReady = true; });
+  await Promise.resolve();
+  assert.equal(visualReady, false, "the barrier cannot resolve while a card is mid-turn");
   for (const card of cards) card.ownerDocument.documentElement.dataset.theme = "dark";
-  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === "light"), true,
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
     "a global LIGHT/DARK change must not replace artwork in the middle of an already-started full turn");
 
   for (const card of cards) {
@@ -2968,15 +3035,19 @@ async function testResultCelebrationLifecycle() {
 
   eligible = false;
   controller.leave();
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true"), true,
+    "leaving result mid-turn must preserve every 3D back face until its animation completes");
   assert.equal(windowRef.timers.size, 0,
     "leaving result celebration must clear only not-yet-started schedules");
   assert.equal(cards.every((card) => card.animations.every((animation) => !animation.cancelled)), true,
     "leaving result celebration must not cancel active turns");
 
   for (const card of cards) card.animations[0].finish();
+  await visualLease.ready;
+  visualLease.release();
   await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === undefined), true,
+  assert.equal(visualReady, true, "all already-started turns must settle before the root reveal is permitted");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === undefined && card.dataset.turnArtwork === undefined), true,
     "a completed full turn must release its pinned artwork so the canonical current theme becomes visible");
   assert.equal(windowRef.timers.size, 0,
     "completed turns must not reschedule after the celebration window has closed");
@@ -3204,8 +3275,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "theme change must keep a non-View-Transition fallback");
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'),
     "theme motion must respect reduced-motion preference");
-  assert.ok(game.includes('themeController = initializeThemeController();'),
-    "public game bootstrap must use the one canonical theme controller without result-specific options");
+  assert.ok(game.includes('themeController = initializeThemeController({') &&
+    game.includes('acquireVisualStability: () => resultCelebration?.acquireVisualStability()'),
+    "public game must coordinate visual stability without a result-specific theme transition implementation");
   assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('startViewTransition'),
     "theme controller must own durable preference and progressive transition orchestration");
   assert.ok(themeControllerSource.includes('setThemeSwitchVisible') && game.includes('themeController?.setVisible'),
@@ -3345,9 +3417,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.4.2"') &&
-    html.includes('src="./js/game.js?v=1.6.4.2"') &&
-    game.includes('./result-celebration.js?v=1.6.4.2'),
+  assert.ok(html.includes('href="./css/style.css?v=1.6.4.3"') &&
+    html.includes('src="./js/game.js?v=1.6.4.3"') &&
+    game.includes('./result-celebration.js?v=1.6.4.3'),
     "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
@@ -3380,9 +3452,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     /result-score-stage::before[\s\S]*?result-score-halo/m.test(css) &&
     /body\[data-public-view="result"\] \.result-title[\s\S]*?result-title-settle/m.test(css),
     "result celebration must preserve the accepted orbit authority and finite title/score/halo entrance emphasis");
-  const resultCardSurfaceRule = css.match(/body\[data-public-view="result"\] \.floating-card__surface\s*\{([\s\S]*?)\}/m)?.[1] || "";
-  assert.ok(resultCardSurfaceRule && !resultCardSurfaceRule.includes("animation:"),
-    "result cards must not use one synchronized infinite CSS turn loop");
+  assert.ok(!/\.floating-card__surface\s*\{[^}]*animation:/m.test(css),
+    "shared card surface must not use one synchronized infinite CSS turn loop");
   assert.ok(resultCelebrationSource.includes('class ResultCelebrationController') &&
     resultCelebrationSource.includes('scheduleAllCards') &&
     resultCelebrationSource.includes('activeCardAnimations') &&
@@ -3403,14 +3474,22 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(flatCardSurfaceRule.includes("background-image: var(--floating-card-image)") &&
     !flatCardSurfaceRule.includes("transform-style: preserve-3d"),
     "homepage/setup card authority must stay flat with one direct theme-dependent background image");
-  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface\s*\{[\s\S]*?background-image:\s*none;[\s\S]*?transform-style:\s*preserve-3d/m.test(css),
-    "only result view may promote the shared card surface into a preserve-3d turn container");
-  assert.ok(/body\[data-public-view="result"\] \.floating-card__surface::before,[\s\S]*?body\[data-public-view="result"\] \.floating-card__surface::after[\s\S]*?backface-visibility:\s*hidden/m.test(css) &&
-    /body\[data-public-view="result"\] \.floating-card__surface::after[\s\S]*?rotateY\(180deg\)/m.test(css),
-    "result-only full card turns must keep two faces of the existing card-back artwork");
-  assert.ok(!/(^|\n)\.floating-card__surface::before,/m.test(css) &&
-    !/body\[data-public-view="mode-(?:select|setup)"\] \.floating-card__surface[\s\S]{0,160}?preserve-3d/m.test(css),
-    "result 3D face authority must not leak back into homepage or mode setup");
+  assert.ok(/\.floating-card__surface\[data-card-turning="true"\]\s*\{[\s\S]*?background-image:\s*none;[\s\S]*?transform-style:\s*preserve-3d/m.test(css),
+    "only an actively turning card may acquire temporary preserve-3d faces");
+  assert.ok(css.includes('.floating-card__surface[data-card-turning="true"]::before,') &&
+    css.includes('.floating-card__surface[data-card-turning="true"]::after') &&
+    /\.floating-card__surface\[data-card-turning="true"\]::after[\s\S]*?rotateY\(180deg\)/m.test(css),
+    "per-card 3D back face must survive even after leaving result view");
+  assert.ok(!/body\[data-public-view="result"\] \.floating-card__surface/m.test(css),
+    "idle result must use the same flat card renderer as homepage and setup");
+  assert.ok(!css.includes('data-result-turn-theme') &&
+    !resultCelebrationSource.includes('dataset.resultTurnTheme') &&
+    !css.includes('body[data-public-view="result"] .floating-card__surface::after'),
+    "old view-bound 3D renderer and loose artwork pin must be removed, not overridden");
+  assert.ok(themeControllerSource.includes('if (transitioning) return activeTransition') &&
+    themeControllerSource.includes('await lease.ready') &&
+    themeControllerSource.includes('lease?.release?.()'),
+    "one shared serialized theme transaction must wait for the renderer to return to its flat state");
 
   assert.ok(html.includes('class="result-fireworks" data-result-firework-layer aria-hidden="true"') &&
     /\.result-fireworks\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?pointer-events:\s*none/m.test(css),
@@ -3478,7 +3557,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !themeControllerSource.includes('afterChange') &&
     !themeControllerSource.includes('shouldUseViewTransition') &&
     !themeControllerSource.includes('transitionMode') &&
-    game.includes('themeController = initializeThemeController();'),
+    game.includes('themeController = initializeThemeController({') &&
+    game.includes('resultCelebration?.acquireVisualStability()'),
     "homepage theme controller must be the one canonical LIGHT/DARK transition authority for every public view");
   assert.ok(!game.includes('suspendPublicMotionForTheme') &&
     !game.includes('resumePublicMotionAfterTheme') &&
@@ -3489,15 +3569,17 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     /:root\.theme-view-transition::view-transition-new\(root\)[\s\S]*?theme-reveal 560ms/m.test(css),
     "the accepted homepage circular root reveal must remain the universal supported theme transition");
   assert.ok(resultCelebrationSource.includes('resolveSurfaceTheme') &&
-    resultCelebrationSource.includes('surface.dataset.resultTurnTheme = turnTheme') &&
-    resultCelebrationSource.includes('delete surface.dataset.resultTurnTheme'),
-    "an active result card turn must pin only its starting artwork until the full turn returns to neutral");
-  assert.ok(/data-result-turn-theme="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
-    /data-result-turn-theme="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
-    "pinned result turns must resolve through the same semantic inverse-theme card-art variables as homepage");
+    resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
+    resultCelebrationSource.includes('surface.dataset.turnArtwork = turnTheme') &&
+    resultCelebrationSource.includes('delete surface.dataset.turnArtwork') &&
+    resultCelebrationSource.includes('this.notifyVisualIdle()'),
+    "a turn owns a temporary card renderer and its starting artwork through completion");
+  assert.ok(/data-turn-artwork="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
+    /data-turn-artwork="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
+    "temporary turn artwork must use the same CSS inverse theme authority as flat cards");
   assert.ok(!themeControllerSource.includes('result') &&
     !themeControllerSource.includes('floating-card') &&
-    !themeControllerSource.includes('resultTurnTheme'),
+    !themeControllerSource.includes('turnArtwork'),
     "ThemeController must stay screen/card agnostic; result turn stability cannot become a second theme authority");
   assert.ok(/\.floating-card\s*\{[\s\S]*?animation-play-state:\s*paused/m.test(css) &&
     /body\[data-public-view="mode-select"\] \.floating-card,[\s\S]*?body\[data-public-view="result"\] \.floating-card[\s\S]*?animation-play-state:\s*running/m.test(css),
@@ -4088,5 +4170,5 @@ console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
-console.log("V1.6.4.2 gameplay simplification + unclipped feedback: PASS");
+console.log("V1.6.4.3 unified card renderer + serialized theme transaction: PASS");
 console.log("UI/deploy source contracts: PASS");

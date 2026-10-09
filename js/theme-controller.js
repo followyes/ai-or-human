@@ -80,7 +80,8 @@ function prefersReducedMotion(windowRef) {
 export function initializeThemeController({
   documentRef = globalThis.document,
   windowRef = globalThis.window,
-  storage = globalThis.localStorage
+  storage = globalThis.localStorage,
+  acquireVisualStability = null
 } = {}) {
   if (!documentRef?.documentElement) return null;
 
@@ -100,6 +101,7 @@ export function initializeThemeController({
   if (!button) return Object.freeze({ get theme() { return currentTheme; }, setVisible() {}, whenSettled() { return Promise.resolve(); } });
 
   let activeTransition = Promise.resolve();
+  let transitioning = false;
 
   const commitTheme = (nextTheme) => {
     currentTheme = applyTheme(nextTheme, {
@@ -111,77 +113,90 @@ export function initializeThemeController({
     });
   };
 
-  const applyFallback = (nextTheme) => {
+  const applyFallback = async (nextTheme) => {
     root.classList.add("theme-fallback-transition");
-    // Make the transition class authoritative before changing token values.
-    void root.offsetWidth;
-    commitTheme(nextTheme);
-    activeTransition = new Promise((resolve) => {
-      const finish = () => {
-        root.classList.remove("theme-fallback-transition");
-        resolve();
-      };
-      if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(finish, 460);
-      else finish();
-    });
-    return activeTransition;
+    try {
+      // Make the class authoritative before changing the tokens.
+      void root.offsetWidth;
+      commitTheme(nextTheme);
+      await new Promise((resolve) => {
+        if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(resolve, 460);
+        else resolve();
+      });
+    } finally {
+      root.classList.remove("theme-fallback-transition");
+    }
   };
 
+  // Policy for rapid taps: ignore additional intents while a theme change is
+  // pending/running. Never initiate two root View Transitions concurrently.
   const toggle = () => {
-    const nextTheme = getNextTheme(currentTheme);
-    const reducedMotion = prefersReducedMotion(windowRef);
-    const canViewTransition = typeof documentRef.startViewTransition === "function";
+    if (transitioning) return activeTransition;
+    transitioning = true;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
 
-    if (reducedMotion || !canViewTransition) {
-      if (reducedMotion) {
-        commitTheme(nextTheme);
-        activeTransition = Promise.resolve();
-        return activeTransition;
+    activeTransition = (async () => {
+      let lease = null;
+      try {
+        // A visual-stability lease is generic: ThemeController does not know
+        // which view or which type of decoration is currently running.
+        lease = acquireVisualStability?.() ?? null;
+        if (lease?.ready) await lease.ready;
+
+        const nextTheme = getNextTheme(currentTheme);
+        const reducedMotion = prefersReducedMotion(windowRef);
+        const canViewTransition = typeof documentRef.startViewTransition === "function";
+        if (reducedMotion) {
+          commitTheme(nextTheme);
+          return;
+        }
+        if (!canViewTransition) {
+          await applyFallback(nextTheme);
+          return;
+        }
+
+        const rect = button.getBoundingClientRect();
+        const originX = rect.left + rect.width / 2;
+        const originY = rect.top + rect.height / 2;
+        const radius = calculateThemeRevealRadius(
+          originX,
+          originY,
+          windowRef?.innerWidth ?? 0,
+          windowRef?.innerHeight ?? 0
+        );
+        root.style.setProperty("--theme-origin-x", `${originX}px`);
+        root.style.setProperty("--theme-origin-y", `${originY}px`);
+        root.style.setProperty("--theme-reveal-radius", `${radius}px`);
+        root.classList.add("theme-view-transition");
+
+        try {
+          const transition = documentRef.startViewTransition(() => commitTheme(nextTheme));
+          await Promise.resolve(transition?.finished);
+        } catch {
+          if (currentTheme !== nextTheme) await applyFallback(nextTheme);
+        } finally {
+          root.classList.remove("theme-view-transition");
+        }
+      } finally {
+        lease?.release?.();
+        transitioning = false;
+        button.disabled = Boolean(button.hidden);
+        button.removeAttribute("aria-busy");
       }
-      return applyFallback(nextTheme);
-    }
-
-    const rect = button.getBoundingClientRect();
-    const originX = rect.left + rect.width / 2;
-    const originY = rect.top + rect.height / 2;
-    const radius = calculateThemeRevealRadius(
-      originX,
-      originY,
-      windowRef?.innerWidth ?? 0,
-      windowRef?.innerHeight ?? 0
-    );
-
-    root.style.setProperty("--theme-origin-x", `${originX}px`);
-    root.style.setProperty("--theme-origin-y", `${originY}px`);
-    root.style.setProperty("--theme-reveal-radius", `${radius}px`);
-    root.classList.add("theme-view-transition");
-
-    let transition;
-    try {
-      transition = documentRef.startViewTransition(() => commitTheme(nextTheme));
-    } catch {
-      root.classList.remove("theme-view-transition");
-      return applyFallback(nextTheme);
-    }
-
-    activeTransition = Promise.resolve(transition?.finished)
-      .catch(() => {})
-      .finally(() => root.classList.remove("theme-view-transition"));
+    })();
     return activeTransition;
   };
 
   button.addEventListener("click", toggle);
 
   return Object.freeze({
-    get theme() {
-      return currentTheme;
-    },
+    get theme() { return currentTheme; },
     toggle,
     setVisible(visible) {
       setThemeSwitchVisible(button, visible);
+      if (transitioning) button.disabled = true;
     },
-    whenSettled() {
-      return activeTransition;
-    }
+    whenSettled() { return activeTransition; }
   });
 }
