@@ -54,7 +54,9 @@
   --landing-wash: rgba(238, 242, 243, 0.86);
   --orbit-line: rgba(216, 149, 17, 0.30);
   --orbit-line-blue: rgba(20, 91, 150, 0.22);
-  --floating-card-image: url("../assets/game/card-back-dark.webp");
+  --floating-card-image-light-ui: url("../assets/game/card-back-dark.webp");
+  --floating-card-image-dark-ui: url("../assets/game/card-back-light.webp");
+  --floating-card-image: var(--floating-card-image-light-ui);
   --pregame-cta-bg: #10263b;
   --pregame-cta-text: #fffaf0;
   --pregame-cta-border: rgba(216, 149, 17, 0.48);
@@ -110,7 +112,7 @@
   --landing-wash: rgba(12, 17, 22, 0.82);
   --orbit-line: rgba(243, 189, 63, 0.28);
   --orbit-line-blue: rgba(109, 174, 229, 0.24);
-  --floating-card-image: url("../assets/game/card-back-light.webp");
+  --floating-card-image: var(--floating-card-image-dark-ui);
   --pregame-cta-bg: #f3bd3f;
   --pregame-cta-text: #10151a;
   --pregame-cta-border: rgba(255, 214, 108, 0.58);
@@ -524,70 +526,64 @@ h2 {
 
 .game-header {
   width: min(100%, 520px);
-  margin: 0 auto 16px;
+  margin: 0 auto 12px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
+/* Gameplay prioritizes the image and the decision. The HUD is information,
+   not two more decorative cards. */
 .game-stat {
-  min-height: 54px;
-  padding: 8px 13px 9px;
-  display: grid;
-  align-content: center;
-  gap: 2px;
-  border: 1px solid var(--landing-panel-border);
-  border-radius: 18px;
-  background: var(--landing-panel);
-  box-shadow:
-    0 10px 28px color-mix(in srgb, var(--accent-gold) 8%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 78%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  min-height: 38px;
+  padding: 3px 2px 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: none;
+  border: 0;
+  box-shadow: none;
 }
 
 .game-stat .meta-label {
-  color: color-mix(in srgb, var(--muted) 88%, var(--landing-title));
-  font-size: .67rem;
-  letter-spacing: .15em;
+  color: var(--muted);
+  font-size: .68rem;
+  letter-spacing: .11em;
 }
 
 .game-stat strong {
-  color: var(--landing-title);
-  font-size: 1.08rem;
-  font-weight: 850;
-  line-height: 1.05;
+  color: var(--text);
+  font-size: 1.04rem;
+  font-weight: 750;
+  line-height: 1.2;
   letter-spacing: -.025em;
-}
-
-.game-stat-progress {
-  border-color: color-mix(in srgb, var(--accent-gold) 35%, var(--landing-panel-border));
+  font-variant-numeric: tabular-nums;
 }
 
 .game-stat-score {
-  border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--landing-panel-border));
-  text-align: right;
+  justify-content: flex-end;
 }
 
 .question-block {
   width: min(100%, 540px);
-  margin: 0 auto 16px;
+  margin: 0 auto 14px;
   text-align: center;
 }
 
 .question-block .eyebrow {
-  margin-bottom: 7px;
-  color: color-mix(in srgb, var(--accent-blue) 68%, var(--muted));
-  letter-spacing: .20em;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: .67rem;
+  letter-spacing: .16em;
 }
 
 .question-block h2 {
   color: var(--landing-title);
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(1.62rem, 5.4vw, 2.12rem);
+  font-size: clamp(1.48rem, 5vw, 1.88rem);
   font-weight: 700;
-  line-height: 1.02;
-  letter-spacing: -.038em;
+  line-height: 1.09;
+  letter-spacing: -.03em;
   text-wrap: balance;
 }
 
@@ -601,17 +597,11 @@ h2 {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 5;
-  padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--accent-gold) 24%, var(--border));
-  border-radius: 28px;
-  background:
-    linear-gradient(145deg,
-      color-mix(in srgb, var(--landing-panel) 92%, var(--accent-gold-soft) 8%),
-      color-mix(in srgb, var(--landing-panel) 94%, var(--accent-blue-soft) 6%));
-  box-shadow:
-    0 24px 58px color-mix(in srgb, var(--text) 14%, transparent),
-    0 7px 20px color-mix(in srgb, var(--accent-blue) 8%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 9%, transparent);
   overflow: hidden;
   transform: translate3d(0, 0, 0) rotate(0deg);
   transform-origin: 50% 90%;
@@ -624,10 +614,6 @@ h2 {
 
 .image-card.is-dragging {
   cursor: grabbing;
-  box-shadow:
-    0 28px 66px color-mix(in srgb, var(--text) 17%, transparent),
-    0 9px 24px color-mix(in srgb, var(--accent-blue) 11%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 82%, transparent);
 }
 
 .image-frame {
@@ -636,7 +622,7 @@ h2 {
   display: grid;
   place-items: center;
   overflow: hidden;
-  border-radius: 23px;
+  border-radius: 15px;
   background: var(--surface-soft);
 }
 
@@ -659,55 +645,63 @@ h2 {
   --swipe-commit: 0;
   position: absolute;
   z-index: 4;
-  top: 24px;
-  min-width: 104px;
-  padding: 9px 14px;
+  top: 20px;
+  min-width: 94px;
+  padding: 7px 12px;
   border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: .76rem;
-  font-weight: 850;
-  letter-spacing: .095em;
+  border-radius: 9px;
+  font-size: .73rem;
+  font-weight: 800;
+  letter-spacing: .075em;
   text-align: center;
   opacity: 0;
   pointer-events: none;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   will-change: opacity, transform;
 }
 
 .choice-hint-human {
-  left: 22px;
+  left: 18px;
   color: var(--accent-gold-bright);
-  background: color-mix(in srgb, var(--bg) 80%, var(--accent-gold) 20%);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent-gold) 20%, transparent);
+  background: color-mix(in srgb, var(--bg) 91%, var(--accent-gold) 9%);
   transform: rotate(-7deg) scale(calc(.90 + var(--swipe-commit) * .10));
 }
 
 .choice-hint-ai {
-  right: 22px;
+  right: 18px;
   color: color-mix(in srgb, var(--accent-blue) 88%, var(--landing-title) 12%);
-  background: color-mix(in srgb, var(--bg) 80%, var(--accent-blue) 20%);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent-blue) 20%, transparent);
+  background: color-mix(in srgb, var(--bg) 91%, var(--accent-blue) 9%);
   transform: rotate(7deg) scale(calc(.90 + var(--swipe-commit) * .10));
 }
 
+/* The moving photo is clipped, but correctness feedback is a stationary
+   sibling and its outward ring/burst must not be cropped to the photo rect. */
 .answer-feedback {
   position: absolute;
   z-index: 8;
   inset: 0;
   display: grid;
   place-items: center;
-  overflow: hidden;
-  border-radius: 24px;
+  overflow: visible;
   opacity: 0;
   pointer-events: none;
   transform: translate3d(0, 0, 0);
   will-change: transform, opacity;
 }
 
+/* Only the local image wash clips to the image silhouette. */
+.answer-feedback__wash {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .answer-feedback__burst,
 .answer-feedback__ring {
   position: absolute;
+  z-index: 1;
   left: 50%;
   top: 50%;
   aspect-ratio: 1;
@@ -717,62 +711,63 @@ h2 {
   will-change: transform, opacity;
 }
 
+/* At narrow phone widths the ring's full trajectory fits the viewport.
+   The diffuse burst fades before its outer radius reaches the screen edge. */
 .answer-feedback__burst {
-  width: min(108%, 470px);
+  width: min(112%, 470px);
   background: radial-gradient(circle,
-    color-mix(in srgb, currentColor 25%, transparent) 0%,
-    color-mix(in srgb, currentColor 14%, transparent) 28%,
-    transparent 68%);
+    color-mix(in srgb, currentColor 28%, transparent) 0%,
+    color-mix(in srgb, currentColor 14%, transparent) 30%,
+    color-mix(in srgb, currentColor 5%, transparent) 49%,
+    transparent 66%);
 }
 
 .answer-feedback__ring {
-  width: min(78%, 350px);
-  border: 7px solid currentColor;
-  box-shadow: 0 0 38px color-mix(in srgb, currentColor 24%, transparent);
+  width: min(86%, 350px, calc((100vw - 28px) / 1.48));
+  border: 5px solid currentColor;
+  box-shadow: 0 0 18px color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .answer-feedback__pill {
   position: relative;
   z-index: 2;
-  min-width: 166px;
-  min-height: 58px;
-  padding: 12px 21px;
+  min-width: 140px;
+  min-height: 52px;
+  padding: 10px 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--feedback-on-color) 44%, transparent);
-  border-radius: 999px;
+  gap: 8px;
+  border-radius: 13px;
   color: var(--feedback-on-color);
-  box-shadow:
-    0 16px 38px color-mix(in srgb, var(--text) 25%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--feedback-on-color) 40%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--text) 15%, transparent);
   will-change: transform, opacity;
 }
 
 .answer-feedback__icon {
-  width: 31px;
-  height: 31px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   border: 2px solid var(--feedback-outline);
   border-radius: 50%;
-  font-size: 1.24rem;
+  font-size: 1.05rem;
   line-height: 1;
-  font-weight: 900;
+  font-weight: 850;
   will-change: transform;
 }
 
 .answer-feedback__label {
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: .08em;
+  font-size: .95rem;
+  font-weight: 850;
+  letter-spacing: .07em;
 }
 
 .answer-feedback.is-correct {
   color: var(--correct);
+}
+
+.answer-feedback.is-correct .answer-feedback__wash {
   background: radial-gradient(circle at center,
     color-mix(in srgb, var(--correct) 22%, transparent) 0%,
     var(--correct-soft) 32%,
@@ -781,14 +776,14 @@ h2 {
 }
 
 .answer-feedback.is-correct .answer-feedback__pill {
-  background: color-mix(in srgb, var(--correct) 91%, var(--landing-title) 9%);
-  box-shadow:
-    0 18px 42px color-mix(in srgb, var(--correct) 34%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 48%, transparent);
+  background: var(--correct);
 }
 
 .answer-feedback.is-incorrect {
   color: var(--incorrect);
+}
+
+.answer-feedback.is-incorrect .answer-feedback__wash {
   background: radial-gradient(circle at center,
     color-mix(in srgb, var(--incorrect) 24%, transparent) 0%,
     var(--incorrect-soft) 33%,
@@ -797,61 +792,44 @@ h2 {
 }
 
 .answer-feedback.is-incorrect .answer-feedback__pill {
-  background: color-mix(in srgb, var(--incorrect) 92%, #5a1720 8%);
-  box-shadow:
-    0 18px 42px color-mix(in srgb, var(--incorrect) 34%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 42%, transparent);
+  background: var(--incorrect);
 }
 
 .controls {
   width: min(100%, 500px);
-  margin: 20px auto 0;
+  margin: 16px auto 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .choice-button {
-  min-height: 58px;
-  border: 1px solid var(--landing-panel-border);
-  border-radius: 999px;
-  background: var(--landing-panel);
-  color: var(--landing-title);
-  box-shadow:
-    0 12px 30px color-mix(in srgb, var(--text) 8%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 80%, transparent);
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: none;
   cursor: pointer;
-  font-weight: 850;
-  letter-spacing: .035em;
-  transition: transform 160ms ease, background-color 220ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 150ms ease;
+  font-weight: 750;
+  letter-spacing: .025em;
+  transition: transform 150ms ease, background-color 160ms ease, border-color 160ms ease, opacity 150ms ease;
 }
 
 .choice-button-human {
-  border-color: color-mix(in srgb, var(--accent-gold) 50%, var(--landing-panel-border));
-  background: color-mix(in srgb, var(--landing-panel) 90%, var(--accent-gold-soft) 10%);
+  border-bottom: 2px solid var(--accent-gold);
 }
 
 .choice-button-ai {
-  border-color: color-mix(in srgb, var(--accent-blue) 46%, var(--landing-panel-border));
-  background: color-mix(in srgb, var(--landing-panel) 90%, var(--accent-blue-soft) 10%);
+  border-bottom: 2px solid var(--accent-blue);
 }
 
-.choice-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.choice-button-human:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent-gold) 78%, transparent);
-  box-shadow:
-    0 15px 34px color-mix(in srgb, var(--accent-gold) 15%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 86%, transparent);
-}
-
-.choice-button-ai:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent-blue) 74%, transparent);
-  box-shadow:
-    0 15px 34px color-mix(in srgb, var(--accent-blue) 15%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 86%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .choice-button:hover:not(:disabled) {
+    background: var(--surface-raised);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+  }
 }
 
 .choice-button:active:not(:disabled) {
@@ -859,55 +837,10 @@ h2 {
 }
 
 .choice-button:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent-gold) 42%, var(--focus-ring));
+  outline: 3px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
-.choice-button-ai:focus-visible {
-  outline-color: color-mix(in srgb, var(--accent-blue) 52%, var(--focus-ring));
-}
-
-.swipe-help {
-  width: max-content;
-  max-width: min(100%, 500px);
-  min-height: 34px;
-  margin: 12px auto 0;
-  padding: 7px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  border: 1px solid color-mix(in srgb, var(--landing-panel-border) 62%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-panel) 82%, transparent);
-  color: var(--muted);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-raised) 70%, transparent);
-  font-size: .72rem;
-  font-weight: 750;
-  line-height: 1;
-  letter-spacing: .035em;
-  white-space: nowrap;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.swipe-help__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.swipe-help__item-human {
-  color: color-mix(in srgb, var(--accent-gold) 76%, var(--landing-title));
-}
-
-.swipe-help__item-ai {
-  color: color-mix(in srgb, var(--accent-blue) 78%, var(--landing-title));
-}
-
-.swipe-help__separator {
-  color: color-mix(in srgb, var(--muted) 62%, transparent);
-}
 
 /* V1.6.3 TEST — results celebration / replay flow */
 .screen-end {
@@ -1417,6 +1350,19 @@ body[data-public-view="result"] .floating-card__surface::after {
   background-size: cover;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+}
+
+/* A full result turn owns the artwork it started with. The global theme remains
+   one canonical authority; an in-flight 360° turn simply defers adopting a new
+   theme image until it returns to its neutral face. */
+body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="light"]::before,
+body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="light"]::after {
+  background-image: var(--floating-card-image-light-ui);
+}
+
+body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="dark"]::before,
+body[data-public-view="result"] .floating-card__surface[data-result-turn-theme="dark"]::after {
+  background-image: var(--floating-card-image-dark-ui);
 }
 
 body[data-public-view="result"] .floating-card__surface::before {
@@ -1929,11 +1875,6 @@ body[data-public-view="gameplay"] .theme-switch {
   .game-mode-card__copy > span { font-size: .92rem; }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .swipe-help {
-    display: none;
-  }
-}
 
 @media (max-width: 340px) {
   .mode-select-panel {
@@ -2005,9 +1946,8 @@ body[data-public-view="gameplay"] .theme-switch {
   }
 
   .game-stat {
-    min-height: 50px;
-    padding: 7px 11px 8px;
-    border-radius: 16px;
+    min-height: 36px;
+    padding: 2px 2px 4px;
   }
 
   .question-block {
@@ -2019,11 +1959,11 @@ body[data-public-view="gameplay"] .theme-switch {
   }
 
   .image-card {
-    border-radius: 24px;
+    border-radius: 17px;
   }
 
   .image-frame {
-    border-radius: 19px;
+    border-radius: 14px;
   }
 
   .choice-hint {
@@ -2046,9 +1986,6 @@ body[data-public-view="gameplay"] .theme-switch {
     font-size: .88rem;
   }
 
-  .swipe-help {
-    margin-top: 10px;
-  }
 
   .mode-setup-panel {
     padding-top: 14px;
@@ -2072,9 +2009,8 @@ body[data-public-view="gameplay"] .theme-switch {
   }
 
   .screen-game .game-stat {
-    min-height: 42px;
-    padding: 5px 9px 6px;
-    border-radius: 14px;
+    min-height: 30px;
+    padding: 1px 2px 3px;
   }
 
   .screen-game .game-stat .meta-label {
@@ -2104,12 +2040,12 @@ body[data-public-view="gameplay"] .theme-switch {
   }
 
   .screen-game .image-card {
-    padding: 3px;
-    border-radius: 21px;
+    padding: 2px;
+    border-radius: 15px;
   }
 
   .screen-game .image-frame {
-    border-radius: 17px;
+    border-radius: 12px;
   }
 
   .screen-game .choice-hint {
@@ -2132,13 +2068,6 @@ body[data-public-view="gameplay"] .theme-switch {
     font-size: .82rem;
   }
 
-  .screen-game .swipe-help {
-    min-height: 30px;
-    margin-top: 7px;
-    padding: 6px 10px;
-    gap: 7px;
-    font-size: .66rem;
-  }
 
   .mode-setup-panel {
     padding-top: 10px;

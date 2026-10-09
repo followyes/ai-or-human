@@ -2892,12 +2892,13 @@ async function testResultCelebrationLifecycle() {
   }
 
   class FakeCelebrationNode {
-    constructor(rect = null) {
+    constructor(rect = null, { theme = "light" } = {}) {
       this.dataset = {};
       this.animations = [];
       this.styleValues = new Map();
       this.hidden = false;
       this.rect = rect;
+      this.ownerDocument = { documentElement: { dataset: { theme } } };
       this.style = {
         setProperty: (name, value) => this.styleValues.set(name, value)
       };
@@ -2951,6 +2952,11 @@ async function testResultCelebrationLifecycle() {
   for (const id of initialTimerIds) windowRef.run(id);
   assert.equal(cards.every((card) => card.animations.length === 1), true,
     "all five cards must be eligible to rotate independently");
+  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === "light"), true,
+    "every active result turn must snapshot the current card-art theme before rotation starts");
+  for (const card of cards) card.ownerDocument.documentElement.dataset.theme = "dark";
+  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === "light"), true,
+    "a global LIGHT/DARK change must not replace artwork in the middle of an already-started full turn");
 
   for (const card of cards) {
     const endTransform = card.animations[0].keyframes.at(-1).transform;
@@ -2970,6 +2976,8 @@ async function testResultCelebrationLifecycle() {
   for (const card of cards) card.animations[0].finish();
   await Promise.resolve();
   await Promise.resolve();
+  assert.equal(cards.every((card) => card.dataset.resultTurnTheme === undefined), true,
+    "a completed full turn must release its pinned artwork so the canonical current theme becomes visible");
   assert.equal(windowRef.timers.size, 0,
     "completed turns must not reschedule after the celebration window has closed");
 
@@ -3258,9 +3266,11 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "classic setup CTA must use the dedicated pre-game CTA authority rather than the legacy generic primary skin");
   assert.ok(/@media \(max-height: 740px\) and \(orientation: portrait\)[\s\S]*?\.setup-back-button/m.test(css),
     "short mobile portrait layouts must keep an explicit compact setup profile so back/CTA remain reachable");
-  assert.ok(css.includes('--floating-card-image: url("../assets/game/card-back-dark.webp")') &&
-    /:root\[data-theme="dark"\][\s\S]*?--floating-card-image:\s*url\("\.\.\/assets\/game\/card-back-light\.webp"\)/m.test(css),
-    "theme/art mapping must be inverse: light UI -> dark back, dark UI -> light back");
+  assert.ok(css.includes('--floating-card-image-light-ui: url("../assets/game/card-back-dark.webp")') &&
+    css.includes('--floating-card-image-dark-ui: url("../assets/game/card-back-light.webp")') &&
+    css.includes('--floating-card-image: var(--floating-card-image-light-ui)') &&
+    /:root\[data-theme="dark"\][\s\S]*?--floating-card-image:\s*var\(--floating-card-image-dark-ui\)/m.test(css),
+    "theme/art mapping must remain inverse through one canonical semantic card-art authority");
   assert.equal((html.match(/class="floating-card floating-card--/g) || []).length, 5,
     "mode-selection atmosphere must use five reusable decorative card instances");
   assert.ok(html.includes('id="game-atmosphere" aria-hidden="true"') &&
@@ -3282,14 +3292,42 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "V1.6.4 gameplay HUD must use the compact V1.6 stat surface authority without changing progress/score IDs");
   assert.ok(html.includes('class="choice-button choice-button-human"') && html.includes('class="choice-button choice-button-ai"'),
     "V1.6.4 gameplay actions must expose equal warm HUMAN and cool AI visual identities");
-  assert.ok(html.includes('class="swipe-help" aria-label="Sterowanie gestem"') &&
-    html.includes('swipe-help__item-human') && html.includes('swipe-help__item-ai'),
-    "mobile swipe help must be a compact V1.6 semantic legend rather than legacy plain copy");
-  assert.ok(html.includes('data-feedback-burst') && html.includes('data-feedback-pill'),
-    "V1.6.4 feedback must expose dedicated burst and pill animation targets");
-  assert.ok(/\.question-block h2\s*\{[\s\S]*?font-family:\s*Georgia/m.test(css) &&
-    /\.game-stat\s*\{[\s\S]*?var\(--landing-panel\)/m.test(css),
-    "gameplay question/HUD must reuse accepted V1.6 typography and landing surface tokens");
+  assert.ok(!html.includes('class="swipe-help"') && !css.includes('.swipe-help'),
+    "gameplay must not duplicate HUMAN/AI direction labels below the already explicit answer controls");
+  assert.ok(html.includes('data-feedback-burst') && html.includes('data-feedback-ring') &&
+    html.includes('data-feedback-pill') && html.includes('class="answer-feedback__wash"'),
+    "V1.6.4.2 feedback must expose one bounded wash and unclipped burst/ring/pill targets");
+  assert.ok(/\.question-block h2\s*\{[\s\S]*?font-family:\s*Georgia/m.test(css),
+    "gameplay question keeps the established V1.6 serif/display typography");
+  const cssRule = (selector) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matched = css.match(new RegExp(escaped + "\\s*\\{([^}]*)\\}", "m"));
+    assert.ok(matched, `Missing CSS authority for ${selector}`);
+    return matched[1];
+  };
+  const hudRule = cssRule(".game-stat");
+  assert.ok(/background:\s*none/.test(hudRule) && /border:\s*0/.test(hudRule) &&
+    /box-shadow:\s*none/.test(hudRule) && !/backdrop-filter/.test(hudRule),
+    "gameplay HUD must be plain information rather than duplicated decorative cards");
+  const imageRule = cssRule(".image-card");
+  assert.ok(/overflow:\s*hidden/.test(imageRule) && /touch-action:\s*none/.test(imageRule) &&
+    /background:\s*var\(--surface\)/.test(imageRule) && !/linear-gradient|inset/.test(imageRule),
+    "gameplay image crop/gesture must remain intact without the old gold/blue gradient frame");
+  const feedbackRule = cssRule(".answer-feedback");
+  const washRule = cssRule(".answer-feedback__wash");
+  assert.ok(/overflow:\s*visible/.test(feedbackRule) && /pointer-events:\s*none/.test(feedbackRule),
+    "feedback impact overlay must not clip ring/burst/pill or intercept the user's input");
+  assert.ok(/overflow:\s*hidden/.test(washRule) && /border-radius/.test(washRule) &&
+    html.includes('class="answer-feedback__wash" aria-hidden="true"'),
+    "only the local photo wash may clip at the image silhouette");
+  assert.ok(/\.answer-feedback\.is-correct \.answer-feedback__wash\s*\{/.test(css) &&
+    /\.answer-feedback\.is-incorrect \.answer-feedback__wash\s*\{/.test(css),
+    "correct/incorrect green/red wash must move to the bounded sublayer");
+  assert.ok(/\.answer-feedback__ring\s*\{[^}]*calc\(\(100vw - 28px\) \/ 1\.48\)/.test(css),
+    "expanded feedback ring must be size-bounded to the current device viewport");
+  const buttonRule = cssRule(".choice-button");
+  assert.ok(/box-shadow:\s*none/.test(buttonRule) && /border-radius:\s*14px/.test(buttonRule),
+    "answer controls should be equal and simple rather than heavy decorative pills");
   assert.ok(/\.choice-button-human\s*\{[\s\S]*?var\(--accent-gold\)/m.test(css) &&
     /\.choice-button-ai\s*\{[\s\S]*?var\(--accent-blue\)/m.test(css),
     "HUMAN and AI controls must use distinct warm/cool V1.6 accent families with equal structure");
@@ -3307,10 +3345,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.4"') &&
-    html.includes('src="./js/game.js?v=1.6.4"') &&
-    game.includes('./result-celebration.js?v=1.6.4'),
-    "V1.6.4 must version the public CSS/JS entry graph so phone caches cannot mix gameplay presentation authorities");
+  assert.ok(html.includes('href="./css/style.css?v=1.6.4.2"') &&
+    html.includes('src="./js/game.js?v=1.6.4.2"') &&
+    game.includes('./result-celebration.js?v=1.6.4.2'),
+    "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
@@ -3450,6 +3488,17 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(themeControllerSource.includes('documentRef.startViewTransition') &&
     /:root\.theme-view-transition::view-transition-new\(root\)[\s\S]*?theme-reveal 560ms/m.test(css),
     "the accepted homepage circular root reveal must remain the universal supported theme transition");
+  assert.ok(resultCelebrationSource.includes('resolveSurfaceTheme') &&
+    resultCelebrationSource.includes('surface.dataset.resultTurnTheme = turnTheme') &&
+    resultCelebrationSource.includes('delete surface.dataset.resultTurnTheme'),
+    "an active result card turn must pin only its starting artwork until the full turn returns to neutral");
+  assert.ok(/data-result-turn-theme="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
+    /data-result-turn-theme="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
+    "pinned result turns must resolve through the same semantic inverse-theme card-art variables as homepage");
+  assert.ok(!themeControllerSource.includes('result') &&
+    !themeControllerSource.includes('floating-card') &&
+    !themeControllerSource.includes('resultTurnTheme'),
+    "ThemeController must stay screen/card agnostic; result turn stability cannot become a second theme authority");
   assert.ok(/\.floating-card\s*\{[\s\S]*?animation-play-state:\s*paused/m.test(css) &&
     /body\[data-public-view="mode-select"\] \.floating-card,[\s\S]*?body\[data-public-view="result"\] \.floating-card[\s\S]*?animation-play-state:\s*running/m.test(css),
     "decorative card motion must be view-scoped so invisible gameplay does not keep the homepage animation running");
@@ -4039,5 +4088,5 @@ console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
-console.log("V1.6.4 gameplay visual coherence + threshold hint + feedback effects: PASS");
+console.log("V1.6.4.2 gameplay simplification + unclipped feedback: PASS");
 console.log("UI/deploy source contracts: PASS");

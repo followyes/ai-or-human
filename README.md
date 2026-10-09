@@ -133,13 +133,17 @@ V1.5.7B.1 zachowuje transition/polish z V1.5.7B: ręczne logowanie płynnie rozs
 
 ### V1.6.4 — Gameplay Visual Coherence + Feedback Effects
 
-V1.6.3 jest PASS/CLOSED. V1.6.4 domyka wizualnie ostatni legacy-looking stan publicznego lifecycle — właściwą rozgrywkę — bez przepisywania mechaniki gry. HUD `POSTĘP/WYNIK`, pytanie, frame obrazu, odpowiedzi HUMAN/AI oraz swipe help korzystają teraz ze wspólnego języka V1.6. HUMAN ma ciepłą złotą identyfikację kategorii, AI chłodną niebieską; obie odpowiedzi pozostają równorzędne. Zielony/czerwony są zarezerwowane wyłącznie dla semantyki `DOBRZE/ŹLE`.
+V1.6.3 jest PASS/CLOSED. V1.6.4 domyka wizualnie ostatni legacy-looking stan publicznego lifecycle — właściwą rozgrywkę — bez przepisywania mechaniki gry. HUD `POSTĘP/WYNIK`, pytanie, frame obrazu oraz odpowiedzi HUMAN/AI korzystają teraz ze wspólnego języka V1.6. HUMAN ma ciepłą złotą identyfikację kategorii, AI chłodną niebieską; obie odpowiedzi pozostają równorzędne. Zielony/czerwony są zarezerwowane wyłącznie dla semantyki `DOBRZE/ŹLE`.
 
 Gameplay dostał własny short-portrait profile dla wysokości <=740 px: kompaktuje HUD/pytanie/marginesy i wylicza stage karty z dostępnej wysokości, bez ukrywania kontrolek i bez globalnego skalowania aplikacji. SwipeController zachowuje dotychczasowy decision threshold, ale przekazuje dodatkowe `decisionProgress` znormalizowane dokładnie do tego progu, dzięki czemu hint osiąga pełne potwierdzenie wizualne w momencie, w którym gest faktycznie staje się odpowiedzią.
 
 Feedback odpowiedzi nadal jest osobnym overlayem poza rzucaną kartą i nadal biegnie równolegle z throw. V1.6.4 wzmacnia jego game-feel przez osobne kanały burst/ring/pill/icon: poprawna odpowiedź ma zielony pulse/settle, błędna czerwony lokalny shake/pulse. Nie zmienia to punktacji, kolejności kart ani czasu mechanicznego handoffu.
 
-Status: **LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA**.
+`V1.6.4.1` usuwa redundantny dolny pasek `← CZŁOWIEK · AI →`; dwa główne przyciski oraz swipe hints na karcie są wystarczającą authority wyboru. Corrective porządkuje też zmianę LIGHT/DARK na ekranie wyniku bez tworzenia drugiego theme systemu: `ThemeController` pozostaje jedyną kanoniczną authority i nadal używa tego samego circular root reveal co homepage. Jedynie karta będąca już w trakcie pełnego `rotateY()` zapamiętuje semantyczny wariant artworku, z którym rozpoczęła obrót, i zwalnia go po powrocie do neutralnego 360°. Dzięki temu globalna zmiana motywu nie podmienia tekstury w połowie aktywnego ruchu.
+
+`V1.6.4.2` upraszcza wygląd gameplayu po real-phone ocenie użytkownika: usuwa dwa dekoracyjne, rozmyte panele HUD, gradientową złoto-niebieską ramkę obrazu i ciężkie kapsuły odpowiedzi. Statystyki są teraz lekkim wierszem informacyjnym, karta ma neutralną cienką ramkę, a równorzędne przyciski mają ograniczony ciepły/chłodny akcent. Nie zmienia to tekstów, logiki rozgrywki, ruchu swipe ani wcześniej zaakceptowanego wyglądu homepage/result. Feedback `DOBRZE / ŹLE` pozostaje osobnym overlayem poza przesuwaną kartą, ale nie przycina już całej animacji: osobny local-wash jest obcięty do zdjęcia, natomiast ring, rozbłysk i komunikat mają nieprzycinaną warstwę. Rozmiar pierścienia ma viewport-aware bound, a rozbłysk miękki falloff. Czasy feedbacku i równoległy throw pozostają nietknięte.
+
+Status: **V1.6.4.2 LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA — VISUAL ACCEPTANCE PENDING**.
 
 
 ## Supabase
@@ -189,7 +193,7 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 - V1.5.9 — Public Image Fit + Admin Selection UX — PASS/CLOSED.
 - V1.5.9.1–V1.5.9.5 — corrective chain absorbed into the final V1.5 baseline.
 - V1.5.9.6 — Admin Move / Separate Multi-Action Modes — final V1.5 runtime baseline.
-- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2 PASS/CLOSED; V1.6.3 Results Celebration / Replay Flow PASS/CLOSED; V1.6.4 Gameplay Visual Coherence + Feedback Effects LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA.
+- **V1.6 — ACTIVE — Gameplay Feel / Public UI / Homepage.** V1.6.2.2 PASS/CLOSED; V1.6.3 Results Celebration / Replay Flow PASS/CLOSED; V1.6.4.2 Gameplay UI Simplification + Feedback Overflow Corrective LOCAL QA PASS / READY FOR REAL-PHONE VISUAL QA.
 - **V1.7 — Multi-Mode.** Dotychczasowy zakres V1.6 został przeniesiony w całości na V1.7.
 
 ### V1.6.2.2 — Pre-Game Interaction / Copy / Theme Corrective

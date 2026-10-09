@@ -190,6 +190,10 @@ function animationFinished(animation) {
   return Promise.resolve(animation?.finished).catch(() => undefined);
 }
 
+function resolveSurfaceTheme(surface) {
+  return surface?.ownerDocument?.documentElement?.dataset?.theme === "dark" ? "dark" : "light";
+}
+
 function normalizeFireworkSlot(slot) {
   if (!slot) return null;
   if (slot.element && Array.isArray(slot.particles)) {
@@ -377,16 +381,28 @@ export class ResultCelebrationController {
     const angle = getFullTurnAngle(this.random, turns);
     const duration = randomInteger(this.random, this.options.oneTurnDurationMinMs, this.options.oneTurnDurationMaxMs)
       + (turns - 1) * randomInteger(this.random, this.options.extraTurnDurationMinMs, this.options.extraTurnDurationMaxMs);
-    const animation = surface.animate(
-      [{ transform: "rotateY(0deg) translateZ(0)" }, { transform: `rotateY(${angle}deg) translateZ(0)` }],
-      { duration, easing: "cubic-bezier(.45, .05, .24, 1)", fill: "none" }
-    );
+    const turnTheme = resolveSurfaceTheme(surface);
+    surface.dataset.resultTurnTheme = turnTheme;
+
+    let animation;
+    try {
+      animation = surface.animate(
+        [{ transform: "rotateY(0deg) translateZ(0)" }, { transform: `rotateY(${angle}deg) translateZ(0)` }],
+        { duration, easing: "cubic-bezier(.45, .05, .24, 1)", fill: "none" }
+      );
+    } catch {
+      delete surface.dataset.resultTurnTheme;
+      const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
+      this.scheduleCard(surface, index, nextDelay);
+      return false;
+    }
 
     this.activeCardAnimations.set(surface, animation);
     surface.dataset.resultTurnCard = String(index + 1);
     animationFinished(animation).finally(() => {
       if (this.activeCardAnimations.get(surface) === animation) this.activeCardAnimations.delete(surface);
       delete surface.dataset.resultTurnCard;
+      delete surface.dataset.resultTurnTheme;
       if (!this.isSchedulingAllowed()) return;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
       this.scheduleCard(surface, index, nextDelay);
