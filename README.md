@@ -2,13 +2,13 @@
 
 Webowa gra, w której gracz zgaduje, czy obraz został wygenerowany przez AI, czy stworzony przez człowieka.
 
-## V1.6.4.4 — Immediate Unified Theme + Live Card Motion (QA pending)
+## V1.6.4.5 — Restore Original Full-Page Circular Theme Reveal (QA pending)
 
-Po zgłoszonej regresji V1.6.4.3 usunięto mechanizm oczekiwania na zakończenie dekoracji, blokowanie kontrolki oraz migawkę całego dokumentu. Zmiana LIGHT/DARK **zapisuje i stosuje motyw natychmiast** przy każdym kliknięciu, również podczas kilku niezależnych obrotów kart. HOME/SETUP/RESULT mają dokładnie jednego `ThemeController`, tę samą precyzyjną authority `data-theme` i jeden kołowy efekt na niezależnej, niewchodzącej w interakcje warstwie tła **pod żywymi kartami**. Koło zachowuje motyw odkrywania od suwaka, lecz nie jest już screenshotem całego UI: elementy interfejsu aktualizują tokeny na żywo. To świadomy kompromis, by nie przerywać WAAPI `rotateY` i unikać lustrzanych klatek przejścia.
+Po uwadze użytkownika, że V1.6.4.4 zniszczyło zatwierdzony wizualnie efekt LIGHT/DARK, przywrócono **dosłownie** `js/theme-controller.js` i blok View Transition CSS z historycznej paczki `V1.6.3-test.11`. To jest kołowy `clip-path` na **całym nowym widoku strony**, uruchamiany przez `document.startViewTransition()` przez 560 ms. Wariant bez tej funkcji używa oryginalnego CSS fade, a reduced-motion natychmiast ustawia motyw. Usunięto późniejszy `#theme-reveal-backdrop` i wszystkie style tej podmiany. ThemeController jest jeden w HOME/SETUP/RESULT. Brak `acquireVisualStability`, oczekiwania na karty lub blokowania przełącznika.
 
-Karty spoczynkowe na wszystkich widokach pozostają płaskie; dwustronna powierzchnia jest tymczasowa wyłącznie w czasie faktycznego obrotu i zostaje do końca ruchu nawet po RESULT→HOME. Aktywny obrót kończy się tą samą semantycznie przypiętą grafiką, po czym karta wraca do aktualnego motywu. Szybkie wielokrotne kliknięcia nie czekają na animacje; restartują wyłącznie dekoracyjne koło tła.
+**Ważne ograniczenie:** pełnodokumentowy View Transition może złapać inną klatkę obracającej się karty niż żywy renderer. Nie deklarujemy na podstawie lokalnego testu, że lustrzane klatki na wyniku zostały usunięte. Użytkownik priorytetowo wymagał odzyskania dokładnie oryginalnej animacji; osobno konieczny jest real-phone test podczas aktywnych obrotów. Rotacja 5 kart, gameplay, feedback, celebracja, content i Admin pozostają bez zmian.
 
-Lokalne testy Node i klatkowy smoke Chromium są PASS, ale **nie stanowią potwierdzenia Safari**. V1.6.4.4 pozostaje READY FOR REAL-PHONE VISUAL QA, nie CLOSED. Gameplay V1.6.4.2, feedback, Supabase/Admin, replay i celebracja pozostają bez zmian.
+Local `npm run test` i `npm run build` PASS, a inline Chromium potwierdza animację `theme-reveal` na `::view-transition-new(root)` i kołowe przejście całego UI. Wersja pozostaje READY FOR REAL-PHONE QA, nie PASS/CLOSED.
 
 ## Architektura contentu
 

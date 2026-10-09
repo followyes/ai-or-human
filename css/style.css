@@ -29,6 +29,9 @@
   --theme-switch-thumb: #ffffff;
   --theme-switch-border: rgba(32, 39, 45, 0.14);
   --theme-switch-shadow: 0 8px 24px rgba(23, 31, 38, 0.13);
+  --theme-origin-x: calc(100vw - 40px);
+  --theme-origin-y: 36px;
+  --theme-reveal-radius: 150vmax;
   --theme-sun: #c88400;
   --theme-moon: #306995;
   --radius: 24px;
@@ -253,26 +256,49 @@ button {
   transform: rotate(0deg) scale(0.82);
 }
 
-/* One circular theme reveal for HOME, SETUP and RESULT. This layer is below
-   the live atmosphere / card faces / UI, not a frozen document snapshot. */
-.theme-reveal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--theme-reveal-previous-bg, var(--bg));
-  contain: strict;
+@supports (view-transition-name: root) {
+  :root.theme-view-transition::view-transition-old(root) {
+    animation: none;
+    z-index: 1;
+  }
+
+  :root.theme-view-transition::view-transition-new(root) {
+    z-index: 2;
+    animation: theme-reveal 560ms cubic-bezier(.22, .78, .30, 1);
+  }
+
+  @keyframes theme-reveal {
+    from {
+      clip-path: circle(0 at var(--theme-origin-x) var(--theme-origin-y));
+    }
+    to {
+      clip-path: circle(var(--theme-reveal-radius) at var(--theme-origin-x) var(--theme-origin-y));
+    }
+  }
 }
 
-.theme-reveal-backdrop[hidden] { display: none !important; }
-
-.theme-reveal-backdrop__new {
-  position: absolute;
-  inset: 0;
-  background: var(--theme-reveal-next-bg, var(--bg));
+:root.theme-fallback-transition body,
+:root.theme-fallback-transition .theme-switch,
+:root.theme-fallback-transition .theme-switch__thumb,
+:root.theme-fallback-transition .session-size-options,
+:root.theme-fallback-transition .session-size-indicator,
+:root.theme-fallback-transition .session-size-button,
+:root.theme-fallback-transition .primary-button,
+:root.theme-fallback-transition .image-card,
+:root.theme-fallback-transition .image-frame,
+:root.theme-fallback-transition .choice-hint,
+:root.theme-fallback-transition .choice-button,
+:root.theme-fallback-transition .game-mode-card,
+:root.theme-fallback-transition .game-mode-card__icon,
+:root.theme-fallback-transition .game-mode-card__arrow,
+:root.theme-fallback-transition .setup-back-button,
+:root.theme-fallback-transition .setup-retry-button,
+:root.theme-fallback-transition .result-primary-button,
+:root.theme-fallback-transition .result-secondary-button {
+  transition-property: background-color, color, border-color, box-shadow, transform;
+  transition-duration: 420ms;
+  transition-timing-function: cubic-bezier(.22, .78, .30, 1);
 }
-
 
 .app-shell {
   position: relative;

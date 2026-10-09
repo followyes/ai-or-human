@@ -4,10 +4,10 @@ import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
-import { initializeThemeController } from "./theme-controller.js";
+import { initializeThemeController } from "./theme-controller.js?v=1.6.4.5";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4.4";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4.5";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,

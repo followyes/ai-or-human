@@ -77,15 +77,6 @@ function prefersReducedMotion(windowRef) {
   return Boolean(windowRef?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 }
 
-/**
- * A single LIGHT/DARK authority for every public screen. The circle is painted
- * behind the live UI, never from a frozen document screenshot. That is vital:
- * a full-page View Transition would capture an arbitrary frame of a rotating
- * card, then expose a different frame when the snapshot ends.
- *
- * Theme state is committed SYNCHRONOUSLY on every tap. The reveal is a purely
- * decorative backdrop animation and cannot delay or block another tap.
- */
 export function initializeThemeController({
   documentRef = globalThis.document,
   windowRef = globalThis.window,
@@ -96,80 +87,101 @@ export function initializeThemeController({
   const root = documentRef.documentElement;
   const button = documentRef.querySelector("#theme-switch");
   const meta = documentRef.querySelector('meta[name="theme-color"]');
-  const backdrop = documentRef.querySelector("#theme-reveal-backdrop");
-  const reveal = backdrop?.querySelector?.(".theme-reveal-backdrop__new") ?? null;
   let currentTheme = normalizeTheme(root.dataset.theme) ?? resolveStoredTheme(storage);
 
   currentTheme = applyTheme(currentTheme, {
-    root, meta, switchButton: button, storage, persist: false
+    root,
+    meta,
+    switchButton: button,
+    storage,
+    persist: false
   });
 
-  if (!button) return Object.freeze({
-    get theme() { return currentTheme; },
-    setVisible() {}
-  });
+  if (!button) return Object.freeze({ get theme() { return currentTheme; }, setVisible() {}, whenSettled() { return Promise.resolve(); } });
 
-  let runningAnimation = null;
   let activeTransition = Promise.resolve();
-  let revealRevision = 0;
+
+  const commitTheme = (nextTheme) => {
+    currentTheme = applyTheme(nextTheme, {
+      root,
+      meta,
+      switchButton: button,
+      storage,
+      persist: true
+    });
+  };
+
+  const applyFallback = (nextTheme) => {
+    root.classList.add("theme-fallback-transition");
+    // Make the transition class authoritative before changing token values.
+    void root.offsetWidth;
+    commitTheme(nextTheme);
+    activeTransition = new Promise((resolve) => {
+      const finish = () => {
+        root.classList.remove("theme-fallback-transition");
+        resolve();
+      };
+      if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(finish, 460);
+      else finish();
+    });
+    return activeTransition;
+  };
 
   const toggle = () => {
-    if (button.hidden) return activeTransition;
+    const nextTheme = getNextTheme(currentTheme);
+    const reducedMotion = prefersReducedMotion(windowRef);
+    const canViewTransition = typeof documentRef.startViewTransition === "function";
 
-    const previousTheme = currentTheme;
-    const nextTheme = getNextTheme(previousTheme);
+    if (reducedMotion || !canViewTransition) {
+      if (reducedMotion) {
+        commitTheme(nextTheme);
+        activeTransition = Promise.resolve();
+        return activeTransition;
+      }
+      return applyFallback(nextTheme);
+    }
+
     const rect = button.getBoundingClientRect();
     const originX = rect.left + rect.width / 2;
     const originY = rect.top + rect.height / 2;
     const radius = calculateThemeRevealRadius(
-      originX, originY, windowRef?.innerWidth ?? 0, windowRef?.innerHeight ?? 0
+      originX,
+      originY,
+      windowRef?.innerWidth ?? 0,
+      windowRef?.innerHeight ?? 0
     );
 
-    // Invalidate the previous backdrop only. NEVER cancel or pause a card turn.
-    const revision = ++revealRevision;
-    runningAnimation?.cancel?.();
-    runningAnimation = null;
-    if (backdrop) backdrop.hidden = true;
+    root.style.setProperty("--theme-origin-x", `${originX}px`);
+    root.style.setProperty("--theme-origin-y", `${originY}px`);
+    root.style.setProperty("--theme-reveal-radius", `${radius}px`);
+    root.classList.add("theme-view-transition");
 
-    currentTheme = applyTheme(nextTheme, {
-      root, meta, switchButton: button, storage, persist: true
-    });
-
-    if (prefersReducedMotion(windowRef) || !backdrop || !reveal || typeof reveal.animate !== "function") {
-      activeTransition = Promise.resolve();
-      return activeTransition;
-    }
-
-    backdrop.style.setProperty("--theme-reveal-previous-bg", THEME_COLORS[previousTheme]);
-    backdrop.style.setProperty("--theme-reveal-next-bg", THEME_COLORS[nextTheme]);
-    backdrop.hidden = false;
-    const center = `${originX}px ${originY}px`;
+    let transition;
     try {
-      const animation = reveal.animate(
-        [
-          { clipPath: `circle(0px at ${center})` },
-          { clipPath: `circle(${radius}px at ${center})` }
-        ],
-        { duration: 560, easing: "cubic-bezier(.22, .78, .30, 1)", fill: "both" }
-      );
-      runningAnimation = animation;
-      activeTransition = Promise.resolve(animation.finished).catch(() => undefined).then(() => {
-        if (revealRevision !== revision) return;
-        runningAnimation = null;
-        backdrop.hidden = true;
-      });
+      transition = documentRef.startViewTransition(() => commitTheme(nextTheme));
     } catch {
-      backdrop.hidden = true;
-      activeTransition = Promise.resolve();
+      root.classList.remove("theme-view-transition");
+      return applyFallback(nextTheme);
     }
+
+    activeTransition = Promise.resolve(transition?.finished)
+      .catch(() => {})
+      .finally(() => root.classList.remove("theme-view-transition"));
     return activeTransition;
   };
 
   button.addEventListener("click", toggle);
 
   return Object.freeze({
-    get theme() { return currentTheme; },
+    get theme() {
+      return currentTheme;
+    },
     toggle,
-    setVisible(visible) { setThemeSwitchVisible(button, visible); }
+    setVisible(visible) {
+      setThemeSwitchVisible(button, visible);
+    },
+    whenSettled() {
+      return activeTransition;
+    }
   });
 }
