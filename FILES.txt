@@ -1,6 +1,6 @@
-AI OR HUMAN — V1.6.4.3 UNIFIED THEME / CARD RENDERER — UPDATED_FILES
+AI OR HUMAN — V1.6.4.4 IMMEDIATE UNIFIED THEME / LIVE CARD MOTION CORRECTIVE — UPDATED_FILES
 
-Exact REPO delta versus V1.6.4.2: 8 files (8 modified, 0 added, 0 removed).
+Exact delta vs V1.6.4.3: 8 modified REPO files, 0 added, 0 removed.
 
 MODIFIED
 README.md
@@ -12,17 +12,20 @@ js/theme-controller.js
 package.json
 scripts/test-project.js
 
-Implementation:
-- restore one neutral flat card surface across HOME, SETUP and idle RESULT;
-- temporary 3D two-face rendering follows each active finite rotation, surviving result -> HOME until full turn completion;
-- pin only a CSS semantic inverse-theme artwork value for the duration of that single turn;
-- serialize one universal circular theme transition and wait for natural completion of active finite celebration motion before the root snapshot; rapid clicks ignored while busy;
-- remove obsolete permanent result-only 3D and loose data-result-turn-theme authority;
-- replace stale source tests with state/ordering regression tests, keep versioned CSS/JS URLs.
+WHY THIS CHANGE
+- theme state/ARIA/storage/meta-color now commits synchronously on each tap;
+- remove visual-stability lease/wait, disabled theme switch, and root View Transition snapshot;
+- one circular background-only reveal underneath always-live cards/UI across HOME/SETUP/RESULT;
+- repeated taps restart the backdrop animation only; no card pause or timer block;
+- remove obsolete pre-game wait for theme animation;
+- preserve one flat idle card renderer / temporary two-faced full Y turn with pinned semantic CSS image, plus graceful exit;
+- replace stale behavioral test contracts that required a delayed theme transition.
 
-Constraints:
-No Supabase/Admin/SQL/V1.7/session classification/gameplay/swipe/feedback/result flow changes.
-No new card art, no distinct result theme transition effect.
+VISUAL TRADEOFF
+The circular wipe is now a backdrop reveal and NOT the exact full-document screenshot effect. Foreground/UI updates live. This is required to preserve continuous card motion without mirrored snapshot frames. iOS Safari acceptance still pending.
 
-Gates:
-Local npm test/build + inline Chromium rendering PASS; iOS Safari real-phone smoke pending.
+OUT OF SCOPE
+No changes in Supabase/SQL/Admin/content classification/gameplay/swipe/feedback/result/replay/firework scheduling/5-card turn parameters.
+
+GATES
+npm run test, npm run build, inline Chromium frame smoke; final fresh-extract package gates. Real-phone Safari PASS required to close.

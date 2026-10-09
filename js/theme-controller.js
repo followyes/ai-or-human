@@ -77,114 +77,91 @@ function prefersReducedMotion(windowRef) {
   return Boolean(windowRef?.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches);
 }
 
+/**
+ * A single LIGHT/DARK authority for every public screen. The circle is painted
+ * behind the live UI, never from a frozen document screenshot. That is vital:
+ * a full-page View Transition would capture an arbitrary frame of a rotating
+ * card, then expose a different frame when the snapshot ends.
+ *
+ * Theme state is committed SYNCHRONOUSLY on every tap. The reveal is a purely
+ * decorative backdrop animation and cannot delay or block another tap.
+ */
 export function initializeThemeController({
   documentRef = globalThis.document,
   windowRef = globalThis.window,
-  storage = globalThis.localStorage,
-  acquireVisualStability = null
+  storage = globalThis.localStorage
 } = {}) {
   if (!documentRef?.documentElement) return null;
 
   const root = documentRef.documentElement;
   const button = documentRef.querySelector("#theme-switch");
   const meta = documentRef.querySelector('meta[name="theme-color"]');
+  const backdrop = documentRef.querySelector("#theme-reveal-backdrop");
+  const reveal = backdrop?.querySelector?.(".theme-reveal-backdrop__new") ?? null;
   let currentTheme = normalizeTheme(root.dataset.theme) ?? resolveStoredTheme(storage);
 
   currentTheme = applyTheme(currentTheme, {
-    root,
-    meta,
-    switchButton: button,
-    storage,
-    persist: false
+    root, meta, switchButton: button, storage, persist: false
   });
 
-  if (!button) return Object.freeze({ get theme() { return currentTheme; }, setVisible() {}, whenSettled() { return Promise.resolve(); } });
+  if (!button) return Object.freeze({
+    get theme() { return currentTheme; },
+    setVisible() {}
+  });
 
+  let runningAnimation = null;
   let activeTransition = Promise.resolve();
-  let transitioning = false;
+  let revealRevision = 0;
 
-  const commitTheme = (nextTheme) => {
-    currentTheme = applyTheme(nextTheme, {
-      root,
-      meta,
-      switchButton: button,
-      storage,
-      persist: true
-    });
-  };
-
-  const applyFallback = async (nextTheme) => {
-    root.classList.add("theme-fallback-transition");
-    try {
-      // Make the class authoritative before changing the tokens.
-      void root.offsetWidth;
-      commitTheme(nextTheme);
-      await new Promise((resolve) => {
-        if (typeof windowRef?.setTimeout === "function") windowRef.setTimeout(resolve, 460);
-        else resolve();
-      });
-    } finally {
-      root.classList.remove("theme-fallback-transition");
-    }
-  };
-
-  // Policy for rapid taps: ignore additional intents while a theme change is
-  // pending/running. Never initiate two root View Transitions concurrently.
   const toggle = () => {
-    if (transitioning) return activeTransition;
-    transitioning = true;
-    button.disabled = true;
-    button.setAttribute("aria-busy", "true");
+    if (button.hidden) return activeTransition;
 
-    activeTransition = (async () => {
-      let lease = null;
-      try {
-        // A visual-stability lease is generic: ThemeController does not know
-        // which view or which type of decoration is currently running.
-        lease = acquireVisualStability?.() ?? null;
-        if (lease?.ready) await lease.ready;
+    const previousTheme = currentTheme;
+    const nextTheme = getNextTheme(previousTheme);
+    const rect = button.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+    const radius = calculateThemeRevealRadius(
+      originX, originY, windowRef?.innerWidth ?? 0, windowRef?.innerHeight ?? 0
+    );
 
-        const nextTheme = getNextTheme(currentTheme);
-        const reducedMotion = prefersReducedMotion(windowRef);
-        const canViewTransition = typeof documentRef.startViewTransition === "function";
-        if (reducedMotion) {
-          commitTheme(nextTheme);
-          return;
-        }
-        if (!canViewTransition) {
-          await applyFallback(nextTheme);
-          return;
-        }
+    // Invalidate the previous backdrop only. NEVER cancel or pause a card turn.
+    const revision = ++revealRevision;
+    runningAnimation?.cancel?.();
+    runningAnimation = null;
+    if (backdrop) backdrop.hidden = true;
 
-        const rect = button.getBoundingClientRect();
-        const originX = rect.left + rect.width / 2;
-        const originY = rect.top + rect.height / 2;
-        const radius = calculateThemeRevealRadius(
-          originX,
-          originY,
-          windowRef?.innerWidth ?? 0,
-          windowRef?.innerHeight ?? 0
-        );
-        root.style.setProperty("--theme-origin-x", `${originX}px`);
-        root.style.setProperty("--theme-origin-y", `${originY}px`);
-        root.style.setProperty("--theme-reveal-radius", `${radius}px`);
-        root.classList.add("theme-view-transition");
+    currentTheme = applyTheme(nextTheme, {
+      root, meta, switchButton: button, storage, persist: true
+    });
 
-        try {
-          const transition = documentRef.startViewTransition(() => commitTheme(nextTheme));
-          await Promise.resolve(transition?.finished);
-        } catch {
-          if (currentTheme !== nextTheme) await applyFallback(nextTheme);
-        } finally {
-          root.classList.remove("theme-view-transition");
-        }
-      } finally {
-        lease?.release?.();
-        transitioning = false;
-        button.disabled = Boolean(button.hidden);
-        button.removeAttribute("aria-busy");
-      }
-    })();
+    if (prefersReducedMotion(windowRef) || !backdrop || !reveal || typeof reveal.animate !== "function") {
+      activeTransition = Promise.resolve();
+      return activeTransition;
+    }
+
+    backdrop.style.setProperty("--theme-reveal-previous-bg", THEME_COLORS[previousTheme]);
+    backdrop.style.setProperty("--theme-reveal-next-bg", THEME_COLORS[nextTheme]);
+    backdrop.hidden = false;
+    const center = `${originX}px ${originY}px`;
+    try {
+      const animation = reveal.animate(
+        [
+          { clipPath: `circle(0px at ${center})` },
+          { clipPath: `circle(${radius}px at ${center})` }
+        ],
+        { duration: 560, easing: "cubic-bezier(.22, .78, .30, 1)", fill: "both" }
+      );
+      runningAnimation = animation;
+      activeTransition = Promise.resolve(animation.finished).catch(() => undefined).then(() => {
+        if (revealRevision !== revision) return;
+        runningAnimation = null;
+        backdrop.hidden = true;
+      });
+    } catch {
+      backdrop.hidden = true;
+      activeTransition = Promise.resolve();
+    }
     return activeTransition;
   };
 
@@ -193,10 +170,6 @@ export function initializeThemeController({
   return Object.freeze({
     get theme() { return currentTheme; },
     toggle,
-    setVisible(visible) {
-      setThemeSwitchVisible(button, visible);
-      if (transitioning) button.disabled = true;
-    },
-    whenSettled() { return activeTransition; }
+    setVisible(visible) { setThemeSwitchVisible(button, visible); }
   });
 }

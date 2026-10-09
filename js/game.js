@@ -7,7 +7,7 @@ import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4.3";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4.4";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -427,7 +427,6 @@ async function openGameMode(modeId) {
 
   preGameNavigationPending = true;
   try {
-    await themeController?.whenSettled?.();
     if (preGameTransition?.busy || state === "preparing") return false;
 
     selectedGameMode = mode.id;
@@ -615,9 +614,7 @@ function initializeInteractions() {
 
 function bootstrap() {
   initializeInteractions();
-  themeController = initializeThemeController({
-    acquireVisualStability: () => resultCelebration?.acquireVisualStability() ?? null
-  });
+  themeController = initializeThemeController();
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select" });
   syncClassicSetupControls();

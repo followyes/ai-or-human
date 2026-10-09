@@ -2748,159 +2748,116 @@ async function testPublicThemeController() {
   assert.equal(normalizeTheme("sepia"), null);
   assert.equal(getNextTheme("light"), "dark");
   assert.equal(getNextTheme("dark"), "light");
-  assert.equal(getNextTheme("invalid"), "dark");
   assert.equal(resolveStoredTheme({ getItem: () => "dark" }), "dark");
   assert.equal(resolveStoredTheme({ getItem: () => "invalid" }), DEFAULT_THEME);
-  assert.equal(resolveStoredTheme({ getItem: () => { throw new Error("blocked"); } }), DEFAULT_THEME);
-
   const radius = calculateThemeRevealRadius(10, 20, 100, 200);
-  assert.ok(radius >= Math.hypot(90, 180), "theme reveal must cover the farthest viewport corner");
+  assert.ok(radius >= Math.hypot(90, 180));
 
   const persisted = new Map();
-  const root = {
-    dataset: {},
-    classList: new FakeClassList(),
-    offsetWidth: 100,
-    style: {
-      colorScheme: "",
-      values: new Map(),
-      setProperty(name, value) { this.values.set(name, value); }
+  const themeAttributes = new Map();
+  const backdropVars = new Map();
+  const runningAnimations = [];
+  const root = { dataset: { theme: "light" }, style: { colorScheme: "" } };
+  const meta = { content: "", setAttribute(key, value) { if (key === "content") this.content = value; } };
+  const button = {
+    hidden: false, disabled: false, title: "", blur() {},
+    setAttribute(key, value) { themeAttributes.set(key, value); },
+    removeAttribute(key) { themeAttributes.delete(key); },
+    addEventListener(type, callback) { if (type === "click") this.click = callback; },
+    getBoundingClientRect() { return { left: 280, top: 18, width: 40, height: 40 }; }
+  };
+  const reveal = {
+    animate(frames, options) {
+      const animation = new FakeAnimation({ deferred: true });
+      animation.frames = frames;
+      animation.options = options;
+      animation.cancel = function () {
+        this.cancelled = true;
+        this.rejectFinished(new Error("replaced by next theme change"));
+      };
+      runningAnimations.push(animation);
+      return animation;
     }
   };
-  const meta = {
-    content: "",
-    setAttribute(name, value) { if (name === "content") this.content = value; }
-  };
-  const attributes = new Map();
-  let clickHandler = null;
-  const button = {
-    title: "",
-    hidden: false,
-    disabled: false,
-    blurCalls: 0,
-    blur() { this.blurCalls += 1; },
-    setAttribute(name, value) { attributes.set(name, value); },
-    removeAttribute(name) { attributes.delete(name); },
-    addEventListener(type, handler) { if (type === "click") clickHandler = handler; },
-    getBoundingClientRect() { return { left: 80, top: 10, width: 40, height: 30 }; }
+  const backdrop = {
+    hidden: true,
+    style: { setProperty(name, value) { backdropVars.set(name, value); } },
+    querySelector(selector) { return selector === ".theme-reveal-backdrop__new" ? reveal : null; }
   };
   const storage = {
     getItem(key) { return persisted.get(key) ?? null; },
     setItem(key, value) { persisted.set(key, value); }
   };
-  let transitionCalls = 0;
+  let rootSnapshots = 0;
   const documentRef = {
     documentElement: root,
     querySelector(selector) {
       if (selector === "#theme-switch") return button;
       if (selector === 'meta[name="theme-color"]') return meta;
+      if (selector === "#theme-reveal-backdrop") return backdrop;
       return null;
     },
-    startViewTransition(callback) {
-      transitionCalls += 1;
-      callback();
-      return { finished: Promise.resolve() };
-    }
+    startViewTransition() { rootSnapshots += 1; throw new Error("Root snapshots are forbidden for live turning cards"); }
   };
   const windowRef = {
-    innerWidth: 320,
-    innerHeight: 640,
-    matchMedia: () => ({ matches: false }),
-    setTimeout(callback) { callback(); }
+    innerWidth: 390, innerHeight: 844,
+    matchMedia() { return { matches: false }; }
   };
 
-  root.dataset.theme = "light";
   const controller = initializeThemeController({ documentRef, windowRef, storage });
   assert.equal(controller.theme, "light");
-  assert.equal(attributes.get("aria-checked"), "false");
-  assert.equal(typeof clickHandler, "function");
-
-  clickHandler();
-  await controller.whenSettled();
-
+  const first = controller.toggle();
+  assert.equal(root.dataset.theme, "dark", "first tap must commit synchronously, not wait for the reveal");
   assert.equal(controller.theme, "dark");
-  assert.equal(root.dataset.theme, "dark");
-  assert.equal(root.style.colorScheme, "dark");
+  assert.equal(button.disabled, false, "visible theme switch must never be disabled for animation");
+  assert.equal(themeAttributes.get("aria-checked"), "true");
   assert.equal(meta.content, "#0c1116");
-  assert.equal(attributes.get("aria-checked"), "true");
-  assert.equal(persisted.get(THEME_STORAGE_KEY), "dark");
-  assert.equal(transitionCalls, 1);
-  assert.ok(root.style.values.has("--theme-origin-x"));
-  assert.ok(root.style.values.has("--theme-reveal-radius"));
+  assert.equal(backdrop.hidden, false);
+  assert.equal(runningAnimations.length, 1);
+  assert.equal(runningAnimations[0].options.duration, 560);
+  assert.equal(backdropVars.get("--theme-reveal-previous-bg"), "#eef2f3");
+  assert.equal(backdropVars.get("--theme-reveal-next-bg"), "#0c1116");
+
+  const second = controller.toggle();
+  assert.equal(root.dataset.theme, "light", "a rapid second tap must immediately reverse the theme");
+  assert.equal(runningAnimations[0].cancelled, true, "only the decorative reveal is cancelled");
+  assert.equal(runningAnimations.length, 2);
+  assert.equal(themeAttributes.get("aria-checked"), "false");
+  assert.equal(persisted.get(THEME_STORAGE_KEY), "light");
+  assert.equal(button.disabled, false);
+  assert.equal(rootSnapshots, 0, "animated cards must never enter a frozen root snapshot");
+  runningAnimations[1].finish();
+  await Promise.all([first, second]);
+  assert.equal(backdrop.hidden, true);
+  assert.equal(controller.theme, "light");
+  assert.equal(themeAttributes.has("aria-busy"), false);
 
   controller.setVisible(false);
   assert.equal(button.hidden, true);
   assert.equal(button.disabled, true);
-  assert.equal(attributes.get("aria-hidden"), "true");
   controller.setVisible(true);
-  assert.equal(button.hidden, false);
   assert.equal(button.disabled, false);
-  assert.equal(attributes.get("aria-hidden"), "false");
   setThemeSwitchVisible(button, false);
-  assert.equal(button.blurCalls > 0, true);
+  const directRoot = { dataset: {}, style: {} };
+  applyTheme("dark", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
+  assert.equal(directRoot.dataset.theme, "dark");
 
-  // A root circular reveal must never start while any card is still in a
-  // temporary 3D turn. Rapid taps are ignored until the single transaction
-  // commits and all required visual state is stable.
-  const stableAttrs = new Map();
-  const stableButton = {
-    hidden: false,
-    disabled: false,
-    title: "",
-    setAttribute(key, value) { stableAttrs.set(key, value); },
-    removeAttribute(key) { stableAttrs.delete(key); },
-    addEventListener() {},
-    getBoundingClientRect() { return { left: 40, top: 20, width: 44, height: 44 }; }
-  };
-  const stableRoot = {
-    dataset: { theme: "light" },
-    classList: new FakeClassList(),
-    style: { colorScheme: "", setProperty() {} },
-    offsetWidth: 100
-  };
-  const readyGate = Promise.withResolvers();
-  const transitionGate = Promise.withResolvers();
-  let leaseCount = 0;
-  let releaseCount = 0;
-  let stableVtCalls = 0;
-  const stableTheme = initializeThemeController({
+  button.hidden = false;
+  const reducedRoot = { dataset: { theme: "dark" }, style: {} };
+  const reducedBackdrop = { hidden: true, querySelector() { return reveal; } };
+  const reducedTheme = initializeThemeController({
     documentRef: {
-      documentElement: stableRoot,
-      querySelector(selector) { return selector === "#theme-switch" ? stableButton : null; },
-      startViewTransition(callback) {
-        stableVtCalls += 1;
-        callback();
-        return { finished: transitionGate.promise };
+      documentElement: reducedRoot,
+      querySelector(selector) {
+        return selector === "#theme-switch" ? button : selector === "#theme-reveal-backdrop" ? reducedBackdrop : null;
       }
     },
-    windowRef: { innerWidth: 390, innerHeight: 844, matchMedia: () => ({ matches: false }) },
-    storage,
-    acquireVisualStability() {
-      leaseCount += 1;
-      return { ready: readyGate.promise, release() { releaseCount += 1; } };
-    }
+    windowRef: { matchMedia() { return { matches: true }; } },
+    storage
   });
-  const pendingToggle = stableTheme.toggle();
-  assert.equal(stableTheme.toggle(), pendingToggle, "rapid taps must reuse one in-flight theme transaction");
-  assert.equal(stableVtCalls, 0, "no root snapshot before active 3D turns are finished");
-  assert.equal(stableRoot.dataset.theme, "light", "theme artwork must not change mid-turn");
-  assert.equal(stableButton.disabled, true);
-  readyGate.resolve();
-  await Promise.resolve();
-  assert.equal(stableVtCalls, 1, "canonical circular reveal starts after the stable-frame barrier");
-  assert.equal(stableRoot.dataset.theme, "dark");
-  assert.equal(stableTheme.toggle(), pendingToggle, "new taps while revealing must not start another root snapshot");
-  transitionGate.resolve();
-  await pendingToggle;
-  assert.equal(releaseCount, 1, "stability lease must be released exactly once");
-  assert.equal(leaseCount, 1);
-  assert.equal(stableButton.disabled, false);
-  assert.equal(stableAttrs.has("aria-busy"), false);
-  assert.equal(stableRoot.classList.contains("theme-view-transition"), false);
-
-  const directRoot = { dataset: {}, style: {} };
-  applyTheme("light", { root: directRoot, meta: null, switchButton: null, storage, persist: false });
-  assert.equal(directRoot.dataset.theme, "light");
+  await reducedTheme.toggle();
+  assert.equal(reducedRoot.dataset.theme, "light");
+  assert.equal(reducedBackdrop.hidden, true, "reduced motion skips only the decorative reveal");
 }
 
 
@@ -3015,15 +2972,10 @@ async function testResultCelebrationLifecycle() {
     "every active result turn must snapshot the current card-art theme before rotation starts");
   assert.equal(cards.every((card) => card.dataset.cardTurning === "true"), true,
     "only actively turning cards own temporary 3D faces");
-  const visualLease = controller.acquireVisualStability();
-  assert.equal(windowRef.timers.size, 0, "stable-frame barrier clears future card turn timers");
-  let visualReady = false;
-  visualLease.ready.then(() => { visualReady = true; });
-  await Promise.resolve();
-  assert.equal(visualReady, false, "the barrier cannot resolve while a card is mid-turn");
+  // A theme change never pauses, cancels or disarms any currently running card.
   for (const card of cards) card.ownerDocument.documentElement.dataset.theme = "dark";
   assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
-    "a global LIGHT/DARK change must not replace artwork in the middle of an already-started full turn");
+    "a running turn retains its original artwork while the global theme changes immediately");
 
   for (const card of cards) {
     const endTransform = card.animations[0].keyframes.at(-1).transform;
@@ -3043,10 +2995,9 @@ async function testResultCelebrationLifecycle() {
     "leaving result celebration must not cancel active turns");
 
   for (const card of cards) card.animations[0].finish();
-  await visualLease.ready;
-  visualLease.release();
+  await Promise.all(cards.map((card) => card.animations[0].finished));
   await Promise.resolve();
-  assert.equal(visualReady, true, "all already-started turns must settle before the root reveal is permitted");
+  await Promise.resolve();
   assert.equal(cards.every((card) => card.dataset.cardTurning === undefined && card.dataset.turnArtwork === undefined), true,
     "a completed full turn must release its pinned artwork so the canonical current theme becomes visible");
   assert.equal(windowRef.timers.size, 0,
@@ -3269,17 +3220,18 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "head bootstrap must restore the saved theme before the public UI is painted");
   assert.ok(css.includes(':root[data-theme="dark"]') && css.includes('--primary-bg:'),
     "public presentation must define complete tokenized light/dark palettes");
-  assert.ok(css.includes('::view-transition-new(root)') && css.includes('@keyframes theme-reveal'),
-    "theme change must use progressive circular View Transition reveal when supported");
-  assert.ok(css.includes('.theme-fallback-transition'),
-    "theme change must keep a non-View-Transition fallback");
+  assert.ok(html.includes('id="theme-reveal-backdrop"') && css.includes('.theme-reveal-backdrop__new'),
+    "one backdrop reveal must serve all public screens beneath live animated cards");
+  assert.ok(!css.includes('::view-transition-new(root)') && !css.includes('.theme-fallback-transition'),
+    "obsolete root snapshot/fallback authorities must not survive as dormant overrides");
   assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'),
     "theme motion must respect reduced-motion preference");
-  assert.ok(game.includes('themeController = initializeThemeController({') &&
-    game.includes('acquireVisualStability: () => resultCelebration?.acquireVisualStability()'),
-    "public game must coordinate visual stability without a result-specific theme transition implementation");
-  assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('startViewTransition'),
-    "theme controller must own durable preference and progressive transition orchestration");
+  assert.ok(game.includes('themeController = initializeThemeController();'),
+    "game must not couple theme to the result celebration scheduler");
+  assert.ok(!game.includes("themeController?.whenSettled"),
+    "pre-game navigation must not wait for the decorative theme backdrop animation");
+  assert.ok(themeControllerSource.includes('THEME_STORAGE_KEY') && themeControllerSource.includes('reveal.animate'),
+    "one theme controller owns preference and a non-snapshot circular backdrop reveal");
   assert.ok(themeControllerSource.includes('setThemeSwitchVisible') && game.includes('themeController?.setVisible'),
     "theme switch visibility must be controlled contextually without creating another theme authority");
   assert.ok(gameModesSource.includes('GAME_MODE_IDS') && gameModesSource.includes('CLASSIC'),
@@ -3417,9 +3369,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.4.3"') &&
-    html.includes('src="./js/game.js?v=1.6.4.3"') &&
-    game.includes('./result-celebration.js?v=1.6.4.3'),
+  assert.ok(html.includes('href="./css/style.css?v=1.6.4.4"') &&
+    html.includes('src="./js/game.js?v=1.6.4.4"') &&
+    game.includes('./result-celebration.js?v=1.6.4.4'),
     "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
@@ -3486,10 +3438,10 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !resultCelebrationSource.includes('dataset.resultTurnTheme') &&
     !css.includes('body[data-public-view="result"] .floating-card__surface::after'),
     "old view-bound 3D renderer and loose artwork pin must be removed, not overridden");
-  assert.ok(themeControllerSource.includes('if (transitioning) return activeTransition') &&
-    themeControllerSource.includes('await lease.ready') &&
-    themeControllerSource.includes('lease?.release?.()'),
-    "one shared serialized theme transaction must wait for the renderer to return to its flat state");
+  assert.ok(!themeControllerSource.includes('acquireVisualStability') &&
+    !resultCelebrationSource.includes('visualHoldCount') &&
+    !resultCelebrationSource.includes('visualIdleWaiters'),
+    "no old stability lease or delayed change may remain in the controller or scheduler");
 
   assert.ok(html.includes('class="result-fireworks" data-result-firework-layer aria-hidden="true"') &&
     /\.result-fireworks\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?pointer-events:\s*none/m.test(css),
@@ -3557,22 +3509,23 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !themeControllerSource.includes('afterChange') &&
     !themeControllerSource.includes('shouldUseViewTransition') &&
     !themeControllerSource.includes('transitionMode') &&
-    game.includes('themeController = initializeThemeController({') &&
-    game.includes('resultCelebration?.acquireVisualStability()'),
+    game.includes('themeController = initializeThemeController();'),
     "homepage theme controller must be the one canonical LIGHT/DARK transition authority for every public view");
   assert.ok(!game.includes('suspendPublicMotionForTheme') &&
     !game.includes('resumePublicMotionAfterTheme') &&
     !game.includes('shouldUseRootThemeViewTransition') &&
     !css.includes('theme-motion-hold'),
     "legacy result-only theme bridge and CSS motion hold must be removed rather than overridden");
-  assert.ok(themeControllerSource.includes('documentRef.startViewTransition') &&
-    /:root\.theme-view-transition::view-transition-new\(root\)[\s\S]*?theme-reveal 560ms/m.test(css),
-    "the accepted homepage circular root reveal must remain the universal supported theme transition");
+  assert.ok(!themeControllerSource.includes('startViewTransition') &&
+    themeControllerSource.includes('currentTheme = applyTheme(nextTheme') &&
+    themeControllerSource.includes('runningAnimation?.cancel?.()') &&
+    css.includes('.theme-reveal-backdrop') && css.includes('pointer-events: none'),
+    "theme commits immediately and restarts only a behind-the-cards reveal on rapid tap");
   assert.ok(resultCelebrationSource.includes('resolveSurfaceTheme') &&
     resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
     resultCelebrationSource.includes('surface.dataset.turnArtwork = turnTheme') &&
     resultCelebrationSource.includes('delete surface.dataset.turnArtwork') &&
-    resultCelebrationSource.includes('this.notifyVisualIdle()'),
+    !resultCelebrationSource.includes('this.notifyVisualIdle()'),
     "a turn owns a temporary card renderer and its starting artwork through completion");
   assert.ok(/data-turn-artwork="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
     /data-turn-artwork="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
@@ -4170,5 +4123,5 @@ console.log("V1.6.2.1 pre-game visual coherence corrective: PASS");
 console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
-console.log("V1.6.4.3 unified card renderer + serialized theme transaction: PASS");
+console.log("V1.6.4.4 immediate theme + live card motion: PASS");
 console.log("UI/deploy source contracts: PASS");

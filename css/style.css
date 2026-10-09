@@ -40,9 +40,6 @@
   --incorrect-halo: rgba(199, 61, 69, 0.08);
   --feedback-on-color: #ffffff;
   --feedback-outline: rgba(255, 255, 255, 0.92);
-  --theme-origin-x: calc(100vw - 40px);
-  --theme-origin-y: 36px;
-  --theme-reveal-radius: 150vmax;
   --accent-gold: #d89511;
   --accent-gold-bright: #f1b329;
   --accent-gold-soft: rgba(216, 149, 17, 0.13);
@@ -256,49 +253,26 @@ button {
   transform: rotate(0deg) scale(0.82);
 }
 
-@supports (view-transition-name: root) {
-  :root.theme-view-transition::view-transition-old(root) {
-    animation: none;
-    z-index: 1;
-  }
-
-  :root.theme-view-transition::view-transition-new(root) {
-    z-index: 2;
-    animation: theme-reveal 560ms cubic-bezier(.22, .78, .30, 1);
-  }
-
-  @keyframes theme-reveal {
-    from {
-      clip-path: circle(0 at var(--theme-origin-x) var(--theme-origin-y));
-    }
-    to {
-      clip-path: circle(var(--theme-reveal-radius) at var(--theme-origin-x) var(--theme-origin-y));
-    }
-  }
+/* One circular theme reveal for HOME, SETUP and RESULT. This layer is below
+   the live atmosphere / card faces / UI, not a frozen document snapshot. */
+.theme-reveal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--theme-reveal-previous-bg, var(--bg));
+  contain: strict;
 }
 
-:root.theme-fallback-transition body,
-:root.theme-fallback-transition .theme-switch,
-:root.theme-fallback-transition .theme-switch__thumb,
-:root.theme-fallback-transition .session-size-options,
-:root.theme-fallback-transition .session-size-indicator,
-:root.theme-fallback-transition .session-size-button,
-:root.theme-fallback-transition .primary-button,
-:root.theme-fallback-transition .image-card,
-:root.theme-fallback-transition .image-frame,
-:root.theme-fallback-transition .choice-hint,
-:root.theme-fallback-transition .choice-button,
-:root.theme-fallback-transition .game-mode-card,
-:root.theme-fallback-transition .game-mode-card__icon,
-:root.theme-fallback-transition .game-mode-card__arrow,
-:root.theme-fallback-transition .setup-back-button,
-:root.theme-fallback-transition .setup-retry-button,
-:root.theme-fallback-transition .result-primary-button,
-:root.theme-fallback-transition .result-secondary-button {
-  transition-property: background-color, color, border-color, box-shadow, transform;
-  transition-duration: 420ms;
-  transition-timing-function: cubic-bezier(.22, .78, .30, 1);
+.theme-reveal-backdrop[hidden] { display: none !important; }
+
+.theme-reveal-backdrop__new {
+  position: absolute;
+  inset: 0;
+  background: var(--theme-reveal-next-bg, var(--bg));
 }
+
 
 .app-shell {
   position: relative;
