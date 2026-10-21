@@ -78,7 +78,7 @@ import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectable } from "../js/game-modes.js";
 import {
   SPEED_DIFFICULTIES, DEFAULT_SPEED_DIFFICULTY, getSpeedDifficulty,
-  createSpeedRunState, resolveSpeedRunOutcome, SpeedDeadlineClock, SpeedRunDeck
+  createSpeedRunState, resolveSpeedRunOutcome, getSpeedTimerView, SpeedDeadlineClock, SpeedRunDeck
 } from "../js/speed-run.js";
 import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
 import {
@@ -477,6 +477,7 @@ class FakeFeedbackElement {
       pill: animatedChild("pill")
     };
     this.lastAnimationOptions = null;
+    this.lastKeyframes = null;
   }
 
   querySelector(selector) {
@@ -498,6 +499,7 @@ class FakeFeedbackElement {
 
   animate(keyframes, options) {
     this.lastAnimationOptions = options;
+    this.lastKeyframes = keyframes;
     return new FakeAnimation();
   }
 }
@@ -529,6 +531,30 @@ async function testAnswerFeedbackLifecycle() {
     });
     assert.equal(await reduced.play(true), true);
     assert.equal(reducedRoot.lastAnimationOptions.duration, 1);
+
+    globalThis.window.matchMedia = () => ({ matches: false });
+    const timeoutRoot = new FakeFeedbackElement();
+    const timeoutFeedback = new AnswerFeedbackController(timeoutRoot);
+    const timeoutPromise = timeoutFeedback.play("timeout");
+    assert.equal(timeoutRoot.children.label.textContent, "CZAS MINĄŁ");
+    assert.equal(timeoutRoot.dataset.result, "timeout");
+    assert.equal(timeoutRoot.lastAnimationOptions.duration, 2050);
+    assert.equal(timeoutRoot.lastKeyframes[1].offset, 0.08);
+    assert.equal(timeoutRoot.lastKeyframes[2].offset, 0.92);
+    assert.ok((0.92 - 0.08) * 2050 >= 1500,
+      "timeout feedback must remain at full opacity for at least 1.5 seconds");
+    assert.ok(timeoutRoot.childAnimations.filter(({ name }) => name === "ring" || name === "burst")
+      .every(({ animation }) => animation.options.duration === 880),
+      "timeout ring/burst must finish early and not keep moving through the reading beat");
+    assert.equal(await timeoutPromise, true);
+
+    globalThis.window.matchMedia = () => ({ matches: true });
+    const timeoutReducedRoot = new FakeFeedbackElement();
+    const timeoutReduced = new AnswerFeedbackController(timeoutReducedRoot);
+    assert.equal(await timeoutReduced.play("timeout"), true);
+    assert.equal(timeoutReducedRoot.lastAnimationOptions.duration, 1850);
+    assert.ok((timeoutReducedRoot.lastKeyframes[2].offset - timeoutReducedRoot.lastKeyframes[1].offset) * 1850 >= 1500,
+      "reduced-motion timeout must stay legible without decorative motion");
   } finally {
     globalThis.window = previousWindow;
   }
@@ -2649,6 +2675,23 @@ async function testSpeedRunContracts() {
     assert.throws(() => resolveSpeedRunOutcome(current, "correct"));
   }
 
+  for (const { seconds } of Object.values(SPEED_DIFFICULTIES)) {
+    const total = seconds * 1000;
+    assert.deepEqual(getSpeedTimerView(total, total), {
+      progress: 1, display: `${seconds},0 s`, ariaSeconds: seconds, urgency: "normal"
+    });
+    assert.equal(getSpeedTimerView(total / 2, total).progress, .5);
+    assert.equal(getSpeedTimerView(2001, total).urgency, "normal");
+    assert.equal(getSpeedTimerView(2000, total).urgency, "urgent");
+    assert.equal(getSpeedTimerView(1001, total).urgency, "urgent");
+    assert.equal(getSpeedTimerView(1000, total).urgency, "critical");
+    assert.equal(getSpeedTimerView(1, total).display, "0,1 s");
+    assert.equal(getSpeedTimerView(0, total).urgency, "normal");
+    assert.equal(getSpeedTimerView(-25, total).progress, 0);
+    assert.equal(getSpeedTimerView(total + 50, total).progress, 1);
+    assert.throws(() => getSpeedTimerView(NaN, total), RangeError);
+  }
+
   let now = 1000;
   let frameId = 0;
   let latestFrame = null;
@@ -3312,6 +3355,24 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.equal((html.match(/data-speed-difficulty="medium"/g) || []).length, 2);
   assert.equal((html.match(/data-speed-difficulty="hard"/g) || []).length, 2);
   assert.ok(html.includes('id="speed-time"') && html.includes('id="speed-lives"'));
+  assert.ok(html.includes('id="speed-timer"') && html.includes('id="speed-time-track"') &&
+    html.includes('role="progressbar"') && html.includes('aria-live="off"'),
+    "Speed Run countdown must expose a readable, non-spamming progressbar");
+  assert.ok(html.indexOf('id="speed-timer"') > html.indexOf('class="question-block"') &&
+    html.indexOf('id="speed-timer"') < html.indexOf('class="card-stage"'),
+    "timer must sit immediately above the card instead of inside swipe surface or tiny HUD");
+  assert.ok(!html.includes('id="speed-time-stat"'),
+    "do not keep the tiny duplicate stopwatch in the 3-column HUD");
+  assert.ok(game.includes('getSpeedTimerView(remainingMs ?? totalMs, totalMs)') &&
+    game.includes('speedTimeFill.style.transform = `scaleX(${timer.progress})`') &&
+    game.includes('onTick: (remaining) => updateSpeedHUD(remaining)') &&
+    game.includes('speedTimer.classList.toggle("is-paused", remainingMs === "keep" || remainingMs === 0)'),
+    "bar and digits must project the existing monotonic clock, never create another countdown");
+  assert.ok(css.includes('@keyframes speed-timer-pulse') &&
+    css.includes('.speed-timer.is-urgent:not(.is-paused) .speed-timer__track') &&
+    css.includes(' .speed-timer.is-urgent:not(.is-paused) .speed-timer__fill { animation: none; }') &&
+    css.includes('--speed-timer-color: var(--incorrect)'),
+    "last-two-seconds urgency and reduced-motion presentation must be isolated");
   assert.ok(html.includes('id="speed-replay-picker"'));
   assert.ok(!html.includes("Pojedynek") && !html.includes("Wkrótce"),
     "public V1.6.1 copy must not spoil an unimplemented future mode");
@@ -3476,9 +3537,11 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.7.1"') &&
-    html.includes('src="./js/game.js?v=1.7.1"') &&
-    game.includes('./result-celebration.js?v=1.7.1'),
+  assert.ok(html.includes('href="./css/style.css?v=1.7.1a"') &&
+    html.includes('src="./js/game.js?v=1.7.1a"') &&
+    game.includes('./result-celebration.js?v=1.7.1') &&
+    game.includes('./speed-run.js?v=1.7.1a') &&
+    game.includes('./answer-feedback.js?v=1.7.1a'),
     "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
@@ -4233,4 +4296,6 @@ console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
 console.log("V1.6.4.5 original full-page circular theme reveal restoration: PASS");
 console.log("V1.7.1 Speed Run rules, deadline and rolling deck: PASS");
+console.log("V1.7.1A Speed timer progress/urgency and timeout legibility: PASS");
 console.log("UI/deploy source contracts: PASS");
+

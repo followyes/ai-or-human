@@ -2289,29 +2289,85 @@ body[data-public-view="gameplay"] .theme-switch {
 .speed-difficulty-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 .speed-difficulty-button:disabled { cursor: default; opacity: .5; }
 
+/* Speed Run timer is stationary ABOVE the swipe surface and receives the
+   one existing deadline's fraction via a compositor-only fill transform. */
 .screen-game.is-speed-run .game-header {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
-.screen-game.is-speed-run .game-stat {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-}
-.screen-game.is-speed-run .game-stat-time { align-items: flex-start; }
-.screen-game.is-speed-run .game-stat-score { align-items: flex-end; }
 .screen-game.is-speed-run .game-stat-lives strong {
   white-space: nowrap;
   color: var(--incorrect);
   font-size: 1.12rem;
   letter-spacing: .06em;
 }
-.screen-game.is-speed-run .game-stat-time strong {
+.speed-timer {
+  width: min(100%, 500px);
+  margin: 0 auto 12px;
+  --speed-timer-color: var(--accent-blue);
+  --speed-timer-halo: color-mix(in srgb, var(--accent-blue) 22%, transparent);
+}
+.speed-timer__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.speed-timer__heading .meta-label {
+  font-size: .72rem;
+  letter-spacing: .11em;
+}
+.speed-timer__value {
+  color: var(--speed-timer-color);
+  font-size: 1.05rem;
+  font-weight: 850;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
-  min-width: 4.8ch;
+  white-space: nowrap;
+  text-align: right;
+  min-width: 4.5ch;
+}
+.speed-timer__track {
+  position: relative;
+  height: 12px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--text) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 9%, transparent);
+  overflow: hidden;
+}
+.speed-timer__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  transform: scaleX(1);
+  transform-origin: left center;
+  background: var(--speed-timer-color);
+  box-shadow: 0 0 11px var(--speed-timer-halo);
+  will-change: transform;
+}
+.speed-timer.is-urgent {
+  --speed-timer-color: var(--accent-gold);
+  --speed-timer-halo: color-mix(in srgb, var(--accent-gold) 35%, transparent);
+}
+.speed-timer.is-critical {
+  --speed-timer-color: var(--incorrect);
+  --speed-timer-halo: color-mix(in srgb, var(--incorrect) 42%, transparent);
+}
+.speed-timer.is-urgent:not(.is-paused) .speed-timer__track {
+  animation: speed-timer-pulse 650ms ease-in-out infinite alternate;
+}
+.speed-timer.is-urgent:not(.is-paused) .speed-timer__fill {
+  animation: speed-timer-fill-pulse 650ms ease-in-out infinite alternate;
+}
+@keyframes speed-timer-pulse {
+  from { box-shadow: inset 0 0 0 1px var(--speed-timer-halo), 0 0 0 0 var(--speed-timer-halo); }
+  to { box-shadow: inset 0 0 0 1px var(--speed-timer-halo), 0 0 11px 2px var(--speed-timer-halo); }
+}
+@keyframes speed-timer-fill-pulse {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.28); }
 }
 .answer-feedback.is-timeout { color: var(--accent-gold-bright); }
 .answer-feedback.is-timeout .answer-feedback__wash {
@@ -2348,4 +2404,23 @@ body[data-public-view="gameplay"] .theme-switch {
 
 @media (prefers-reduced-motion: reduce) {
   .speed-difficulty-button { transition-duration: .001ms; }
+}
+
+/* Reserve the timer's height in the short-phone gameplay budget, so decisions
+   remain visible without scrolling and the bar never resizes the swipe card. */
+@media (max-height: 740px) and (orientation: portrait) {
+  .screen-game.is-speed-run .speed-timer { margin-bottom: 8px; }
+  .screen-game.is-speed-run .speed-timer__heading { margin-bottom: 4px; }
+  .screen-game.is-speed-run .speed-timer__track { height: 10px; }
+  .screen-game.is-speed-run .card-stage {
+    width: min(100%, 390px, calc((100svh - 282px) * .8));
+  }
+}
+@media (max-width: 360px) {
+  .screen-game.is-speed-run .speed-timer__heading .meta-label { font-size: .66rem; }
+  .screen-game.is-speed-run .speed-timer__value { font-size: .98rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .speed-timer.is-urgent:not(.is-paused) .speed-timer__track,
+  .speed-timer.is-urgent:not(.is-paused) .speed-timer__fill { animation: none; }
 }

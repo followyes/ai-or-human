@@ -1,6 +1,8 @@
 const DEFAULTS = Object.freeze({
   duration: 950,
-  reducedDuration: 700
+  reducedDuration: 700,
+  timeoutDuration: 2050,
+  timeoutReducedDuration: 1850
 });
 
 function prefersReducedMotion() {
@@ -53,7 +55,9 @@ export class AnswerFeedbackController {
 
     const revision = ++this.revision;
     const reduced = prefersReducedMotion();
-    const duration = reduced ? this.options.reducedDuration : this.options.duration;
+    const duration = timeout
+      ? (reduced ? this.options.timeoutReducedDuration : this.options.timeoutDuration)
+      : (reduced ? this.options.reducedDuration : this.options.duration);
     const stateClass = timeout ? "is-timeout" : (isCorrect ? "is-correct" : "is-incorrect");
 
     this.root.classList.add("is-active", stateClass);
@@ -67,8 +71,8 @@ export class AnswerFeedbackController {
       const animation = this.root.animate(
         [
           { opacity: 0, transform: "translate3d(0,0,0) scale(.995)" },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.14 },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.80 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.05 : 0.14 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.95 : 0.80 },
           { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
         ],
         { duration, easing: "ease-out", fill: "forwards" }
@@ -78,8 +82,8 @@ export class AnswerFeedbackController {
       const main = this.root.animate(
         [
           { opacity: 0, transform: "translate3d(0,0,0) scale(.985)" },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.12 },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.78 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.08 : 0.12 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.92 : 0.78 },
           { opacity: 0, transform: "translate3d(0,0,0) scale(1.008)" }
         ],
         { duration, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" }
@@ -101,7 +105,7 @@ export class AnswerFeedbackController {
           ];
 
       const ring = this.ring?.animate?.(ringFrames, {
-        duration,
+        duration: timeout ? 880 : duration,
         easing: "cubic-bezier(.15,.7,.25,1)",
         fill: "forwards"
       });
@@ -113,10 +117,17 @@ export class AnswerFeedbackController {
           { opacity: isCorrect ? .48 : .54, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.48 },
           { opacity: 0, transform: "translate(-50%, -50%) scale(1.34)" }
         ],
-        { duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
+        { duration: timeout ? 880 : duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
       );
 
-      const pillFrames = isCorrect
+      const pillFrames = timeout
+        ? [
+            { opacity: 0, transform: "translate3d(0,8px,0) scale(.94)" },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.08 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.92 },
+            { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
+          ]
+        : isCorrect
         ? [
             { opacity: 0, transform: "translate3d(0,10px,0) scale(.78)" },
             { opacity: 1, transform: "translate3d(0,-2px,0) scale(1.08)", offset: 0.16 },
@@ -155,7 +166,7 @@ export class AnswerFeedbackController {
               { transform: "rotate(0deg) scale(1)", offset: 0.44 },
               { transform: "rotate(0deg) scale(1)" }
             ],
-        { duration, easing: "cubic-bezier(.2,.78,.28,1)", fill: "forwards" }
+        { duration: timeout ? 880 : duration, easing: "cubic-bezier(.2,.78,.28,1)", fill: "forwards" }
       );
 
       this.animations = compactAnimations(main, ring, burst, pill, icon);

@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1a">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -212,7 +212,6 @@
           <span class="meta-label">POSTĘP</span>
           <strong id="round-counter">1 / 20</strong>
         </div>
-        <div class="game-stat game-stat-time is-hidden" id="speed-time-stat"><span class="meta-label">CZAS</span><strong id="speed-time" aria-label="Pozostały czas">5,0 s</strong></div>
         <div class="game-stat game-stat-lives is-hidden" id="speed-lives-stat"><span class="meta-label">ŻYCIA</span><strong id="speed-lives" aria-label="Pozostałe życia">♥ ♥</strong></div>
         <div class="game-stat game-stat-score score-box">
           <span class="meta-label">WYNIK</span>
@@ -224,6 +223,18 @@
         <p class="eyebrow">AI OR HUMAN</p>
         <h2 id="question-title">Kto stworzył ten obraz?</h2>
       </section>
+
+      <div class="speed-timer is-hidden" id="speed-timer" aria-live="off">
+        <div class="speed-timer__heading">
+          <span class="meta-label">POZOSTAŁY CZAS</span>
+          <strong class="speed-timer__value" id="speed-time" aria-hidden="true">5,0 s</strong>
+        </div>
+        <div class="speed-timer__track" id="speed-time-track" role="progressbar"
+             aria-label="Pozostały czas na odpowiedź" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="100" aria-valuetext="5 sekund">
+          <span class="speed-timer__fill" id="speed-time-fill" aria-hidden="true"></span>
+        </div>
+      </div>
 
       <div class="card-stage">
         <article class="image-card" id="image-card">
@@ -304,6 +315,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/game.js?v=1.7.1"></script>
+  <script type="module" src="./js/game.js?v=1.7.1a"></script>
 </body>
 </html>

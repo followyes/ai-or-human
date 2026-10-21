@@ -1,13 +1,13 @@
 import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
-import { AnswerFeedbackController } from "./answer-feedback.js";
+import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1a";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { preloadImage } from "./image-preloader.js";
-import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js";
+import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, getSpeedTimerView, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js?v=1.7.1a";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
 import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1";
 import {
@@ -48,7 +48,9 @@ const speedSetupPicker = document.querySelector("#speed-setup-picker");
 const speedReplayPicker = document.querySelector("#speed-replay-picker");
 const speedDifficultyButtons = [...document.querySelectorAll("[data-speed-difficulty]")];
 const classicProgressStat = document.querySelector("#classic-progress-stat");
-const speedTimeStat = document.querySelector("#speed-time-stat");
+const speedTimer = document.querySelector("#speed-timer");
+const speedTimeTrack = document.querySelector("#speed-time-track");
+const speedTimeFill = document.querySelector("#speed-time-fill");
 const speedLivesStat = document.querySelector("#speed-lives-stat");
 const speedTimeDisplay = document.querySelector("#speed-time");
 const speedLivesDisplay = document.querySelector("#speed-lives");
@@ -305,7 +307,8 @@ function syncModePresentation() {
   }
   modeSetupTitle.textContent = speed ? "Speed Run" : "Klasyczny";
   classicProgressStat.classList.toggle("is-hidden", speed);
-  speedTimeStat.classList.toggle("is-hidden", !speed);
+  speedTimer.classList.toggle("is-hidden", !speed);
+  if (!speed) speedTimer.classList.remove("is-urgent", "is-critical", "is-paused");
   speedLivesStat.classList.toggle("is-hidden", !speed);
   gameScreen.classList.toggle("is-speed-run", speed);
   for (const button of speedDifficultyButtons) {
@@ -325,10 +328,25 @@ function chooseSpeedDifficulty(id) {
 function updateSpeedHUD(remainingMs = null) {
   if (!speedRunState) return;
   const difficulty = getSpeedDifficulty(speedRunState.difficultyId);
-  const remaining = remainingMs ?? difficulty.seconds * 1000;
+  // A settled card keeps its last visual fraction but must never keep pulsing.
+  speedTimer.classList.toggle("is-paused", remainingMs === "keep" || remainingMs === 0);
   if (remainingMs !== "keep") {
-    const timeText = `${(Math.ceil(Math.max(0, remaining) / 100) / 10).toFixed(1).replace(".", ",")} s`;
-    if (speedTimeDisplay.textContent !== timeText) speedTimeDisplay.textContent = timeText;
+    const totalMs = difficulty.seconds * 1000;
+    const timer = getSpeedTimerView(remainingMs ?? totalMs, totalMs);
+    if (speedTimeDisplay.textContent !== timer.display) speedTimeDisplay.textContent = timer.display;
+    // The deadline clock is the only time source. Writing transform every frame
+    // does not reflow the card, controls or the timer's own geometry.
+    speedTimeFill.style.transform = `scaleX(${timer.progress})`;
+    speedTimer.classList.toggle("is-urgent", timer.urgency !== "normal");
+    speedTimer.classList.toggle("is-critical", timer.urgency === "critical");
+    const ariaValue = Math.round(timer.progress * 100);
+    if (speedTimeTrack.getAttribute("aria-valuenow") !== String(ariaValue)) {
+      speedTimeTrack.setAttribute("aria-valuenow", String(ariaValue));
+    }
+    const ariaText = `${timer.ariaSeconds} ${timer.ariaSeconds === 1 ? "sekunda" : "sekund"}`;
+    if (speedTimeTrack.getAttribute("aria-valuetext") !== ariaText) {
+      speedTimeTrack.setAttribute("aria-valuetext", ariaText);
+    }
   }
   const livesText = "♥ ".repeat(speedRunState.lives).trim() || "0";
   if (speedLivesDisplay.textContent !== livesText) {

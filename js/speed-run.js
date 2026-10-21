@@ -31,6 +31,23 @@ export function resolveSpeedRunOutcome(state, outcome) {
   };
 }
 
+// Presentation is a projection of the existing monotonic deadline, never an
+// independent timer. The 2-second warning is independent of difficulty.
+export function getSpeedTimerView(remainingMs, totalMs) {
+  if (!Number.isFinite(remainingMs) || !Number.isFinite(totalMs) || totalMs <= 0) {
+    throw new RangeError("Invalid Speed Run timer values");
+  }
+  const remaining = Math.max(0, Math.min(totalMs, remainingMs));
+  const seconds = Math.ceil(remaining / 100) / 10;
+  return {
+    progress: remaining / totalMs,
+    display: `${seconds.toFixed(1).replace(".", ",")} s`,
+    ariaSeconds: Math.ceil(remaining / 1000),
+    urgency: remaining > 0 && remaining <= 1000 ? "critical" :
+      remaining > 0 && remaining <= 2000 ? "urgent" : "normal"
+  };
+}
+
 // Deadline is based on the monotonic clock. The click path checks the deadline
 // synchronously, independent from RAF throttling when a browser is backgrounded.
 export class SpeedDeadlineClock {
