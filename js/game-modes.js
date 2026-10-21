@@ -1,5 +1,6 @@
 export const GAME_MODE_IDS = Object.freeze({
-  CLASSIC: "classic"
+  CLASSIC: "classic",
+  SPEED_RUN: "speed-run"
 });
 
 const GAME_MODE_DEFINITIONS = Object.freeze([
@@ -7,6 +8,12 @@ const GAME_MODE_DEFINITIONS = Object.freeze([
     id: GAME_MODE_IDS.CLASSIC,
     label: "Klasyczny",
     description: "Zgaduj, kto stworzył obraz",
+    enabled: true
+  }),
+  Object.freeze({
+    id: GAME_MODE_IDS.SPEED_RUN,
+    label: "Speed Run",
+    description: "Zgaduj, zanim skończy się czas",
     enabled: true
   })
 ]);

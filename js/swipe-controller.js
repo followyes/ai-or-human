@@ -277,6 +277,34 @@ export class SwipeController {
     return true;
   }
 
+  // A timeout is not a vote for either category. Move the card neutrally
+  // downwards while preserving the same hidden handoff contract as throw().
+  async dismiss() {
+    this.stopAnimation();
+    this.returning = false;
+    this.setEnabled(false);
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState();
+    const distance = Math.max(window.innerHeight, this.card.clientHeight) + this.card.clientHeight + 80;
+    const targetTransform = `translate3d(0, ${distance}px, 0) rotate(0deg)`;
+    const duration = this.motionDuration(this.options.throwDuration, this.options.reducedThrowDuration);
+    const revision = ++this.animationRevision;
+    const animation = this.card.animate(
+      [{ transform: "translate3d(0, 0, 0) rotate(0deg)", opacity: 1 }, { transform: targetTransform, opacity: 0 }],
+      { duration, easing: "cubic-bezier(.22,.64,.30,1)", fill: "forwards" }
+    );
+    this.animation = animation;
+    try { await animation.finished; } catch {}
+    if (revision !== this.animationRevision || this.animation !== animation) return false;
+    this.card.style.transform = targetTransform;
+    this.card.style.opacity = "0";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+    this.handoffPending = true;
+    try { animation.cancel(); } catch {}
+    this.animation = null;
+    return true;
+  }
+
   prepareHidden() {
     this.stopAnimation();
     this.returning = false;

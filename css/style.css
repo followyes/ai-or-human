@@ -2238,3 +2238,114 @@ body[data-public-view="gameplay"] .theme-switch {
     opacity: 0 !important;
   }
 }
+
+/* V1.7.1 — Speed Run: reuse the V1.6 pre-game, game and result visual system. */
+.game-mode-list {
+  display: grid;
+  gap: 12px;
+}
+
+.speed-difficulty-picker {
+  width: min(100%, 400px);
+  margin: 28px auto 0;
+}
+
+.speed-difficulty-picker > .meta-label {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.speed-difficulty-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.speed-difficulty-button {
+  min-width: 0;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 4px;
+  border: 1px solid var(--landing-panel-border);
+  border-radius: 18px;
+  background: var(--landing-panel);
+  color: var(--landing-title);
+  box-shadow: inset 0 1px 0 var(--inset-highlight);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.speed-difficulty-button strong { font-size: .95rem; }
+.speed-difficulty-button span { font-size: .79rem; color: var(--muted); white-space: nowrap; }
+.speed-difficulty-button.is-selected {
+  border-color: var(--accent-gold);
+  background: var(--accent-gold-soft);
+}
+.speed-difficulty-button:hover:not(:disabled) { transform: translateY(-2px); }
+.speed-difficulty-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+.speed-difficulty-button:disabled { cursor: default; opacity: .5; }
+
+.screen-game.is-speed-run .game-header {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.screen-game.is-speed-run .game-stat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.screen-game.is-speed-run .game-stat-time { align-items: flex-start; }
+.screen-game.is-speed-run .game-stat-score { align-items: flex-end; }
+.screen-game.is-speed-run .game-stat-lives strong {
+  white-space: nowrap;
+  color: var(--incorrect);
+  font-size: 1.12rem;
+  letter-spacing: .06em;
+}
+.screen-game.is-speed-run .game-stat-time strong {
+  font-variant-numeric: tabular-nums;
+  min-width: 4.8ch;
+}
+.answer-feedback.is-timeout { color: var(--accent-gold-bright); }
+.answer-feedback.is-timeout .answer-feedback__wash {
+  background: radial-gradient(circle at center,
+    color-mix(in srgb, var(--accent-gold) 22%, transparent),
+    transparent 78%);
+}
+.answer-feedback.is-timeout .answer-feedback__pill {
+  background: var(--landing-title);
+  color: var(--bg);
+  min-width: 184px;
+}
+.speed-difficulty-picker-end { margin: 0 auto; }
+.result-replay-setup .speed-difficulty-picker .meta-label { margin-bottom: 10px; }
+.result-replay-setup .speed-difficulty-button { min-height: 62px; padding: 8px 4px; }
+
+@media (max-width: 360px) {
+  .speed-difficulty-options { gap: 6px; }
+  .speed-difficulty-button { min-height: 72px; border-radius: 14px; }
+  .speed-difficulty-button strong { font-size: .85rem; }
+  .speed-difficulty-button span { font-size: .72rem; }
+  .screen-game.is-speed-run .game-stat-lives strong { font-size: 1rem; }
+}
+
+@media (max-height: 740px) and (orientation: portrait) {
+  .mode-select-panel { gap: 20px; }
+  .game-mode-list { gap: 9px; }
+  .game-mode-card { min-height: 97px; }
+  .speed-difficulty-picker { margin-top: 20px; }
+  .speed-difficulty-button { min-height: 64px; gap: 4px; }
+  .mode-setup-panel .speed-difficulty-picker + .setup-status { margin-top: 10px; }
+  .result-replay-setup .speed-difficulty-button { min-height: 56px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speed-difficulty-button { transition-duration: .001ms; }
+}

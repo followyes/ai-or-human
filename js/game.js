@@ -4,10 +4,12 @@ import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
-import { initializeThemeController } from "./theme-controller.js?v=1.6.4.5";
+import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
+import { preloadImage } from "./image-preloader.js";
+import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.6.4.5";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -24,6 +26,7 @@ const errorScreen = document.querySelector("#error-screen");
 const publicScreens = [preGameScreen, gameScreen, endScreen, errorScreen];
 const preGamePanels = [modeSelectPanel, modeSetupPanel];
 
+const speedModeButton = document.querySelector("#speed-run-mode-button");
 const classicModeButton = document.querySelector('#classic-mode-button[data-game-mode="classic"]');
 const modeSetupTitle = document.querySelector("#mode-setup-title");
 const modeSetupBackButton = document.querySelector("#mode-setup-back");
@@ -39,6 +42,16 @@ const resultActions = document.querySelector("#result-actions");
 const resultReplaySetup = document.querySelector("#result-replay-setup");
 const humanButton = document.querySelector("#human-button");
 const aiButton = document.querySelector("#ai-button");
+const classicSetupPicker = document.querySelector("#classic-setup-picker");
+const classicReplayPicker = document.querySelector("#classic-replay-picker");
+const speedSetupPicker = document.querySelector("#speed-setup-picker");
+const speedReplayPicker = document.querySelector("#speed-replay-picker");
+const speedDifficultyButtons = [...document.querySelectorAll("[data-speed-difficulty]")];
+const classicProgressStat = document.querySelector("#classic-progress-stat");
+const speedTimeStat = document.querySelector("#speed-time-stat");
+const speedLivesStat = document.querySelector("#speed-lives-stat");
+const speedTimeDisplay = document.querySelector("#speed-time");
+const speedLivesDisplay = document.querySelector("#speed-lives");
 const sessionSizeButtons = [...document.querySelectorAll("[data-session-size]")];
 const sessionSizeOptionGroups = [...document.querySelectorAll(".session-size-options")];
 
@@ -79,6 +92,10 @@ let preGameTransition = null;
 let resultCelebration = null;
 
 let selectedGameMode = null;
+let selectedSpeedDifficulty = DEFAULT_SPEED_DIFFICULTY;
+let speedRunState = null;
+let speedDeck = null;
+const speedClock = new SpeedDeadlineClock();
 let classicManifestStatus = "idle";
 let classicManifestError = null;
 let classicManifestPromise = null;
@@ -168,6 +185,7 @@ function setResultSubstate(nextSubstate, { focus = false } = {}) {
   if (!replaySetupVisible) return;
 
   syncSessionSizeControls();
+  syncModePresentation();
   refreshSessionSizePickersSoon();
 
   if (focus) {
@@ -175,7 +193,8 @@ function setResultSubstate(nextSubstate, { focus = false } = {}) {
       const selectedSizeButton = resultReplaySetup.querySelector(
         `[data-session-size="${selectedSessionSize}"]`
       );
-      selectedSizeButton?.focus({ preventScroll: true });
+      const speedButton = resultReplaySetup.querySelector(`[data-speed-difficulty="${selectedSpeedDifficulty}"]`);
+      (selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? speedButton : selectedSizeButton)?.focus({ preventScroll: true });
     });
   }
 }
@@ -200,6 +219,10 @@ function returnResultToHome() {
 
   resultCelebration?.leave();
   presentationRevision += 1;
+  speedClock.stop();
+  speedDeck?.cancel();
+  speedDeck = null;
+  speedRunState = null;
   resetResultPresentation();
   clearCardOverlays();
   hideImageContent();
@@ -270,16 +293,61 @@ function syncSessionSizeControls({ busy = false, animate = false } = {}) {
   }
 }
 
+function syncModePresentation() {
+  const speed = selectedGameMode === GAME_MODE_IDS.SPEED_RUN;
+  const classic = !speed;
+  for (const [element, visible] of [
+    [classicSetupPicker, classic], [classicReplayPicker, classic],
+    [speedSetupPicker, speed], [speedReplayPicker, speed]
+  ]) {
+    element.classList.toggle("is-hidden", !visible);
+    element.inert = !visible;
+  }
+  modeSetupTitle.textContent = speed ? "Speed Run" : "Klasyczny";
+  classicProgressStat.classList.toggle("is-hidden", speed);
+  speedTimeStat.classList.toggle("is-hidden", !speed);
+  speedLivesStat.classList.toggle("is-hidden", !speed);
+  gameScreen.classList.toggle("is-speed-run", speed);
+  for (const button of speedDifficultyButtons) {
+    const selected = button.dataset.speedDifficulty === selectedSpeedDifficulty;
+    button.classList.toggle("is-selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+}
+
+function chooseSpeedDifficulty(id) {
+  if (!getSpeedDifficulty(id) || state === "preparing") return false;
+  selectedSpeedDifficulty = id;
+  syncModePresentation();
+  return true;
+}
+
+function updateSpeedHUD(remainingMs = null) {
+  if (!speedRunState) return;
+  const difficulty = getSpeedDifficulty(speedRunState.difficultyId);
+  const remaining = remainingMs ?? difficulty.seconds * 1000;
+  if (remainingMs !== "keep") {
+    const timeText = `${(Math.ceil(Math.max(0, remaining) / 100) / 10).toFixed(1).replace(".", ",")} s`;
+    if (speedTimeDisplay.textContent !== timeText) speedTimeDisplay.textContent = timeText;
+  }
+  const livesText = "♥ ".repeat(speedRunState.lives).trim() || "0";
+  if (speedLivesDisplay.textContent !== livesText) {
+    speedLivesDisplay.textContent = livesText;
+    speedLivesDisplay.setAttribute("aria-label", `Pozostałe życia: ${speedRunState.lives}`);
+  }
+  const scoreText = String(speedRunState.score);
+  if (scoreDisplay.textContent !== scoreText) scoreDisplay.textContent = scoreText;
+}
+
 function syncClassicSetupControls({ animate = false } = {}) {
   const preparing = state === "preparing";
   const manifestReady = classicManifestStatus === "ready";
   const manifestLoading = classicManifestStatus === "loading" || classicManifestStatus === "idle";
   const manifestFailed = classicManifestStatus === "error";
-  const canStart =
-    selectedGameMode === GAME_MODE_IDS.CLASSIC &&
-    manifestReady &&
-    isSessionSizeAvailable(selectedSessionSize) &&
-    !preparing;
+  const canStart = manifestReady && !preparing && (
+    (selectedGameMode === GAME_MODE_IDS.CLASSIC && isSessionSizeAvailable(selectedSessionSize)) ||
+    (selectedGameMode === GAME_MODE_IDS.SPEED_RUN && getUsableImageCount() > 0 && Boolean(getSpeedDifficulty(selectedSpeedDifficulty)))
+  );
 
   syncSessionSizeControls({ busy: preparing || !manifestReady, animate });
   startButton.disabled = !canStart;
@@ -321,6 +389,8 @@ function configureSessionSizeAvailability(imageCount) {
 function showFatalError(message) {
   resultCelebration?.leave();
   presentationRevision += 1;
+  speedClock.stop();
+  speedDeck?.cancel();
   setState("error");
   swipe?.resetVisuals();
   errorMessage.textContent = message;
@@ -423,13 +493,14 @@ async function openGameMode(modeId) {
   if (!isGameModeSelectable(modeId)) return false;
 
   const mode = getGameModeDefinition(modeId);
-  if (!mode || mode.id !== GAME_MODE_IDS.CLASSIC) return false;
+  if (!mode || ![GAME_MODE_IDS.CLASSIC, GAME_MODE_IDS.SPEED_RUN].includes(mode.id)) return false;
 
   preGameNavigationPending = true;
   try {
     if (preGameTransition?.busy || state === "preparing") return false;
 
     selectedGameMode = mode.id;
+    syncModePresentation();
     setState("mode-setup");
     syncClassicSetupControls();
     applyPublicView(preGameScreen, { view: "mode-setup", themeSwitchVisible: true });
@@ -478,6 +549,7 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
   }
 
   const revision = ++presentationRevision;
+  speedClock.stop();
   setState("presenting");
   clearCardOverlays();
   hideImageContent();
@@ -485,6 +557,7 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
 
   roundCounter.textContent = `${currentIndex + 1} / ${activeSessionSize}`;
   scoreDisplay.textContent = String(score);
+  if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) updateSpeedHUD();
 
   try {
     await loadImageIntoElement(gameImage, item.src);
@@ -510,10 +583,56 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
 
   selector.recordExposure(item.id, sessionNumber);
   setState("playing");
+  if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) {
+    const seconds = getSpeedDifficulty(speedRunState.difficultyId).seconds;
+    speedClock.start(seconds, {
+      onTick: (remaining) => updateSpeedHUD(remaining),
+      onExpire: () => { if (state === "playing" && revision === presentationRevision) void settleSpeedOutcome("timeout"); }
+    });
+  }
   return true;
 }
 
+async function prepareAndStartSpeedSession(triggerButton, normalText) {
+  if (classicManifestStatus !== "ready" || !selector || state === "preparing") return;
+  if (!getSpeedDifficulty(selectedSpeedDifficulty) || getUsableImageCount() < 1) return;
+  setState("preparing");
+  setButtonBusy(triggerButton, true, normalText);
+  syncClassicSetupControls();
+  const revision = ++presentationRevision;
+  speedClock.stop();
+  speedDeck?.cancel();
+  const nextDeck = new SpeedRunDeck(
+    selector.images.filter((item) => !preloader.invalidImageIds.has(item.id)),
+    { preload: (src) => preloadImage(src) }
+  );
+  speedDeck = nextDeck;
+  try {
+    const first = await nextDeck.next();
+    if (!first || revision !== presentationRevision || state !== "preparing") return;
+    sessionNumber += 1;
+    speedRunState = createSpeedRunState(selectedSpeedDifficulty);
+    sessionDeck = [first];
+    currentIndex = 0;
+    score = 0;
+    syncModePresentation();
+    updateSpeedHUD();
+    await presentCurrentCard({ revealGameScreen: true });
+  } catch (error) {
+    if (revision === presentationRevision) {
+      console.error(error);
+      showFatalError(error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    setButtonBusy(triggerButton, false, normalText);
+    syncClassicSetupControls();
+  }
+}
+
 async function prepareAndStartSession(triggerButton, normalText) {
+  if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) {
+    return prepareAndStartSpeedSession(triggerButton, normalText);
+  }
   if (selectedGameMode !== GAME_MODE_IDS.CLASSIC) return;
   if (classicManifestStatus !== "ready" || !preloader || state === "preparing") return;
   if (!isSessionSizeAvailable(selectedSessionSize)) return;
@@ -529,6 +648,10 @@ async function prepareAndStartSession(triggerButton, normalText) {
       roundSize: requestedSessionSize
     });
 
+    speedClock.stop();
+    speedDeck?.cancel();
+    speedDeck = null;
+    speedRunState = null;
     sessionNumber = nextSessionNumber;
     sessionDeck = preparedDeck;
     activeSessionSize = requestedSessionSize;
@@ -546,11 +669,49 @@ async function prepareAndStartSession(triggerButton, normalText) {
   }
 }
 
+async function settleSpeedOutcome(outcome, type = null) {
+  if (state !== "playing" || selectedGameMode !== GAME_MODE_IDS.SPEED_RUN || !speedRunState) return;
+  const revision = presentationRevision;
+  setState("answering"); // locks both buttons, swipe, and competing deadline events
+  speedClock.stop();
+  speedRunState = resolveSpeedRunOutcome(speedRunState, outcome);
+  score = speedRunState.score;
+  updateSpeedHUD(outcome === "timeout" ? 0 : "keep");
+
+  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct");
+  const dismissal = outcome === "timeout" ? swipe.dismiss() : swipe.throw(type);
+  const [shown, dismissed] = await Promise.all([feedback, dismissal]);
+  if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
+  if (speedRunState.finished) {
+    finishSession();
+    return;
+  }
+  setState("presenting");
+  try {
+    const nextImage = await speedDeck.next();
+    if (!nextImage || revision !== presentationRevision || state !== "presenting") return;
+    currentIndex += 1;
+    sessionDeck = [nextImage];
+    currentIndex = 0;
+    await presentCurrentCard();
+  } catch (error) {
+    if (revision === presentationRevision && state === "presenting") {
+      console.error(error);
+      showFatalError(error instanceof Error ? error.message : String(error));
+    }
+  }
+}
+
 async function answer(type) {
   if (state !== "playing") return;
 
   const item = sessionDeck[currentIndex];
   if (!item) return;
+  if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) {
+    if (!speedClock.claimBeforeDeadline()) return;
+    await settleSpeedOutcome(type === item.type ? "correct" : "incorrect", type);
+    return;
+  }
 
   setState("answering");
 
@@ -578,12 +739,15 @@ async function answer(type) {
 
 function finishSession() {
   presentationRevision += 1;
+  speedClock.stop();
+  speedDeck?.cancel();
   setState("result");
   clearCardOverlays();
   hideImageContent();
-  finalScore.textContent = `${score} / ${activeSessionSize}`;
+  finalScore.textContent = selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? String(score) : `${score} / ${activeSessionSize}`;
   resetResultPresentation();
   syncSessionSizeControls();
+  syncModePresentation();
   showOnly(endScreen);
   resultCelebration?.enter();
 }
@@ -617,6 +781,7 @@ function bootstrap() {
   themeController = initializeThemeController();
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select" });
+  syncModePresentation();
   syncClassicSetupControls();
   prefetchClassicManifestAfterFirstPaint();
 }
@@ -625,6 +790,9 @@ sessionSizeButtons.forEach((button) => {
   button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));
 });
 
+speedModeButton.addEventListener("click", () => void openGameMode(speedModeButton.dataset.gameMode));
+speedDifficultyButtons.forEach((button) => button.addEventListener("click", () => chooseSpeedDifficulty(button.dataset.speedDifficulty)));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) speedClock.check(); });
 classicModeButton.addEventListener("click", () => void openGameMode(classicModeButton.dataset.gameMode));
 modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
 setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));

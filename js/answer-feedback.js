@@ -38,7 +38,7 @@ export class AnswerFeedbackController {
     }
 
     this.animations = [];
-    this.root.classList.remove("is-active", "is-correct", "is-incorrect");
+    this.root.classList.remove("is-active", "is-correct", "is-incorrect", "is-timeout");
     this.root.setAttribute("aria-hidden", "true");
     this.root.removeAttribute("data-result");
 
@@ -48,18 +48,20 @@ export class AnswerFeedbackController {
 
   async play(correct) {
     this.clear();
+    const timeout = correct === "timeout";
+    const isCorrect = correct === true;
 
     const revision = ++this.revision;
     const reduced = prefersReducedMotion();
     const duration = reduced ? this.options.reducedDuration : this.options.duration;
-    const stateClass = correct ? "is-correct" : "is-incorrect";
+    const stateClass = timeout ? "is-timeout" : (isCorrect ? "is-correct" : "is-incorrect");
 
     this.root.classList.add("is-active", stateClass);
-    this.root.dataset.result = correct ? "correct" : "incorrect";
+    this.root.dataset.result = timeout ? "timeout" : (isCorrect ? "correct" : "incorrect");
     this.root.setAttribute("aria-hidden", "false");
 
-    if (this.icon) this.icon.textContent = correct ? "✓" : "×";
-    if (this.label) this.label.textContent = correct ? "DOBRZE" : "ŹLE";
+    if (this.icon) this.icon.textContent = timeout ? "⌛" : (isCorrect ? "✓" : "×");
+    if (this.label) this.label.textContent = timeout ? "CZAS MINĄŁ" : (isCorrect ? "DOBRZE" : "ŹLE");
 
     if (reduced) {
       const animation = this.root.animate(
@@ -83,7 +85,7 @@ export class AnswerFeedbackController {
         { duration, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" }
       );
 
-      const ringFrames = correct
+      const ringFrames = isCorrect
         ? [
             { opacity: 0, transform: "translate(-50%, -50%) scale(.56)" },
             { opacity: 1, transform: "translate(-50%, -50%) scale(.88)", offset: 0.16 },
@@ -107,14 +109,14 @@ export class AnswerFeedbackController {
       const burst = this.burst?.animate?.(
         [
           { opacity: 0, transform: "translate(-50%, -50%) scale(.38)" },
-          { opacity: correct ? .92 : .88, transform: "translate(-50%, -50%) scale(.82)", offset: 0.16 },
-          { opacity: correct ? .48 : .54, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.48 },
+          { opacity: isCorrect ? .92 : .88, transform: "translate(-50%, -50%) scale(.82)", offset: 0.16 },
+          { opacity: isCorrect ? .48 : .54, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.48 },
           { opacity: 0, transform: "translate(-50%, -50%) scale(1.34)" }
         ],
         { duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
       );
 
-      const pillFrames = correct
+      const pillFrames = isCorrect
         ? [
             { opacity: 0, transform: "translate3d(0,10px,0) scale(.78)" },
             { opacity: 1, transform: "translate3d(0,-2px,0) scale(1.08)", offset: 0.16 },
@@ -140,7 +142,7 @@ export class AnswerFeedbackController {
       });
 
       const icon = this.icon?.animate?.(
-        correct
+        isCorrect
           ? [
               { transform: "rotate(-18deg) scale(.55)" },
               { transform: "rotate(4deg) scale(1.25)", offset: 0.22 },

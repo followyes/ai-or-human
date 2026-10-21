@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.6.4.5">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -158,6 +158,13 @@
                 <svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg>
               </span>
             </button>
+            <button class="game-mode-card" id="speed-run-mode-button" type="button" data-game-mode="speed-run">
+              <span class="game-mode-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false"><circle cx="16" cy="17" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M16 9v8l5 3M12 2h8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+              </span>
+              <span class="game-mode-card__copy"><strong>Speed Run</strong><span>Zgaduj, zanim skończy się czas</span></span>
+              <span class="game-mode-card__arrow" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg></span>
+            </button>
           </div>
         </div>
 
@@ -173,13 +180,22 @@
             <h1 class="pre-game-display-title" id="mode-setup-title" tabindex="-1">Klasyczny</h1>
           </div>
 
-          <div class="session-size-picker" aria-labelledby="start-size-label">
+          <div class="session-size-picker" id="classic-setup-picker" aria-labelledby="start-size-label">
             <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
             <div class="session-size-options" aria-label="Liczba obrazów">
               <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
               <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false" disabled>10</button>
               <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
               <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
+            </div>
+          </div>
+
+          <div class="speed-difficulty-picker is-hidden" id="speed-setup-picker" aria-labelledby="speed-setup-label">
+            <p class="meta-label" id="speed-setup-label">POZIOM TRUDNOŚCI</p>
+            <div class="speed-difficulty-options" role="group" aria-label="Poziom trudności Speed Run">
+              <button class="speed-difficulty-button" type="button" data-speed-difficulty="easy" aria-pressed="false"><strong>Łatwy</strong><span>7 s · ♥ ♥ ♥</span></button>
+              <button class="speed-difficulty-button is-selected" type="button" data-speed-difficulty="medium" aria-pressed="true"><strong>Średni</strong><span>5 s · ♥ ♥</span></button>
+              <button class="speed-difficulty-button" type="button" data-speed-difficulty="hard" aria-pressed="false"><strong>Trudny</strong><span>3 s · ♥</span></button>
             </div>
           </div>
 
@@ -192,10 +208,12 @@
 
     <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite" aria-hidden="true" inert>
       <header class="game-header" aria-label="Stan rundy">
-        <div class="game-stat game-stat-progress">
+        <div class="game-stat game-stat-progress" id="classic-progress-stat">
           <span class="meta-label">POSTĘP</span>
           <strong id="round-counter">1 / 20</strong>
         </div>
+        <div class="game-stat game-stat-time is-hidden" id="speed-time-stat"><span class="meta-label">CZAS</span><strong id="speed-time" aria-label="Pozostały czas">5,0 s</strong></div>
+        <div class="game-stat game-stat-lives is-hidden" id="speed-lives-stat"><span class="meta-label">ŻYCIA</span><strong id="speed-lives" aria-label="Pozostałe życia">♥ ♥</strong></div>
         <div class="game-stat game-stat-score score-box">
           <span class="meta-label">WYNIK</span>
           <strong id="score">0</strong>
@@ -255,13 +273,21 @@
           </div>
 
           <div class="result-action-panel result-replay-setup" id="result-replay-setup" aria-hidden="true" inert hidden>
-            <div class="session-size-picker session-size-picker-end" aria-labelledby="end-size-label">
+            <div class="session-size-picker session-size-picker-end" id="classic-replay-picker" aria-labelledby="end-size-label">
               <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
               <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
                 <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
                 <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
                 <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
                 <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+              </div>
+            </div>
+            <div class="speed-difficulty-picker speed-difficulty-picker-end is-hidden" id="speed-replay-picker" aria-labelledby="speed-replay-label">
+              <p class="meta-label" id="speed-replay-label">POZIOM TRUDNOŚCI</p>
+              <div class="speed-difficulty-options" role="group" aria-label="Trudność przy kolejnej grze">
+                <button class="speed-difficulty-button" type="button" data-speed-difficulty="easy" aria-pressed="false"><strong>Łatwy</strong><span>7 s · ♥ ♥ ♥</span></button>
+                <button class="speed-difficulty-button is-selected" type="button" data-speed-difficulty="medium" aria-pressed="true"><strong>Średni</strong><span>5 s · ♥ ♥</span></button>
+                <button class="speed-difficulty-button" type="button" data-speed-difficulty="hard" aria-pressed="false"><strong>Trudny</strong><span>3 s · ♥</span></button>
               </div>
             </div>
             <button class="result-primary-button result-start-button" id="result-start-button" type="button">Rozpocznij</button>
@@ -278,6 +304,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/game.js?v=1.6.4.5"></script>
+  <script type="module" src="./js/game.js?v=1.7.1"></script>
 </body>
 </html>

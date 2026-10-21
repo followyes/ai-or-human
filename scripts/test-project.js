@@ -76,6 +76,10 @@ import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { deriveMovePaths, moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { GAME_MODE_IDS, getGameModes, getGameModeDefinition, isGameModeSelectable } from "../js/game-modes.js";
+import {
+  SPEED_DIFFICULTIES, DEFAULT_SPEED_DIFFICULTY, getSpeedDifficulty,
+  createSpeedRunState, resolveSpeedRunOutcome, SpeedDeadlineClock, SpeedRunDeck
+} from "../js/speed-run.js";
 import { PreGameTransitionCoordinator } from "../js/pre-game-transition.js";
 import {
   ResultCelebrationController,
@@ -2625,12 +2629,95 @@ async function testSequentialUploadBatchContinuity() {
 }
 
 
+async function testSpeedRunContracts() {
+  assert.equal(DEFAULT_SPEED_DIFFICULTY, "medium");
+  assert.deepEqual(Object.values(SPEED_DIFFICULTIES).map(({ seconds, lives }) => [seconds, lives]),
+    [[7, 3], [5, 2], [3, 1]]);
+  assert.equal(getSpeedDifficulty("not-found"), null);
+  assert.throws(() => createSpeedRunState("not-found"));
+  for (const { id, lives } of Object.values(SPEED_DIFFICULTIES)) {
+    let current = createSpeedRunState(id);
+    current = resolveSpeedRunOutcome(current, "correct");
+    assert.equal(current.score, 1);
+    assert.equal(current.lives, lives);
+    for (let remaining = lives; remaining > 0; remaining -= 1) {
+      current = resolveSpeedRunOutcome(current, remaining % 2 ? "timeout" : "incorrect");
+      assert.equal(current.lives, remaining - 1);
+    }
+    assert.equal(current.finished, true);
+    assert.equal(current.score, 1);
+    assert.throws(() => resolveSpeedRunOutcome(current, "correct"));
+  }
+
+  let now = 1000;
+  let frameId = 0;
+  let latestFrame = null;
+  const cancelled = [];
+  const events = [];
+  const clock = new SpeedDeadlineClock({
+    now: () => now,
+    requestFrame: (callback) => { latestFrame = callback; return ++frameId; },
+    cancelFrame: (id) => cancelled.push(id)
+  });
+  clock.start(3, {
+    onTick: (timeLeft) => events.push(`tick:${timeLeft}`),
+    onExpire: () => events.push("expired")
+  });
+  assert.equal(events[0], "tick:3000");
+  now = 3999;
+  assert.equal(clock.claimBeforeDeadline(), true);
+  assert.equal(events.includes("expired"), false);
+  // Stale frame cannot expire a stopped clock.
+  latestFrame();
+  assert.equal(events.includes("expired"), false);
+  clock.start(3, { onTick: () => {}, onExpire: () => events.push("expired") });
+  now = 7000;
+  assert.equal(clock.claimBeforeDeadline(), false, "exact deadline is too late");
+  assert.equal(events.filter((event) => event === "expired").length, 1);
+  assert.equal(clock.claimBeforeDeadline(), false, "one deadline cannot expire twice");
+  clock.start(7, { onTick: () => {}, onExpire: () => events.push("expired-on-visibility") });
+  now = 14001;
+  clock.check();
+  assert.ok(events.includes("expired-on-visibility"));
+  assert.ok(cancelled.length > 0);
+
+  const images = Array.from({ length: 10 }, (_, index) => ({ id: `image-${index}`, src: `source-${index}` }));
+  const deck = new SpeedRunDeck(images, { preload: async () => {}, rng: () => 0.5, ahead: 3 });
+  const received = [];
+  for (let index = 0; index < 21; index += 1) received.push((await deck.next()).id);
+  assert.equal(new Set(received.slice(0, 10)).size, 10, "first cycle has no repeats");
+  assert.equal(new Set(received.slice(10, 20)).size, 10, "second cycle has no repeats");
+  assert.notEqual(received[9], received[10], "cycle boundaries must not repeat the last image");
+  deck.cancel();
+  assert.equal(await deck.next(), null);
+  const failed = new SpeedRunDeck(images, {
+    rng: () => 0.5,
+    preload: async (src) => { if (src.endsWith("4") || src.endsWith("7")) throw new Error("404"); }
+  });
+  const valid = [];
+  for (let index = 0; index < 8; index += 1) valid.push((await failed.next()).id);
+  assert.equal(new Set(valid).size, 8);
+  assert.ok(!valid.includes("image-4") && !valid.includes("image-7"));
+  const exhausted = new SpeedRunDeck(images, { preload: async () => { throw new Error("offline"); } });
+  await assert.rejects(exhausted.next(), /poprawnego obrazu|dostępnych obrazów/);
+  const held = [];
+  const awaiting = new SpeedRunDeck(images, { preload: () => new Promise((resolve) => held.push(resolve)) });
+  const pending = awaiting.next();
+  awaiting.cancel();
+  await Promise.resolve();
+  held.forEach((release) => release());
+  assert.equal(await pending, null, "cancellation discards in-flight image loads");
+}
+
 function testGameModeRegistryContract() {
   const modes = getGameModes();
-  assert.equal(modes.length, 1, "V1.6.2 must expose only the approved current mode");
+  assert.equal(modes.length, 2, "V1.7.1 exposes Classic + Speed Run only");
   assert.equal(modes[0].id, GAME_MODE_IDS.CLASSIC);
   assert.equal(modes[0].enabled, true);
   assert.equal(getGameModeDefinition("classic")?.label, "Klasyczny");
+  assert.equal(modes[1].id, GAME_MODE_IDS.SPEED_RUN);
+  assert.equal(getGameModeDefinition("speed-run")?.label, "Speed Run");
+  assert.equal(isGameModeSelectable("speed-run"), true);
   assert.equal(getGameModeDefinition("future-mode"), null);
   assert.equal(isGameModeSelectable("classic"), true);
   assert.equal(isGameModeSelectable("future-mode"), false,
@@ -3218,8 +3305,14 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     "V1.6.2 must not model select/setup as separate public screens");
   assert.ok(html.includes('id="classic-mode-button"') && html.includes('data-game-mode="classic"'),
     "the current classic mode must be a semantic selectable mode tile");
-  assert.equal((html.match(/data-game-mode=/g) || []).length, 1,
-    "V1.6.2 must not expose or tease a second game mode before V1.7");
+  assert.equal((html.match(/data-game-mode=/g) || []).length, 2,
+    "V1.7.1 exposes exactly two selectable modes; Death Mech remains future work");
+  assert.ok(html.includes('id="speed-run-mode-button"') && html.includes('data-game-mode="speed-run"'));
+  assert.equal((html.match(/data-speed-difficulty="easy"/g) || []).length, 2);
+  assert.equal((html.match(/data-speed-difficulty="medium"/g) || []).length, 2);
+  assert.equal((html.match(/data-speed-difficulty="hard"/g) || []).length, 2);
+  assert.ok(html.includes('id="speed-time"') && html.includes('id="speed-lives"'));
+  assert.ok(html.includes('id="speed-replay-picker"'));
   assert.ok(!html.includes("Pojedynek") && !html.includes("Wkrótce"),
     "public V1.6.1 copy must not spoil an unimplemented future mode");
   assert.ok(html.includes('id="theme-switch"') && html.includes('role="switch"'),
@@ -3383,9 +3476,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.6.4.5"') &&
-    html.includes('src="./js/game.js?v=1.6.4.5"') &&
-    game.includes('./result-celebration.js?v=1.6.4.5'),
+  assert.ok(html.includes('href="./css/style.css?v=1.7.1"') &&
+    html.includes('src="./js/game.js?v=1.7.1"') &&
+    game.includes('./result-celebration.js?v=1.7.1'),
     "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
@@ -4097,6 +4190,7 @@ await testDeleteDrainCoordinatorLifecycle();
 await testUploadPreparationWorkerClientLifecycle();
 await testSequentialUploadBatchContinuity();
 testGameModeRegistryContract();
+await testSpeedRunContracts();
 await testPreGameTransitionLifecycle();
 await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
@@ -4138,4 +4232,5 @@ console.log("V1.6.2.2 pre-game interaction/copy/theme corrective: PASS");
 console.log("V1.6.3 TEST results celebration/replay flow contracts: PASS");
 console.log("V1.6.3-test.11 unified theme transition cleanup: PASS");
 console.log("V1.6.4.5 original full-page circular theme reveal restoration: PASS");
+console.log("V1.7.1 Speed Run rules, deadline and rolling deck: PASS");
 console.log("UI/deploy source contracts: PASS");
