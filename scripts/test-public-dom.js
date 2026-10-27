@@ -42,4 +42,13 @@ for (const id of ["pending-result-tools", "pending-results-info", "retry-pending
   assert.equal(elementsById.get(id), 1, `Required offline-results control missing: #${id}`);
 }
 assert.match(html, /id="profile-dialog-backdrop"\s+hidden/, "Profile dialog must be closed initially");
+// R2.1 nickname visibility contract: present a real player name prominently,
+// not as a tiny muted "Gracz:" caption. Keep textContent for untrusted aliases.
+const css = await readFile(new URL("../css/style.css", import.meta.url), "utf8");
+assert.match(source, /resultPlayerName\.textContent\s*=\s*player\.name\s*\|\|\s*""/);
+assert.match(css, /\.result-player-name\s*\{[^}]*font-size:\s*clamp\(1\.15rem/s);
+assert.match(css, /\.result-player-name\s*\{[^}]*color:\s*var\(--landing-title\)/s);
+assert.match(css, /\.result-player-name:empty\s*\{\s*display:\s*none;/);
+assert.equal(elementsById.get("result-player-name"), 1);
+
 console.log(`PUBLIC DOM BOOTSTRAP PASS (${checked} mandatory event targets)`);

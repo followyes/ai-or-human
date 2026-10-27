@@ -1008,7 +1008,7 @@ function finishSession() {
   clearCardOverlays();
   hideImageContent();
   finalScore.textContent = selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? String(score) : `${score} / ${activeSessionSize}`;
-  resultPlayerName.textContent = player.name ? `Gracz: ${player.name}` : "";
+  resultPlayerName.textContent = player.name || "";
   const accuracy = calculateAccuracy(score, attempts);
   resultAccuracy.textContent = accuracy === null ? "Brak ocenionych odpowiedzi" : `${accuracy.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}% poprawnych odpowiedzi`;
   resultSaveStatus.textContent = queued ? "Zapisywanie wyniku…" : "Nie udało się zachować wyniku. Sprawdź pamięć przeglądarki.";

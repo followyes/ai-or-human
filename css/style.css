@@ -2574,7 +2574,30 @@ body.is-profile-dialog-open { overflow: hidden; }
   .profile-dialog { gap: 9px; padding: 18px; max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px); }
 }
 @media (prefers-reduced-motion: reduce) { .profile-dialog { animation: none; } }
-.result-player-name { margin: 12px auto 0; max-width: 100%; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+/* V1.7.1B-R2.1: a readable player identity, not a technical caption. */
+.result-player-name {
+  display: block;
+  width: fit-content;
+  max-width: min(100%, 350px);
+  margin: 8px auto 0;
+  padding: 8px 22px;
+  border: 1px solid color-mix(in srgb, var(--accent-gold) 56%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--landing-panel) 88%, var(--accent-gold) 12%);
+  color: var(--landing-title);
+  box-shadow: 0 7px 24px color-mix(in srgb, var(--accent-gold) 11%, transparent);
+  font-size: clamp(1.15rem, 4.3vw, 1.42rem);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -.012em;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.result-player-name:empty { display: none; }
+@media (max-height: 740px) and (orientation: portrait) {
+  .result-player-name { padding: 6px 18px; margin-top: 5px; font-size: clamp(1.08rem, 4vw, 1.3rem); }
+}
+
 .answer-feedback.is-streak .answer-feedback__pill {
   width: max-content;
   max-width: calc(100vw - 32px);
