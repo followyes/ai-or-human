@@ -1,4 +1,4 @@
-# V1.7.1B-R1.2 — Profile Dialog & Public Header UX Corrective
+# V1.7.1B-R1.3 — Profile Dialog & Public Header UX Corrective
 
 HOME shows only available game modes, without a visible login field or technical storage explanations. The upper-right profile icon opens the local profile chooser; if no profile is active, `Rozpocznij` opens the same modal before session preparation. Returning players may start immediately using their saved profile. The LIGHT/DARK switch is at upper-left and its original 560ms full-page circular reveal originates at that control. Existing local Browser ID / Player ID / Game ID, results/percent/trophy, unchanged R1 SQL and Classic/Speed mechanics are retained. `npm test`/`npm build` PASS locally; deploy + production SQL + real-phone QA still required.
 
@@ -227,3 +227,9 @@ Workflow `.github/workflows/pages.yml` uruchamia testy, buduje `dist/`, weryfiku
 Real-phone smoke V1.6.2.1 ujawnił cztery mniejsze, ale widoczne niespójności. Programowy focus na `Klasyczny` (`tabindex=-1`) pokazywał na iOS/Chrome domyślny niebieski browser focus-box; cały statyczny tekst pre-game mógł też zostać przypadkowo zaznaczony dotykiem. Corrective zachowuje focus handoff dla dostępności, ale usuwa surowy obrys przeglądarki z nietabbowalnego nagłówka i blokuje przypadkową selekcję statycznej warstwy pre-game.
 
 Setup nie powtarza już `Wybierz liczbę obrazów` bezpośrednio nad `LICZBA OBRAZÓW`; pozostaje jedna wystarczająca etykieta kontrolki. Usunięto również setup-only `opacity` całej atmosfery i osobne przygaszenie orbit, ponieważ `mode-setup` jest stanem tego samego shellu, a nie modalem. Theme switch jest dostępny przez cały pre-game i znika dopiero po wejściu do widoku gameplayu.
+
+### R1.3 — Public boot DOM corrective
+An R1.2 markup regression omitted the hidden result-retry nodes, causing a fatal
+initialization error and disabling all public controls. Restored those elements
+in the player profile dialog, kept HOME clean, and added `scripts/test-public-dom.js`
+to mandatory `npm run test`. No new Supabase SQL. See OUTSIDE_REPO QA in release pack.

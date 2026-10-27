@@ -3634,8 +3634,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.7.1b-r1-2"') &&
-    html.includes('src="./js/game.js?v=1.7.1b-r1-2"') &&
+  const publicCssRevision = html.match(/href="\.\/css\/style\.css\?v=([^"]+)"/)?.[1];
+  const publicJsRevision = html.match(/src="\.\/js\/game\.js\?v=([^"]+)"/)?.[1];
+  assert.ok(publicCssRevision && publicCssRevision === publicJsRevision &&
     game.includes('./result-celebration.js?v=1.7.1') &&
     game.includes('./speed-run.js?v=1.7.1a') &&
     game.includes('./answer-feedback.js?v=1.7.1b'),
