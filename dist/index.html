@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#eef2f3">
+  <script>
+    (() => {
+      const root = document.documentElement;
+      let theme = "light";
+      try {
+        const stored = localStorage.getItem("ai-or-human.theme");
+        if (stored === "light" || stored === "dark") theme = stored;
+      } catch {}
+      root.dataset.theme = theme;
+      root.style.colorScheme = theme;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = theme === "dark" ? "#0c1116" : "#eef2f3";
+    })();
+  </script>
+  <title>AI or Human</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
+  <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
+  <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r1">
+</head>
+<body data-public-view="mode-select">
+  <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
+    <div class="cosmic-orbit cosmic-orbit--outer"></div>
+    <div class="cosmic-orbit cosmic-orbit--inner"></div>
+    <span class="cosmic-star cosmic-star--one"></span>
+    <span class="cosmic-star cosmic-star--two"></span>
+    <span class="cosmic-star cosmic-star--three"></span>
+    <span class="cosmic-dot cosmic-dot--one"></span>
+    <span class="cosmic-dot cosmic-dot--two"></span>
+    <span class="cosmic-dot cosmic-dot--three"></span>
+
+    <div class="floating-card floating-card--one"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--two"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--three"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--four"><span class="floating-card__surface"></span></div>
+    <div class="floating-card floating-card--five"><span class="floating-card__surface"></span></div>
+  </div>
+
+  <div class="result-fireworks" data-result-firework-layer aria-hidden="true">
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+    <span class="result-firework" data-result-firework>
+      <span class="result-firework__core" data-firework-core></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+      <span class="result-firework__particle" data-firework-particle></span>
+    </span>
+  </div>
+
+  <button class="theme-switch" id="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Włącz ciemny motyw" title="Ciemny motyw">
+    <span class="theme-switch__track" aria-hidden="true">
+      <svg class="theme-switch__icon theme-switch__icon--sun" viewBox="0 0 24 24" focusable="false">
+        <circle cx="12" cy="12" r="3.5"></circle>
+        <path d="M12 2.25v2.1M12 19.65v2.1M2.25 12h2.1M19.65 12h2.1M5.1 5.1l1.5 1.5M17.4 17.4l1.5 1.5M18.9 5.1l-1.5 1.5M6.6 17.4l-1.5 1.5"></path>
+      </svg>
+      <svg class="theme-switch__icon theme-switch__icon--moon" viewBox="0 0 24 24" focusable="false">
+        <path d="M19.2 15.35A7.45 7.45 0 0 1 8.65 4.8 8.1 8.1 0 1 0 19.2 15.35Z"></path>
+      </svg>
+      <span class="theme-switch__thumb"></span>
+    </span>
+  </button>
+
+  <main class="app-shell">
+    <section class="screen screen-pre-game" id="pre-game-screen" aria-label="Ustawienia przed grą">
+      <div class="pre-game-stage">
+        <div class="pre-game-panel mode-select-panel" id="mode-select-panel" aria-labelledby="mode-select-title">
+          <div class="mode-select-brand">
+            <p class="eyebrow mode-select-eyebrow">AI OR HUMAN</p>
+            <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+            <h1 class="pre-game-display-title" id="mode-select-title">Wybierz tryb gry</h1>
+          </div>
+
+          <div class="player-login" id="player-login">
+            <label class="meta-label" for="player-name">LOGIN GRACZA</label>
+            <input id="player-name" class="player-login__input" type="text" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" placeholder="Wpisz nazwę (jedno słowo)" aria-describedby="player-name-help" required>
+            <span class="player-login__help" id="player-name-help" aria-live="polite">Profil jest zapisany tylko w tej przeglądarce.</span>
+            <button id="change-player-button" class="player-switch-toggle" type="button" hidden>Zmień gracza</button>
+            <div id="player-switch-panel" class="player-switch-panel" hidden inert>
+              <p class="player-switch-panel__label">Wybierz lokalny profil</p>
+              <div id="local-player-list" class="local-player-list"></div>
+              <button id="create-player-button" class="player-switch-action" type="button">+ Nowy gracz</button>
+              <button id="cancel-player-switch" class="player-switch-cancel" type="button">Anuluj</button>
+            </div>
+            <p class="player-privacy-note">Nazwa i losowy identyfikator przeglądarki są zapisywane z wynikiem; różne profile mogą pochodzić z jednej przeglądarki.</p>
+            <div class="pending-result-tools" id="pending-result-tools" hidden>
+              <span id="pending-results-info" aria-live="polite"></span>
+              <button id="retry-pending-button" type="button">Ponów zapis</button>
+            </div>
+          </div>
+
+          <div class="game-mode-list" aria-label="Tryby gry">
+            <button class="game-mode-card" id="classic-mode-button" type="button" data-game-mode="classic">
+              <span class="game-mode-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false">
+                  <path d="M18.2 2.7 7.8 17h7.1l-1.2 12.3L24.3 14h-7.2l1.1-11.3Z"></path>
+                </svg>
+              </span>
+              <span class="game-mode-card__copy">
+                <strong>Klasyczny</strong>
+                <span>Zgaduj, kto stworzył obraz</span>
+              </span>
+              <span class="game-mode-card__arrow" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg>
+              </span>
+            </button>
+            <button class="game-mode-card" id="speed-run-mode-button" type="button" data-game-mode="speed-run">
+              <span class="game-mode-card__icon" aria-hidden="true">
+                <svg viewBox="0 0 32 32" focusable="false"><circle cx="16" cy="17" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M16 9v8l5 3M12 2h8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+              </span>
+              <span class="game-mode-card__copy"><strong>Speed Run</strong><span>Zgaduj, zanim skończy się czas</span></span>
+              <span class="game-mode-card__arrow" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m9 5 7 7-7 7"></path></svg></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="pre-game-panel mode-setup-panel is-hidden" id="mode-setup-panel" aria-labelledby="mode-setup-title" aria-hidden="true" inert>
+          <button class="setup-back-button" id="mode-setup-back" type="button" aria-label="Wróć do wyboru trybu">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"></path></svg>
+            <span>Wróć</span>
+          </button>
+
+          <div class="brand-block mode-setup-brand">
+            <p class="eyebrow mode-setup-eyebrow">AI OR HUMAN</p>
+            <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+            <h1 class="pre-game-display-title" id="mode-setup-title" tabindex="-1">Klasyczny</h1>
+          </div>
+
+          <div class="session-size-picker" id="classic-setup-picker" aria-labelledby="start-size-label">
+            <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
+            <div class="session-size-options" aria-label="Liczba obrazów">
+              <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
+              <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
+              <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
+              <button class="session-size-button" type="button" data-session-size="100" aria-pressed="false" disabled>100</button>
+            </div>
+          </div>
+
+          <div class="speed-difficulty-picker is-hidden" id="speed-setup-picker" aria-labelledby="speed-setup-label">
+            <p class="meta-label" id="speed-setup-label">POZIOM TRUDNOŚCI</p>
+            <div class="speed-difficulty-options" role="group" aria-label="Poziom trudności Speed Run">
+              <button class="speed-difficulty-button" type="button" data-speed-difficulty="easy" aria-pressed="false"><strong>Łatwy</strong><span>7 s · ♥ ♥ ♥</span></button>
+              <button class="speed-difficulty-button is-selected" type="button" data-speed-difficulty="medium" aria-pressed="true"><strong>Średni</strong><span>5 s · ♥ ♥</span></button>
+              <button class="speed-difficulty-button" type="button" data-speed-difficulty="hard" aria-pressed="false"><strong>Trudny</strong><span>3 s · ♥</span></button>
+            </div>
+          </div>
+
+          <div class="setup-status" id="classic-setup-status" aria-live="polite">Ładowanie obrazów…</div>
+          <button class="setup-retry-button is-hidden" id="setup-retry-button" type="button">Spróbuj ponownie</button>
+          <button class="primary-button" id="start-button" type="button" disabled>Rozpocznij</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen screen-game is-hidden" id="game-screen" aria-live="polite" aria-hidden="true" inert>
+      <header class="game-header" aria-label="Stan rundy">
+        <div class="game-stat game-stat-progress" id="classic-progress-stat">
+          <span class="meta-label">POSTĘP</span>
+          <strong id="round-counter">1 / 20</strong>
+        </div>
+        <div class="game-stat game-stat-lives is-hidden" id="speed-lives-stat"><span class="meta-label">ŻYCIA</span><strong id="speed-lives" aria-label="Pozostałe życia">♥ ♥</strong></div>
+        <div class="game-stat game-stat-score score-box">
+          <span class="meta-label">WYNIK</span>
+          <strong id="score">0</strong>
+        </div>
+      </header>
+
+      <section class="question-block" aria-labelledby="question-title">
+        <p class="eyebrow">AI OR HUMAN</p>
+        <h2 id="question-title">Kto stworzył ten obraz?</h2>
+      </section>
+
+      <div class="speed-timer is-hidden" id="speed-timer" aria-live="off">
+        <div class="speed-timer__heading">
+          <span class="meta-label">POZOSTAŁY CZAS</span>
+          <strong class="speed-timer__value" id="speed-time" aria-hidden="true">5,0 s</strong>
+        </div>
+        <div class="speed-timer__track" id="speed-time-track" role="progressbar"
+             aria-label="Pozostały czas na odpowiedź" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="100" aria-valuetext="5 sekund">
+          <span class="speed-timer__fill" id="speed-time-fill" aria-hidden="true"></span>
+        </div>
+      </div>
+
+      <div class="card-stage">
+        <article class="image-card" id="image-card">
+          <div class="choice-hint choice-hint-human" aria-hidden="true">CZŁOWIEK</div>
+          <div class="choice-hint choice-hint-ai" aria-hidden="true">AI</div>
+
+          <div class="image-frame">
+            <img id="game-image" alt="Obraz do oceny" draggable="false">
+          </div>
+        </article>
+
+        <div class="answer-feedback" id="answer-feedback" aria-live="assertive" aria-atomic="true" aria-hidden="true">
+          <div class="answer-feedback__wash" aria-hidden="true"></div>
+          <div class="answer-feedback__burst" data-feedback-burst aria-hidden="true"></div>
+          <div class="answer-feedback__ring" data-feedback-ring aria-hidden="true"></div>
+          <div class="answer-feedback__pill" data-feedback-pill>
+            <span class="answer-feedback__icon" data-feedback-icon aria-hidden="true"></span>
+            <span class="answer-feedback__label" data-feedback-label></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls" aria-label="Wybór odpowiedzi">
+        <button class="choice-button choice-button-human" id="human-button" type="button">CZŁOWIEK</button>
+        <button class="choice-button choice-button-ai" id="ai-button" type="button">AI</button>
+      </div>
+
+    </section>
+
+    <section class="screen screen-end is-hidden" id="end-screen" aria-labelledby="end-title" aria-hidden="true" inert data-result-state="celebration">
+      <div class="result-shell">
+        <div class="result-brand">
+          <p class="eyebrow result-eyebrow">AI OR HUMAN</p>
+          <span class="cosmic-divider" aria-hidden="true"><span></span></span>
+          <h2 class="result-title" id="end-title">Twój wynik</h2>
+          <p class="result-player-name" id="result-player-name"></p>
+        </div>
+
+        <div class="result-score-stage" aria-live="polite">
+          <span class="result-ambient-halo" data-result-halo aria-hidden="true"></span>
+          <span class="result-trophy" aria-hidden="true">🏆</span>
+          <strong id="final-score">0 / 20</strong>
+          <p class="result-accuracy" id="result-accuracy">0% poprawnych odpowiedzi</p>
+          <p class="result-save-status" id="result-save-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="result-action-stage">
+          <div class="result-action-panel result-actions is-active" id="result-actions" aria-hidden="false">
+            <button class="result-primary-button" id="play-again-button" type="button">Zagraj ponownie</button>
+            <button class="result-secondary-button" id="result-home-button" type="button">Wróć do strony głównej</button>
+          </div>
+
+          <div class="result-action-panel result-replay-setup" id="result-replay-setup" aria-hidden="true" inert hidden>
+            <div class="session-size-picker session-size-picker-end" id="classic-replay-picker" aria-labelledby="end-size-label">
+              <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
+              <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
+                <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
+                <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
+                <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+                <button class="session-size-button" type="button" data-session-size="100" aria-pressed="false">100</button>
+              </div>
+            </div>
+            <div class="speed-difficulty-picker speed-difficulty-picker-end is-hidden" id="speed-replay-picker" aria-labelledby="speed-replay-label">
+              <p class="meta-label" id="speed-replay-label">POZIOM TRUDNOŚCI</p>
+              <div class="speed-difficulty-options" role="group" aria-label="Trudność przy kolejnej grze">
+                <button class="speed-difficulty-button" type="button" data-speed-difficulty="easy" aria-pressed="false"><strong>Łatwy</strong><span>7 s · ♥ ♥ ♥</span></button>
+                <button class="speed-difficulty-button is-selected" type="button" data-speed-difficulty="medium" aria-pressed="true"><strong>Średni</strong><span>5 s · ♥ ♥</span></button>
+                <button class="speed-difficulty-button" type="button" data-speed-difficulty="hard" aria-pressed="false"><strong>Trudny</strong><span>3 s · ♥</span></button>
+              </div>
+            </div>
+            <button class="result-primary-button result-start-button" id="result-start-button" type="button">Rozpocznij</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen screen-error is-hidden" id="error-screen" role="alert" aria-hidden="true" inert>
+      <p class="eyebrow">AI OR HUMAN</p>
+      <h2>Nie udało się uruchomić gry.</h2>
+      <p id="error-message"></p>
+      <button class="primary-button error-retry" id="retry-button" type="button">Spróbuj ponownie</button>
+    </section>
+  </main>
+
+  <script type="module" src="./js/game.js?v=1.7.1b-r1"></script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-export const SESSION_SIZE_OPTIONS = Object.freeze([10, 20, 50]);
+export const SESSION_SIZE_OPTIONS = Object.freeze([20, 50, 100]);
 export const MIN_SESSION_SIZE = Math.min(...SESSION_SIZE_OPTIONS);
 export const DEFAULT_SESSION_SIZE = 20;
 

@@ -19,6 +19,8 @@ import {
   isSessionSizeAvailable,
   resolveSessionSize
 } from "../js/session-config.js";
+import { advanceAnswerStreak } from "../js/answer-streak.js";
+import { normalizePlayerName, readPlayerName, storePlayerName, PLAYER_NAME_STORAGE_KEY } from "../js/player-name.js";
 import { RoundPreloader, loadImageIntoElement } from "../js/image-preloader.js";
 
 import {
@@ -548,6 +550,22 @@ async function testAnswerFeedbackLifecycle() {
       "timeout ring/burst must finish early and not keep moving through the reading beat");
     assert.equal(await timeoutPromise, true);
 
+    const streakRoot = new FakeFeedbackElement();
+    const streakFeedback = new AnswerFeedbackController(streakRoot);
+    const streakPromise = streakFeedback.play(true, { milestone: 3 });
+    assert.equal(streakRoot.children.label.textContent, "DOBRA ROBOTA! 3 Z RZĘDU");
+    assert.equal(streakRoot.children.icon.textContent, "★");
+    assert.equal(streakRoot.classList.contains("is-streak"), true);
+    assert.equal(streakRoot.dataset.result, "correct");
+    assert.equal(streakRoot.lastAnimationOptions.duration, 2350);
+    assert.ok((0.93 - 0.07) * 2350 >= 1700);
+    assert.equal(await streakPromise, true);
+
+    const tenthRoot = new FakeFeedbackElement();
+    const tenth = new AnswerFeedbackController(tenthRoot);
+    assert.equal(await tenth.play(true, { milestone: 10 }), true);
+    assert.equal(tenthRoot.children.label.textContent, "");
+
     globalThis.window.matchMedia = () => ({ matches: true });
     const timeoutReducedRoot = new FakeFeedbackElement();
     const timeoutReduced = new AnswerFeedbackController(timeoutReducedRoot);
@@ -555,6 +573,13 @@ async function testAnswerFeedbackLifecycle() {
     assert.equal(timeoutReducedRoot.lastAnimationOptions.duration, 1850);
     assert.ok((timeoutReducedRoot.lastKeyframes[2].offset - timeoutReducedRoot.lastKeyframes[1].offset) * 1850 >= 1500,
       "reduced-motion timeout must stay legible without decorative motion");
+    const streakReducedRoot = new FakeFeedbackElement();
+    const streakReduced = new AnswerFeedbackController(streakReducedRoot);
+    const streakReducedPromise = streakReduced.play(true, { milestone: 10 });
+    assert.equal(streakReducedRoot.children.label.textContent, "DOBRA ROBOTA! 10 Z RZĘDU");
+    assert.equal(streakReducedRoot.lastAnimationOptions.duration, 2050);
+    assert.ok((0.94 - 0.06) * 2050 >= 1700);
+    assert.equal(await streakReducedPromise, true);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -598,7 +623,7 @@ async function testSlidingPillLifecycle() {
   class FakeRoot extends FakeNode {
     constructor() {
       super();
-      this.buttons = [new FakeButton(10, 5), new FakeButton(20, 115), new FakeButton(50, 225)];
+      this.buttons = [new FakeButton(20, 5), new FakeButton(50, 115), new FakeButton(100, 225)];
       this.indicator = new FakeNode();
       this.clientWidth = 332;
       this.clientHeight = 52;
@@ -636,7 +661,7 @@ async function testSlidingPillLifecycle() {
       options: { slideDuration: 360 }
     });
 
-    assert.equal(picker.sync(20), true);
+    assert.equal(picker.sync(50), true);
     assert.equal(root.classList.contains("is-enhanced"), true);
     assert.equal(root.buttons[1].classList.contains("is-selected"), true);
     assert.equal(root.indicator.style.transform, "translate3d(115px, 5px, 0)");
@@ -645,21 +670,21 @@ async function testSlidingPillLifecycle() {
     assert.equal(root.indicator.style.transitionDuration, "0ms",
       "initial placement must snap without an entrance animation");
 
-    assert.equal(picker.sync(50, { animate: true }), true);
+    assert.equal(picker.sync(100, { animate: true }), true);
     assert.equal(root.buttons[2].classList.contains("is-selected"), true);
     assert.equal(root.indicator.style.transform, "translate3d(225px, 5px, 0)");
     assert.equal(root.indicator.style.transitionDuration, "360ms",
       "user selection must use the configured slide duration");
 
-    picker.sync(10, { animate: true });
-    picker.sync(20, { animate: true });
+    picker.sync(50, { animate: true });
+    picker.sync(50, { animate: true });
     assert.equal(root.indicator.style.transform, "translate3d(115px, 5px, 0)",
       "rapid retarget must leave the latest target geometry on the indicator");
     assert.equal(root.buttons[1].classList.contains("is-selected"), true,
       "rapid retarget must leave the latest target selected");
 
     reduced = true;
-    picker.sync(10, { animate: true });
+    picker.sync(20, { animate: true });
     assert.equal(root.indicator.style.transitionDuration, "0ms",
       "reduced motion must snap instead of sliding");
     assert.equal(root.indicator.style.transform, "translate3d(5px, 5px, 0)");
@@ -674,20 +699,57 @@ async function testSlidingPillLifecycle() {
 }
 
 function testSessionConfig() {
-  assert.deepEqual(SESSION_SIZE_OPTIONS, [10, 20, 50]);
-  assert.equal(MIN_SESSION_SIZE, 10);
+  assert.deepEqual(SESSION_SIZE_OPTIONS, [20, 50, 100]);
+  assert.equal(MIN_SESSION_SIZE, 20);
   assert.equal(DEFAULT_SESSION_SIZE, 20);
   assert.equal(resolveSessionSize(9), null);
-  assert.equal(resolveSessionSize(10), 10);
-  assert.equal(resolveSessionSize(19), 10);
+  assert.equal(resolveSessionSize(19), null);
   assert.equal(resolveSessionSize(20), 20);
   assert.equal(resolveSessionSize(49), 20);
   assert.equal(resolveSessionSize(50), 20);
-  assert.equal(resolveSessionSize(60, 50), 50);
-  assert.equal(isSessionSizeAvailable(10, 10), true);
+  assert.equal(resolveSessionSize(99, 100), 50);
+  assert.equal(resolveSessionSize(100, 100), 100);
+  assert.equal(resolveSessionSize(120, 50), 50);
+  assert.equal(isSessionSizeAvailable(10, 100), false);
   assert.equal(isSessionSizeAvailable(20, 19), false);
   assert.equal(isSessionSizeAvailable(50, 60), true);
-  assert.equal(isSessionSizeAvailable(30, 60), false);
+  assert.equal(isSessionSizeAvailable(100, 99), false);
+  assert.equal(isSessionSizeAvailable(100, 100), true);
+}
+
+function testPlayerNameAndAnswerStreak() {
+  assert.equal(normalizePlayerName("  Ola "), "Ola");
+  assert.equal(normalizePlayerName("Łukasz_2"), "Łukasz_2");
+  assert.equal(normalizePlayerName("A".repeat(20)), "A".repeat(20));
+  for (const invalid of [null, "", " ", "Dwa słowa", "a\nb", "<script>", "😎", "a".repeat(21)]) {
+    assert.equal(normalizePlayerName(invalid), null);
+  }
+  const records = new Map();
+  const storage = {
+    getItem: (key) => records.get(key) ?? null,
+    setItem: (key, value) => records.set(key, value)
+  };
+  assert.equal(readPlayerName(storage), null);
+  assert.equal(storePlayerName(storage, "Marta"), "Marta");
+  assert.equal(records.get(PLAYER_NAME_STORAGE_KEY), "Marta");
+  assert.equal(readPlayerName(storage), "Marta");
+  assert.equal(storePlayerName(storage, "Dwa słowa"), null);
+  assert.equal(readPlayerName(storage), "Marta");
+  assert.equal(readPlayerName({ getItem() { throw new Error("blocked"); } }), null);
+  assert.equal(storePlayerName({ setItem() { throw new Error("blocked"); } }, "Ola"), "Ola");
+
+  let streak = 0;
+  const milestones = [];
+  for (let i = 0; i < 12; i += 1) {
+    const result = advanceAnswerStreak(streak, "correct");
+    streak = result.streak;
+    if (result.milestone !== null) milestones.push([i + 1, result.milestone]);
+  }
+  assert.deepEqual(milestones, [[3, 3], [10, 10]], "milestones are exact, not multiples or every hit");
+  assert.deepEqual(advanceAnswerStreak(streak, "incorrect"), { streak: 0, milestone: null });
+  assert.deepEqual(advanceAnswerStreak(2, "timeout"), { streak: 0, milestone: null });
+  assert.deepEqual(advanceAnswerStreak(2, "correct"), { streak: 3, milestone: 3 });
+  assert.throws(() => advanceAnswerStreak(-1, "correct"), RangeError);
 }
 
 async function testDynamicRoundPreloader() {
@@ -726,10 +788,10 @@ async function testDynamicRoundPreloader() {
   globalThis.Image = FakePreloadImage;
 
   try {
-    const selector = new RoundSelector(makeImages(60, "ai"), { rng: createSeededRng(99) });
+    const selector = new RoundSelector(makeImages(120, "ai"), { rng: createSeededRng(99) });
     const preloader = new RoundPreloader(selector, { concurrency: 4, timeoutMs: 500 });
 
-    for (const [roundNumber, roundSize] of [[1, 10], [2, 20], [3, 50]]) {
+    for (const [roundNumber, roundSize] of [[1, 20], [2, 50], [3, 100]]) {
       const deck = await preloader.prepare(roundNumber, { roundSize });
       assert.equal(deck.length, roundSize);
       assert.equal(new Set(deck.map((item) => item.id)).size, roundSize);
@@ -3474,7 +3536,22 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp"') &&
     html.includes('rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp"'),
     "both inverse-theme card backs must be preloaded before the first theme toggle");
-  assert.ok(html.includes('data-session-size="10"'));
+  assert.equal((html.match(/data-session-size="20"/g) || []).length, 2);
+  assert.equal((html.match(/data-session-size="50"/g) || []).length, 2);
+  assert.equal((html.match(/data-session-size="100"/g) || []).length, 2);
+  assert.ok(html.includes('id="player-name"') && html.includes('maxlength="20"'),
+    "HOME must expose local player display-name input");
+  assert.ok(html.includes('id="result-player-name"') && game.includes('resultPlayerName.textContent ='),
+    "result displays the player alias as text rather than HTML");
+  assert.ok(game.includes('if (!ensurePlayerName()) return false'),
+    "entering Classic/Speed Run mode setup must require valid player name");
+  assert.ok(game.includes('advanceAnswerStreak(answerStreak, outcome)') &&
+    game.includes('advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect")'),
+    "both Speed Run and Classic must share consecutive-correct semantics");
+  assert.ok(game.includes('./session-config.js?v=1.7.1b'),
+    "cache bust is mandatory for changed Classic size module");
+  assert.ok(html.includes('data-session-size="100"'));
+  assert.ok(!html.includes('data-session-size="10"'));
   assert.ok(html.includes('data-session-size="20"'));
   assert.ok(html.includes('data-session-size="50"'));
   assert.equal((html.match(/data-session-indicator aria-hidden/g) || []).length, 2,
@@ -3537,18 +3614,18 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.7.1a"') &&
-    html.includes('src="./js/game.js?v=1.7.1a"') &&
+  assert.ok(html.includes('href="./css/style.css?v=1.7.1b-r1"') &&
+    html.includes('src="./js/game.js?v=1.7.1b-r1"') &&
     game.includes('./result-celebration.js?v=1.7.1') &&
     game.includes('./speed-run.js?v=1.7.1a') &&
-    game.includes('./answer-feedback.js?v=1.7.1a'),
+    game.includes('./answer-feedback.js?v=1.7.1b'),
     "V1.6.4.2 must version the public CSS/JS entry graph to prevent mixed-cache presentation");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert hidden'),
     "replay setup must have a native hidden first-paint fail-safe in addition to CSS/ARIA state");
   assert.ok(html.includes('id="play-again-button"') && html.includes('id="result-home-button"'),
     "result celebration must expose separate replay and homepage actions");
   assert.ok(html.includes('id="result-replay-setup" aria-hidden="true" inert'),
-    "10/20/50 replay configuration must be hidden/inert until replay intent is explicit");
+    "20/50/100 replay configuration must be hidden/inert until replay intent is explicit");
   assert.ok(html.includes('id="result-start-button"') && html.includes('>Rozpocznij</button>'),
     "revealed replay configuration must keep Rozpocznij as the actual round-start action");
   assert.ok(game.includes('resultActions.hidden = replaySetupVisible') &&
@@ -3766,7 +3843,7 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
   assert.ok(!game.includes("localStorage"));
   assert.ok(!game.includes("history.js"));
   assert.ok(sessionConfig.includes("SESSION_SIZE_OPTIONS"));
-  assert.ok(sessionConfig.includes("[10, 20, 50]"));
+  assert.ok(sessionConfig.includes("[20, 50, 100]"));
   assert.ok(game.includes("activeSessionSize"));
   assert.ok(game.includes("roundSize: requestedSessionSize"));
   assert.ok(!game.includes("FEEDBACK_HOLD_MS"), "swipe must not pause before throw");
@@ -4240,6 +4317,7 @@ assert.ok(!buildSiteSource.includes("MINIMUM_IMAGE_COUNT"), "build must not depe
 testSlidingPillGeometry();
 await testSlidingPillLifecycle();
 testSessionConfig();
+testPlayerNameAndAnswerStreak();
 await testDynamicRoundPreloader();
 await testRoundSelector();
 await testExternalContentSource();
@@ -4265,9 +4343,10 @@ await testSourceContracts();
 
 console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
-console.log("Session configuration 10/20/50: PASS");
-console.log("Dynamic preloader 10/20/50: PASS");
-console.log("Session selection 10/20/50 unique: PASS");
+console.log("Session configuration 20/50/100: PASS");
+console.log("V1.7.1B local display name + 3/10 answer streak: PASS");
+console.log("Dynamic preloader 20/50/100: PASS");
+console.log("Session selection + 100-image availability: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");
 console.log("Admin password Auth + session refresh + RLS authority probe: PASS");
 console.log("V1.5.8 Admin Storage usage RPC client contract: PASS");

@@ -1,13 +1,17 @@
 import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
-import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1a";
+import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { preloadImage } from "./image-preloader.js";
 import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, getSpeedTimerView, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js?v=1.7.1a";
+import { advanceAnswerStreak } from "./answer-streak.js";
+import { normalizePlayerName } from "./player-name.js";
+import { createBrowserProfiles } from "./player-profiles.js?v=1.7.1b-r1";
+import { createBrowserResultOutbox, calculateAccuracy, createCompletedResult, newGameSessionId } from "./game-results.js?v=1.7.1b-r1";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
 import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1";
 import {
@@ -15,8 +19,22 @@ import {
   MIN_SESSION_SIZE,
   isSessionSizeAvailable as isConfiguredSessionSizeAvailable,
   resolveSessionSize
-} from "./session-config.js";
+} from "./session-config.js?v=1.7.1b";
 
+const playerNameInput = document.querySelector("#player-name");
+const playerNameHelp = document.querySelector("#player-name-help");
+const resultPlayerName = document.querySelector("#result-player-name");
+const resultAccuracy = document.querySelector("#result-accuracy");
+const resultSaveStatus = document.querySelector("#result-save-status");
+const changePlayerButton = document.querySelector("#change-player-button");
+const playerSwitchPanel = document.querySelector("#player-switch-panel");
+const localPlayerList = document.querySelector("#local-player-list");
+const createPlayerButton = document.querySelector("#create-player-button");
+const cancelPlayerSwitch = document.querySelector("#cancel-player-switch");
+const pendingResultTools = document.querySelector("#pending-result-tools");
+const pendingResultsInfo = document.querySelector("#pending-results-info");
+const retryPendingButton = document.querySelector("#retry-pending-button");
+const MIN_CATALOG_IMAGE_COUNT = 10; // V1.7.1 baseline: Speed Run stays available below Classic minimum 20.
 const preGameScreen = document.querySelector("#pre-game-screen");
 const modeSelectPanel = document.querySelector("#mode-select-panel");
 const modeSetupPanel = document.querySelector("#mode-setup-panel");
@@ -110,6 +128,14 @@ let activeSessionSize = DEFAULT_SESSION_SIZE;
 let availableImageCount = 0;
 let currentIndex = 0;
 let score = 0;
+let answerStreak = 0;
+let activePlayerName = null;
+const localPlayers = createBrowserProfiles();
+const resultsOutbox = createBrowserResultOutbox();
+let creatingNewPlayer = false;
+let activeGameSessionId = null;
+let activeSessionProfile = null;
+let finishedSessionId = null;
 let state = "boot";
 let resultSubstate = "celebration";
 let presentationRevision = 0;
@@ -233,6 +259,7 @@ function returnResultToHome() {
   score = 0;
   scoreDisplay.textContent = "0";
   selectedGameMode = null;
+  answerStreak = 0;
 
   preGameTransition?.showImmediately(modeSelectPanel, preGamePanels);
   setState("mode-select");
@@ -381,7 +408,103 @@ function syncClassicSetupControls({ animate = false } = {}) {
   } else if (manifestFailed) {
     setupStatus.textContent = classicManifestError ?? "Nie udało się przygotować gry.";
   } else {
-    setupStatus.textContent = "";
+    setupStatus.textContent = selectedGameMode === GAME_MODE_IDS.CLASSIC && !isSessionSizeAvailable(selectedSessionSize)
+      ? `Tryb Klasyczny wymaga co najmniej ${MIN_SESSION_SIZE} dostępnych obrazów.`
+      : "";
+  }
+}
+
+function renderLocalProfiles() {
+  localPlayerList.replaceChildren();
+  const counts = new Map();
+  for (const profile of localPlayers.profiles) {
+    const count = (counts.get(profile.name) || 0) + 1;
+    counts.set(profile.name, count);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "player-switch-option";
+    button.textContent = `${profile.name} · profil ${count}`;
+    button.setAttribute("aria-pressed", String(profile.id === localPlayers.active?.id));
+    button.addEventListener("click", () => {
+      localPlayers.activate(profile.id);
+      creatingNewPlayer = false;
+      applyActivePlayer();
+      closePlayerSwitch();
+    });
+    localPlayerList.append(button);
+  }
+  changePlayerButton.hidden = localPlayers.profiles.length === 0;
+}
+
+function applyActivePlayer() {
+  const player = localPlayers.active;
+  activePlayerName = player?.name ?? null;
+  playerNameInput.value = player?.name ?? "";
+  playerNameInput.readOnly = Boolean(player);
+  playerNameInput.setAttribute("aria-invalid", "false");
+  playerNameHelp.textContent = localPlayers.persisted
+    ? "Profil zapamiętany w tej przeglądarce."
+    : "Pamięć przeglądarki niedostępna — profil może zniknąć po zamknięciu strony.";
+  renderLocalProfiles();
+}
+
+function closePlayerSwitch() {
+  playerSwitchPanel.hidden = true;
+  playerSwitchPanel.inert = true;
+  changePlayerButton.setAttribute("aria-expanded", "false");
+}
+
+function openPlayerSwitch() {
+  renderLocalProfiles();
+  playerSwitchPanel.hidden = false;
+  playerSwitchPanel.inert = false;
+  changePlayerButton.setAttribute("aria-expanded", "true");
+}
+
+function ensurePlayerName() {
+  const name = normalizePlayerName(playerNameInput.value);
+  playerNameInput.setAttribute("aria-invalid", String(!name));
+  if (!name) {
+    playerNameHelp.textContent = "Wpisz jeden wyraz (maks. 20 znaków, bez spacji).";
+    playerNameInput.focus({ preventScroll: false });
+    return null;
+  }
+  let profile = localPlayers.active;
+  if (creatingNewPlayer || !profile) {
+    try { profile = localPlayers.create(name); }
+    catch (error) {
+      playerNameHelp.textContent = error.message;
+      return null;
+    }
+    creatingNewPlayer = false;
+    closePlayerSwitch();
+  }
+  applyActivePlayer();
+  return profile.name;
+}
+
+function refreshPendingResults() {
+  pendingResultTools.hidden = resultsOutbox.pending === 0;
+  if (resultsOutbox.pending) {
+    pendingResultsInfo.textContent = `${resultsOutbox.pending} wynik(ów) oczekuje na zapis.`;
+  }
+}
+
+async function retryResultStorage() {
+  retryPendingButton.disabled = true;
+  const sessionAtStart = finishedSessionId;
+  if (state === "result") resultSaveStatus.textContent = "Zapisywanie wyniku…";
+  const response = await resultsOutbox.retryAll(refreshPendingResults);
+  refreshPendingResults();
+  retryPendingButton.disabled = false;
+  if (state === "result" && finishedSessionId === sessionAtStart) {
+    if (!resultsOutbox.queue.some((item) => item.client_session_id === sessionAtStart)) {
+      resultSaveStatus.textContent = "Wynik zapisany.";
+    } else {
+      resultSaveStatus.textContent = response.lastError?.code === "CONFLICT"
+        ? "Nie można potwierdzić zapisu. Skontaktuj się z administratorem."
+        : "Nie zapisano wyniku. Możesz ponowić zapis po odzyskaniu połączenia.";
+    }
   }
 }
 
@@ -405,6 +528,8 @@ function configureSessionSizeAvailability(imageCount) {
 }
 
 function showFatalError(message) {
+  activeGameSessionId = null;
+  activeSessionProfile = null;
   resultCelebration?.leave();
   presentationRevision += 1;
   speedClock.stop();
@@ -441,8 +566,8 @@ function validateManifest(manifest) {
     images.push(item);
   }
 
-  if (images.length < MIN_SESSION_SIZE) {
-    throw new Error(`Gra wymaga co najmniej ${MIN_SESSION_SIZE} unikalnych obrazów w puli.`);
+  if (images.length < MIN_CATALOG_IMAGE_COUNT) {
+    throw new Error(`Gra wymaga co najmniej ${MIN_CATALOG_IMAGE_COUNT} unikalnych obrazów w puli.`);
   }
 
   return images;
@@ -452,7 +577,7 @@ async function loadManifest() {
   let result;
 
   try {
-    result = await loadContentManifest({ minimumImageCount: MIN_SESSION_SIZE });
+    result = await loadContentManifest({ minimumImageCount: MIN_CATALOG_IMAGE_COUNT });
   } catch (error) {
     console.error("[AI OR HUMAN] Nie udało się pobrać katalogu obrazów z Supabase.", error);
     throw new Error("Gra jest chwilowo niedostępna. Spróbuj ponownie za chwilę.");
@@ -509,6 +634,7 @@ function prefetchClassicManifestAfterFirstPaint() {
 async function openGameMode(modeId) {
   if (preGameNavigationPending || preGameTransition?.busy || state === "preparing") return false;
   if (!isGameModeSelectable(modeId)) return false;
+  if (!ensurePlayerName()) return false;
 
   const mode = getGameModeDefinition(modeId);
   if (!mode || ![GAME_MODE_IDS.CLASSIC, GAME_MODE_IDS.SPEED_RUN].includes(mode.id)) return false;
@@ -629,10 +755,14 @@ async function prepareAndStartSpeedSession(triggerButton, normalText) {
     const first = await nextDeck.next();
     if (!first || revision !== presentationRevision || state !== "preparing") return;
     sessionNumber += 1;
+    activeGameSessionId = newGameSessionId();
+    activeSessionProfile = { ...localPlayers.active, browserId: localPlayers.browserId };
+    finishedSessionId = null;
     speedRunState = createSpeedRunState(selectedSpeedDifficulty);
     sessionDeck = [first];
     currentIndex = 0;
     score = 0;
+    answerStreak = 0;
     syncModePresentation();
     updateSpeedHUD();
     await presentCurrentCard({ revealGameScreen: true });
@@ -671,10 +801,14 @@ async function prepareAndStartSession(triggerButton, normalText) {
     speedDeck = null;
     speedRunState = null;
     sessionNumber = nextSessionNumber;
+    activeGameSessionId = newGameSessionId();
+    activeSessionProfile = { ...localPlayers.active, browserId: localPlayers.browserId };
+    finishedSessionId = null;
     sessionDeck = preparedDeck;
     activeSessionSize = requestedSessionSize;
     currentIndex = 0;
     score = 0;
+    answerStreak = 0;
     scoreDisplay.textContent = "0";
 
     await presentCurrentCard({ revealGameScreen: true });
@@ -694,9 +828,11 @@ async function settleSpeedOutcome(outcome, type = null) {
   speedClock.stop();
   speedRunState = resolveSpeedRunOutcome(speedRunState, outcome);
   score = speedRunState.score;
+  const streakResult = advanceAnswerStreak(answerStreak, outcome);
+  answerStreak = streakResult.streak;
   updateSpeedHUD(outcome === "timeout" ? 0 : "keep");
 
-  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct");
+  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct", { milestone: streakResult.milestone });
   const dismissal = outcome === "timeout" ? swipe.dismiss() : swipe.throw(type);
   const [shown, dismissed] = await Promise.all([feedback, dismissal]);
   if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
@@ -734,12 +870,14 @@ async function answer(type) {
   setState("answering");
 
   const correct = type === item.type;
+  const streakResult = advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect");
+  answerStreak = streakResult.streak;
   if (correct) {
     score += 1;
     scoreDisplay.textContent = String(score);
   }
 
-  const feedbackPromise = answerFeedback.play(correct);
+  const feedbackPromise = answerFeedback.play(correct, { milestone: streakResult.milestone });
   const throwPromise = swipe.throw(type);
 
   const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
@@ -756,6 +894,27 @@ async function answer(type) {
 }
 
 function finishSession() {
+  if (!activeGameSessionId || !activeSessionProfile || state === "result" || state === "error") return;
+  const completedId = activeGameSessionId;
+  const player = activeSessionProfile;
+  // Freeze timestamp and identity once. Replay cannot save the previous game again.
+  activeGameSessionId = null;
+  finishedSessionId = completedId;
+  const attempts = selectedGameMode === GAME_MODE_IDS.SPEED_RUN
+    ? speedRunState.attempts : activeSessionSize;
+  let queued = false;
+  try {
+    const snapshot = createCompletedResult({
+      sessionId: completedId, browserId: player.browserId, playerId: player.id,
+      playerName: player.name, mode: selectedGameMode,
+      difficulty: selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? speedRunState.difficultyId : null,
+      selectedCards: selectedGameMode === GAME_MODE_IDS.CLASSIC ? activeSessionSize : null,
+      correct: score, attempts, finishedAt: new Date().toISOString()
+    });
+    queued = resultsOutbox.enqueue(snapshot);
+  } catch (error) {
+    console.error("[AI OR HUMAN] Nie udało się przygotować wyniku do zapisu.", error);
+  }
   presentationRevision += 1;
   speedClock.stop();
   speedDeck?.cancel();
@@ -763,11 +922,17 @@ function finishSession() {
   clearCardOverlays();
   hideImageContent();
   finalScore.textContent = selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? String(score) : `${score} / ${activeSessionSize}`;
+  resultPlayerName.textContent = player.name ? `Gracz: ${player.name}` : "";
+  const accuracy = calculateAccuracy(score, attempts);
+  resultAccuracy.textContent = accuracy === null ? "Brak ocenionych odpowiedzi" : `${accuracy.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}% poprawnych odpowiedzi`;
+  resultSaveStatus.textContent = queued ? "Zapisywanie wyniku…" : "Nie udało się zachować wyniku. Sprawdź pamięć przeglądarki.";
+  refreshPendingResults();
   resetResultPresentation();
   syncSessionSizeControls();
   syncModePresentation();
   showOnly(endScreen);
   resultCelebration?.enter();
+  if (queued) void retryResultStorage();
 }
 
 function initializeInteractions() {
@@ -795,6 +960,8 @@ function initializeInteractions() {
 }
 
 function bootstrap() {
+  applyActivePlayer();
+  refreshPendingResults();
   initializeInteractions();
   themeController = initializeThemeController();
   setState("mode-select");
@@ -802,7 +969,36 @@ function bootstrap() {
   syncModePresentation();
   syncClassicSetupControls();
   prefetchClassicManifestAfterFirstPaint();
+  if (resultsOutbox.pending) void retryResultStorage();
 }
+
+changePlayerButton.addEventListener("click", () => {
+  if (state !== "mode-select") return;
+  if (playerSwitchPanel.hidden) openPlayerSwitch(); else closePlayerSwitch();
+});
+cancelPlayerSwitch.addEventListener("click", () => {
+  creatingNewPlayer = false;
+  applyActivePlayer();
+  closePlayerSwitch();
+});
+createPlayerButton.addEventListener("click", () => {
+  creatingNewPlayer = true;
+  playerNameInput.value = "";
+  playerNameInput.readOnly = false;
+  playerNameHelp.textContent = "Wpisz nową nazwę i wybierz tryb gry. Może być taka sama jak innego profilu.";
+  closePlayerSwitch();
+  playerNameInput.focus();
+});
+retryPendingButton.addEventListener("click", () => void retryResultStorage());
+window.addEventListener("online", () => { if (resultsOutbox.pending) void retryResultStorage(); });
+
+playerNameInput.addEventListener("input", () => {
+  // Edits are validated on mode selection; an old name must never override the current input.
+  playerNameInput.removeAttribute("aria-invalid");
+  if (!playerNameInput.readOnly) {
+    playerNameHelp.textContent = "Nazwa i identyfikator lokalnego profilu zostaną zapisane w tej przeglądarce.";
+  }
+});
 
 sessionSizeButtons.forEach((button) => {
   button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));

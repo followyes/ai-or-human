@@ -1,0 +1,387 @@
+const DEFAULTS = Object.freeze({
+  intentDistance: 14,
+  verticalAbortDistance: 32,
+  horizontalIntentRatio: 1.15,
+  verticalIntentRatio: 1.45,
+  minDecisionDistance: 68,
+  decisionWidthRatio: 0.20,
+  maxDecisionDistance: 120,
+  maxRotation: 12,
+  returnDuration: 260,
+  throwDuration: 700,
+  revealDuration: 200,
+  reducedReturnDuration: 120,
+  reducedThrowDuration: 220,
+  reducedRevealDuration: 1
+});
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+export class SwipeController {
+  constructor(card, { onDecision, onProgress, options = {} } = {}) {
+    if (!card) throw new Error("SwipeController requires a card element");
+    if (typeof onDecision !== "function") throw new TypeError("onDecision must be a function");
+
+    this.card = card;
+    this.onDecision = onDecision;
+    this.onProgress = typeof onProgress === "function" ? onProgress : () => {};
+    this.options = { ...DEFAULTS, ...options };
+    this.enabled = true;
+    this.activePointerId = null;
+    this.startX = 0;
+    this.startY = 0;
+    this.deltaX = 0;
+    this.deltaY = 0;
+    this.horizontalActive = false;
+    this.verticalAborted = false;
+    this.returning = false;
+    this.handoffPending = false;
+    this.animation = null;
+    this.animationRevision = 0;
+    this.lastCancelReason = null;
+
+    this.handlePointerDown = this.handlePointerDown.bind(this);
+    this.handlePointerMove = this.handlePointerMove.bind(this);
+    this.handlePointerUp = this.handlePointerUp.bind(this);
+    this.handlePointerCancel = this.handlePointerCancel.bind(this);
+    this.handleLostPointerCapture = this.handleLostPointerCapture.bind(this);
+
+    card.addEventListener("pointerdown", this.handlePointerDown);
+    card.addEventListener("pointermove", this.handlePointerMove);
+    card.addEventListener("pointerup", this.handlePointerUp);
+    card.addEventListener("pointercancel", this.handlePointerCancel);
+    card.addEventListener("lostpointercapture", this.handleLostPointerCapture);
+  }
+
+  setEnabled(enabled) {
+    this.enabled = Boolean(enabled);
+    if (!this.enabled && this.activePointerId !== null) {
+      this.endGesture({ animateReturn: false, reason: "disabled" });
+    }
+  }
+
+  decisionThreshold() {
+    return Math.max(
+      this.options.minDecisionDistance,
+      Math.min(this.card.clientWidth * this.options.decisionWidthRatio, this.options.maxDecisionDistance)
+    );
+  }
+
+  motionDuration(normal, reduced) {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? reduced : normal;
+  }
+
+  capturePointer(pointerId) {
+    try {
+      this.card.setPointerCapture?.(pointerId);
+      return this.card.hasPointerCapture?.(pointerId) ?? true;
+    } catch {
+      return false;
+    }
+  }
+
+  handlePointerDown(event) {
+    if (
+      !this.enabled ||
+      this.returning ||
+      this.handoffPending ||
+      this.activePointerId !== null ||
+      event.isPrimary === false ||
+      event.pointerType === "mouse"
+    ) {
+      return;
+    }
+
+    this.activePointerId = event.pointerId;
+    this.startX = event.clientX;
+    this.startY = event.clientY;
+    this.deltaX = 0;
+    this.deltaY = 0;
+    this.horizontalActive = false;
+    this.verticalAborted = false;
+    this.lastCancelReason = null;
+
+    // Real-touch contract: own the pointer stream immediately.
+    this.capturePointer(event.pointerId);
+  }
+
+  handlePointerMove(event) {
+    if (!this.enabled || event.pointerId !== this.activePointerId || this.verticalAborted) return;
+
+    this.deltaX = event.clientX - this.startX;
+    this.deltaY = event.clientY - this.startY;
+
+    const absX = Math.abs(this.deltaX);
+    const absY = Math.abs(this.deltaY);
+
+    if (!this.horizontalActive) {
+      if (
+        absY >= this.options.verticalAbortDistance &&
+        absY > absX * this.options.verticalIntentRatio
+      ) {
+        this.verticalAborted = true;
+        this.endGesture({ animateReturn: false, reason: "vertical-intent" });
+        return;
+      }
+
+      if (
+        absX < this.options.intentDistance ||
+        absX <= absY * this.options.horizontalIntentRatio
+      ) {
+        return;
+      }
+
+      this.horizontalActive = true;
+      this.card.classList.add("is-dragging");
+    }
+
+    if (event.cancelable) event.preventDefault();
+
+    const width = Math.max(this.card.clientWidth, 1);
+    const progress = clamp(this.deltaX / width, -1, 1);
+    const rotation = progress * this.options.maxRotation;
+
+    this.card.style.transform = `translate3d(${this.deltaX}px, 0, 0) rotate(${rotation}deg)`;
+    const threshold = Math.max(this.decisionThreshold(), 1);
+    const decisionProgress = clamp(Math.abs(this.deltaX) / threshold, 0, 1);
+    this.onProgress(progress, {
+      decisionProgress,
+      threshold,
+      deltaX: this.deltaX
+    });
+  }
+
+  handlePointerUp(event) {
+    if (event.pointerId !== this.activePointerId) return;
+
+    const shouldDecide =
+      this.horizontalActive &&
+      Math.abs(this.deltaX) >= this.decisionThreshold();
+    const direction = this.deltaX > 0 ? "ai" : "human";
+
+    if (shouldDecide) {
+      const pointerId = this.activePointerId;
+      this.card.classList.remove("is-dragging");
+      this.cleanupGestureState({ preserveTransform: true });
+      this.releasePointer(pointerId);
+      this.onDecision(direction);
+      return;
+    }
+
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "pointerup" });
+  }
+
+  handlePointerCancel(event) {
+    if (event.pointerId !== this.activePointerId) return;
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "pointercancel" });
+  }
+
+  handleLostPointerCapture(event) {
+    if (event.pointerId !== this.activePointerId) return;
+    this.endGesture({ animateReturn: this.horizontalActive, reason: "lostpointercapture" });
+  }
+
+  endGesture({ animateReturn, reason = "cancelled" }) {
+    const pointerId = this.activePointerId;
+    const hadTransform = Boolean(this.card.style.transform);
+
+    this.lastCancelReason = reason;
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState({ preserveTransform: animateReturn && hadTransform });
+    if (pointerId !== null) this.releasePointer(pointerId);
+
+    if (animateReturn && hadTransform) {
+      void this.animateToCenter();
+    } else {
+      this.resetVisuals();
+    }
+  }
+
+  releasePointer(pointerId) {
+    try {
+      if (this.card.hasPointerCapture?.(pointerId)) {
+        this.card.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Pointer may already be released by the browser.
+    }
+  }
+
+  async animateToCenter() {
+    this.stopAnimation();
+    this.returning = true;
+
+    const revision = ++this.animationRevision;
+    const from = this.card.style.transform || "translate3d(0, 0, 0) rotate(0deg)";
+    const duration = this.motionDuration(this.options.returnDuration, this.options.reducedReturnDuration);
+
+    const animation = this.card.animate(
+      [{ transform: from }, { transform: "translate3d(0, 0, 0) rotate(0deg)" }],
+      { duration, easing: "cubic-bezier(.2,.75,.3,1)" }
+    );
+    this.animation = animation;
+
+    try {
+      await animation.finished;
+    } catch {}
+
+    if (revision !== this.animationRevision || this.animation !== animation) return false;
+
+    this.animation = null;
+    this.card.style.transform = "";
+    this.card.style.opacity = "";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+    this.returning = false;
+    return true;
+  }
+
+  async throw(direction) {
+    this.stopAnimation();
+    this.returning = false;
+    this.setEnabled(false);
+
+    const sign = direction === "ai" ? 1 : -1;
+    const startTransform = this.card.style.transform || "translate3d(0, 0, 0) rotate(0deg)";
+    const distance = Math.max(window.innerWidth, this.card.clientWidth) + this.card.clientWidth + 80;
+    const targetTransform = `translate3d(${sign * distance}px, 40px, 0) rotate(${sign * 18}deg)`;
+    const duration = this.motionDuration(this.options.throwDuration, this.options.reducedThrowDuration);
+
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState({ preserveTransform: true });
+
+    const revision = ++this.animationRevision;
+    const animation = this.card.animate(
+      [
+        { transform: startTransform, opacity: 1 },
+        { transform: targetTransform, opacity: 0 }
+      ],
+      { duration, easing: "cubic-bezier(.22,.64,.30,1)", fill: "forwards" }
+    );
+    this.animation = animation;
+
+    try {
+      await animation.finished;
+    } catch {}
+
+    if (revision !== this.animationRevision || this.animation !== animation) return false;
+
+    this.card.style.transform = targetTransform;
+    this.card.style.opacity = "0";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+    this.handoffPending = true;
+
+    try { animation.cancel(); } catch {}
+    this.animation = null;
+    return true;
+  }
+
+  // A timeout is not a vote for either category. Move the card neutrally
+  // downwards while preserving the same hidden handoff contract as throw().
+  async dismiss() {
+    this.stopAnimation();
+    this.returning = false;
+    this.setEnabled(false);
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState();
+    const distance = Math.max(window.innerHeight, this.card.clientHeight) + this.card.clientHeight + 80;
+    const targetTransform = `translate3d(0, ${distance}px, 0) rotate(0deg)`;
+    const duration = this.motionDuration(this.options.throwDuration, this.options.reducedThrowDuration);
+    const revision = ++this.animationRevision;
+    const animation = this.card.animate(
+      [{ transform: "translate3d(0, 0, 0) rotate(0deg)", opacity: 1 }, { transform: targetTransform, opacity: 0 }],
+      { duration, easing: "cubic-bezier(.22,.64,.30,1)", fill: "forwards" }
+    );
+    this.animation = animation;
+    try { await animation.finished; } catch {}
+    if (revision !== this.animationRevision || this.animation !== animation) return false;
+    this.card.style.transform = targetTransform;
+    this.card.style.opacity = "0";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+    this.handoffPending = true;
+    try { animation.cancel(); } catch {}
+    this.animation = null;
+    return true;
+  }
+
+  prepareHidden() {
+    this.stopAnimation();
+    this.returning = false;
+    this.handoffPending = true;
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState();
+    this.card.style.transform = "";
+    this.card.style.opacity = "0";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+  }
+
+  async reveal() {
+    this.stopAnimation();
+    this.returning = false;
+    this.handoffPending = true;
+    this.card.style.transform = "";
+    this.card.style.opacity = "0";
+
+    const duration = this.motionDuration(this.options.revealDuration, this.options.reducedRevealDuration);
+    const revision = ++this.animationRevision;
+    const animation = this.card.animate(
+      [{ opacity: 0 }, { opacity: 1 }],
+      { duration, easing: "ease-out", fill: "forwards" }
+    );
+    this.animation = animation;
+
+    try {
+      await animation.finished;
+    } catch {}
+
+    if (revision !== this.animationRevision || this.animation !== animation) return false;
+
+    this.card.style.opacity = "";
+    this.card.style.transform = "";
+    this.handoffPending = false;
+
+    try { animation.cancel(); } catch {}
+    this.animation = null;
+    return true;
+  }
+
+  resetVisuals() {
+    this.stopAnimation();
+    this.returning = false;
+    this.handoffPending = false;
+    this.card.classList.remove("is-dragging");
+    this.cleanupGestureState();
+    this.card.style.transform = "";
+    this.card.style.opacity = "";
+    this.onProgress(0, { decisionProgress: 0, threshold: this.decisionThreshold(), deltaX: 0 });
+  }
+
+  stopAnimation() {
+    this.animationRevision += 1;
+    if (this.animation) {
+      try { this.animation.cancel(); } catch {}
+      this.animation = null;
+    }
+  }
+
+  cleanupGestureState({ preserveTransform = false } = {}) {
+    this.activePointerId = null;
+    this.startX = 0;
+    this.startY = 0;
+    this.deltaX = 0;
+    this.deltaY = 0;
+    this.horizontalActive = false;
+    this.verticalAborted = false;
+    if (!preserveTransform) this.card.classList.remove("is-dragging");
+  }
+
+  destroy() {
+    this.stopAnimation();
+    this.card.removeEventListener("pointerdown", this.handlePointerDown);
+    this.card.removeEventListener("pointermove", this.handlePointerMove);
+    this.card.removeEventListener("pointerup", this.handlePointerUp);
+    this.card.removeEventListener("pointercancel", this.handlePointerCancel);
+    this.card.removeEventListener("lostpointercapture", this.handleLostPointerCapture);
+  }
+}

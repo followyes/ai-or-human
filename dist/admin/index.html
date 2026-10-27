@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#eef2f3">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <title>AI or Human — Admin</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./admin.css">
+</head>
+<body>
+  <main class="admin-shell">
+    <section class="admin-card" id="admin-card" data-view="boot" data-boot-visible="false">
+      <section id="login-view" class="login-view admin-view" aria-labelledby="login-title" aria-hidden="true" inert>
+        <header class="login-header">
+          <h1 id="login-title" tabindex="-1">Panel administratora</h1>
+          <p class="admin-copy">Zaloguj się kontem administratora.</p>
+        </header>
+
+        <form id="login-form" class="login-form" novalidate>
+          <label class="field">
+            <span>E-mail</span>
+            <input id="email" name="email" type="email" autocomplete="username" inputmode="email" required>
+          </label>
+          <label class="field">
+            <span>Hasło</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="admin-primary-button" id="login-button" type="submit">Zaloguj</button>
+          <p class="form-status" id="login-status" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <section id="authorized-view" class="authorized-view admin-view" aria-labelledby="admin-title" aria-hidden="true" inert>
+        <header class="admin-header">
+          <h1 id="admin-title" tabindex="-1">Panel administratora</h1>
+          <button class="admin-secondary-button compact-button logout-button" id="logout-button" type="button">Wyloguj</button>
+        </header>
+
+        <div class="admin-workspace">
+          <section class="content-panel workspace-panel" aria-labelledby="content-heading">
+            <div class="panel-heading">
+              <h2 id="content-heading">Dodaj obrazy</h2>
+            </div>
+
+            <fieldset class="class-picker" id="class-picker">
+              <legend>Kategoria</legend>
+              <label>
+                <input type="radio" name="content-class" value="ai">
+                <span>AI</span>
+              </label>
+              <label>
+                <input type="radio" name="content-class" value="human">
+                <span>HUMAN</span>
+              </label>
+            </fieldset>
+
+            <button class="drop-zone is-category-locked" id="drop-zone" type="button" aria-disabled="true">
+              <span class="drop-zone-title">Wybierz kategorię</span>
+              <span class="drop-zone-copy is-hidden">albo kliknij, aby wybrać pliki</span>
+              <span class="drop-zone-formats is-hidden">JPG · PNG · WebP → AVIF · AVIF bez rekompresji</span>
+            </button>
+
+            <input
+              id="file-input"
+              class="visually-hidden"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif,.jpg,.jpeg,.jfif,.png,.webp,.avif"
+              multiple
+              disabled
+            >
+
+            <div class="queue-header is-hidden" id="queue-header">
+              <strong>Przetwarzanie</strong>
+              <span id="queue-summary"></span>
+            </div>
+
+            <div class="upload-queue" id="upload-queue" aria-live="polite"></div>
+          </section>
+
+          <section class="inventory-panel workspace-panel" aria-labelledby="inventory-heading">
+            <div class="inventory-heading-row">
+              <h2 id="inventory-heading">Biblioteka</h2>
+              <div class="inventory-actions">
+                <div class="inventory-idle-actions" id="inventory-idle-actions">
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move" type="button">Przenieś</button>
+                  <button class="admin-secondary-button compact-button danger-button" id="inventory-delete-many" type="button">Usuń wiele</button>
+                </div>
+                <div class="inventory-selection-actions is-hidden" id="inventory-delete-actions">
+                  <button class="admin-secondary-button compact-button" id="inventory-delete-select-all" type="button">Zaznacz wszystkie</button>
+                  <button class="admin-secondary-button compact-button" id="inventory-delete-cancel" type="button">Anuluj</button>
+                  <button class="admin-secondary-button compact-button danger-button" id="inventory-delete-selected" type="button" disabled>Usuń zaznaczone (0)</button>
+                </div>
+                <div class="inventory-selection-actions is-hidden" id="inventory-move-actions">
+                  <button class="admin-secondary-button compact-button" id="inventory-move-select-all" type="button">Zaznacz wszystkie</button>
+                  <button class="admin-secondary-button compact-button" id="inventory-move-cancel" type="button">Anuluj</button>
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move-to-ai" type="button" disabled>Przenieś do AI (0)</button>
+                  <button class="admin-secondary-button compact-button move-button" id="inventory-move-to-human" type="button" disabled>Przenieś do HUMAN (0)</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="inventory-toolbar">
+              <div class="inventory-filters" id="inventory-filters" role="group" aria-label="Filtr biblioteki">
+                <button type="button" data-filter="all" class="is-active">
+                  <span>WSZYSTKIE</span><strong id="count-total">0</strong>
+                </button>
+                <button type="button" data-filter="ai">
+                  <span>AI</span><strong id="count-ai">0</strong>
+                </button>
+                <button type="button" data-filter="human">
+                  <span>HUMAN</span><strong id="count-human">0</strong>
+                </button>
+              </div>
+
+              <div class="storage-capacity" aria-live="polite">
+                <div class="storage-capacity-heading">
+                  <span>Storage</span>
+                  <span id="storage-usage-value">—</span>
+                  <strong id="storage-usage-percent">—</strong>
+                </div>
+                <div
+                  class="storage-meter"
+                  id="storage-meter"
+                  role="progressbar"
+                  aria-label="Wykorzystanie Storage"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuetext="Dane wykorzystania Storage są niedostępne"
+                >
+                  <span class="storage-meter-fill" id="storage-meter-fill"></span>
+                </div>
+                <span class="storage-remaining" id="storage-remaining">—</span>
+              </div>
+            </div>
+
+            <p class="inventory-status" id="inventory-status" role="status" aria-live="polite"></p>
+            <div class="inventory-grid" id="inventory-grid"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="boot-view" class="boot-state admin-view" aria-live="polite" aria-hidden="true" inert>
+        <span class="spinner" aria-hidden="true"></span>
+        <p>Sprawdzanie sesji…</p>
+      </section>
+    </section>
+  </main>
+
+  <script type="module" src="./admin.js"></script>
+</body>
+</html>

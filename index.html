@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1a">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r1">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -143,6 +143,24 @@
             <h1 class="pre-game-display-title" id="mode-select-title">Wybierz tryb gry</h1>
           </div>
 
+          <div class="player-login" id="player-login">
+            <label class="meta-label" for="player-name">LOGIN GRACZA</label>
+            <input id="player-name" class="player-login__input" type="text" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" placeholder="Wpisz nazwę (jedno słowo)" aria-describedby="player-name-help" required>
+            <span class="player-login__help" id="player-name-help" aria-live="polite">Profil jest zapisany tylko w tej przeglądarce.</span>
+            <button id="change-player-button" class="player-switch-toggle" type="button" hidden>Zmień gracza</button>
+            <div id="player-switch-panel" class="player-switch-panel" hidden inert>
+              <p class="player-switch-panel__label">Wybierz lokalny profil</p>
+              <div id="local-player-list" class="local-player-list"></div>
+              <button id="create-player-button" class="player-switch-action" type="button">+ Nowy gracz</button>
+              <button id="cancel-player-switch" class="player-switch-cancel" type="button">Anuluj</button>
+            </div>
+            <p class="player-privacy-note">Nazwa i losowy identyfikator przeglądarki są zapisywane z wynikiem; różne profile mogą pochodzić z jednej przeglądarki.</p>
+            <div class="pending-result-tools" id="pending-result-tools" hidden>
+              <span id="pending-results-info" aria-live="polite"></span>
+              <button id="retry-pending-button" type="button">Ponów zapis</button>
+            </div>
+          </div>
+
           <div class="game-mode-list" aria-label="Tryby gry">
             <button class="game-mode-card" id="classic-mode-button" type="button" data-game-mode="classic">
               <span class="game-mode-card__icon" aria-hidden="true">
@@ -184,9 +202,9 @@
             <p class="meta-label" id="start-size-label">LICZBA OBRAZÓW</p>
             <div class="session-size-options" aria-label="Liczba obrazów">
               <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
-              <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false" disabled>10</button>
               <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true" disabled>20</button>
               <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false" disabled>50</button>
+              <button class="session-size-button" type="button" data-session-size="100" aria-pressed="false" disabled>100</button>
             </div>
           </div>
 
@@ -270,11 +288,15 @@
           <p class="eyebrow result-eyebrow">AI OR HUMAN</p>
           <span class="cosmic-divider" aria-hidden="true"><span></span></span>
           <h2 class="result-title" id="end-title">Twój wynik</h2>
+          <p class="result-player-name" id="result-player-name"></p>
         </div>
 
         <div class="result-score-stage" aria-live="polite">
           <span class="result-ambient-halo" data-result-halo aria-hidden="true"></span>
+          <span class="result-trophy" aria-hidden="true">🏆</span>
           <strong id="final-score">0 / 20</strong>
+          <p class="result-accuracy" id="result-accuracy">0% poprawnych odpowiedzi</p>
+          <p class="result-save-status" id="result-save-status" role="status" aria-live="polite"></p>
         </div>
 
         <div class="result-action-stage">
@@ -288,9 +310,9 @@
               <p class="meta-label" id="end-size-label">LICZBA OBRAZÓW</p>
               <div class="session-size-options" aria-label="Liczba obrazów przy kolejnej grze">
                 <div class="session-size-indicator" data-session-indicator aria-hidden="true"></div>
-                <button class="session-size-button" type="button" data-session-size="10" aria-pressed="false">10</button>
                 <button class="session-size-button is-selected" type="button" data-session-size="20" aria-pressed="true">20</button>
                 <button class="session-size-button" type="button" data-session-size="50" aria-pressed="false">50</button>
+                <button class="session-size-button" type="button" data-session-size="100" aria-pressed="false">100</button>
               </div>
             </div>
             <div class="speed-difficulty-picker speed-difficulty-picker-end is-hidden" id="speed-replay-picker" aria-labelledby="speed-replay-label">
@@ -315,6 +337,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/game.js?v=1.7.1a"></script>
+  <script type="module" src="./js/game.js?v=1.7.1b-r1"></script>
 </body>
 </html>
