@@ -22,6 +22,15 @@ import {
 } from "./session-config.js?v=1.7.1b";
 
 const playerNameInput = document.querySelector("#player-name");
+const profileButton = document.querySelector("#profile-button");
+const profileDialogBackdrop = document.querySelector("#profile-dialog-backdrop");
+const profileDialog = document.querySelector("#profile-dialog");
+const profileDialogDescription = document.querySelector("#profile-dialog-description");
+const profileDialogConfirm = document.querySelector("#profile-confirm-button");
+const profileDialogCancel = document.querySelector("#profile-cancel-button");
+const profileDialogClose = document.querySelector("#profile-dialog-close");
+const appShell = document.querySelector(".app-shell");
+const themeSwitchButton = document.querySelector("#theme-switch");
 const playerNameHelp = document.querySelector("#player-name-help");
 const resultPlayerName = document.querySelector("#result-player-name");
 const resultAccuracy = document.querySelector("#result-accuracy");
@@ -133,6 +142,9 @@ let activePlayerName = null;
 const localPlayers = createBrowserProfiles();
 const resultsOutbox = createBrowserResultOutbox();
 let creatingNewPlayer = false;
+let profileDialogIntent = null; // "start" or "manage"; never owns the gameplay lifecycle.
+let profileDialogTrigger = null;
+let deferredStartButton = null;
 let activeGameSessionId = null;
 let activeSessionProfile = null;
 let finishedSessionId = null;
@@ -158,6 +170,9 @@ function refreshSessionSizePickersSoon() {
 function applyPublicView(screen, { view = publicViewForScreen(screen), themeSwitchVisible = view !== "gameplay" } = {}) {
   document.body.dataset.publicView = view;
   themeController?.setVisible(themeSwitchVisible);
+  const profileVisible = view === "mode-select" || view === "mode-setup" || view === "result";
+  profileButton.hidden = !profileVisible;
+  profileButton.disabled = !profileVisible;
 }
 
 function showOnly(screen, options = {}) {
@@ -430,6 +445,8 @@ function renderLocalProfiles() {
       creatingNewPlayer = false;
       applyActivePlayer();
       closePlayerSwitch();
+      updateProfileDialogCopy();
+      profileDialogConfirm.focus({ preventScroll: true });
     });
     localPlayerList.append(button);
   }
@@ -442,9 +459,10 @@ function applyActivePlayer() {
   playerNameInput.value = player?.name ?? "";
   playerNameInput.readOnly = Boolean(player);
   playerNameInput.setAttribute("aria-invalid", "false");
-  playerNameHelp.textContent = localPlayers.persisted
-    ? "Profil zapamiętany w tej przeglądarce."
-    : "Pamięć przeglądarki niedostępna — profil może zniknąć po zamknięciu strony.";
+  playerNameHelp.textContent = "";
+  profileButton.setAttribute("aria-label", player ? `Profil gracza: ${player.name}` : "Wybierz gracza");
+  profileButton.title = player ? `Profil: ${player.name}` : "Profil gracza";
+  profileButton.classList.toggle("has-profile", Boolean(player));
   renderLocalProfiles();
 }
 
@@ -459,28 +477,97 @@ function openPlayerSwitch() {
   playerSwitchPanel.hidden = false;
   playerSwitchPanel.inert = false;
   changePlayerButton.setAttribute("aria-expanded", "true");
+  localPlayerList.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function updateProfileDialogCopy() {
+  const name = creatingNewPlayer ? null : localPlayers.active?.name;
+  profileDialogDescription.textContent = name
+    ? `Grasz jako ${name}.`
+    : "Wpisz nazwę gracza.";
+  profileDialogConfirm.textContent = profileDialogIntent === "start"
+    ? "Graj"
+    : "Zapisz profil";
+}
+
+function openProfileDialog(intent = "manage", trigger = profileButton) {
+  if (profileDialogIntent || preGameNavigationPending || preGameTransition?.busy ||
+    state === "preparing" || state === "playing" || state === "answering" || state === "presenting") return false;
+  if (intent !== "manage" && intent !== "start") return false;
+  profileDialogIntent = intent;
+  profileDialogTrigger = trigger;
+  creatingNewPlayer = false;
+  applyActivePlayer();
+  closePlayerSwitch();
+  updateProfileDialogCopy();
+  profileDialogBackdrop.hidden = false;
+  appShell.inert = true;
+  profileButton.inert = true;
+  themeSwitchButton.inert = true;
+  document.body.classList.add("is-profile-dialog-open");
+  window.requestAnimationFrame(() => {
+    if (!profileDialogIntent) return;
+    (localPlayers.active ? profileDialogConfirm : playerNameInput).focus({ preventScroll: true });
+  });
+  return true;
+}
+
+function closeProfileDialog({ restoreFocus = true } = {}) {
+  if (!profileDialogIntent) return;
+  const trigger = profileDialogTrigger;
+  profileDialogIntent = null;
+  profileDialogTrigger = null;
+  deferredStartButton = null;
+  creatingNewPlayer = false;
+  closePlayerSwitch();
+  profileDialogBackdrop.hidden = true;
+  document.body.classList.remove("is-profile-dialog-open");
+  appShell.inert = false;
+  profileButton.inert = false;
+  themeSwitchButton.inert = false;
+  applyActivePlayer();
+  if (restoreFocus && trigger && !trigger.disabled && !trigger.hidden) {
+    trigger.focus({ preventScroll: true });
+  }
 }
 
 function ensurePlayerName() {
+  if (!creatingNewPlayer && localPlayers.active) return localPlayers.active.name;
   const name = normalizePlayerName(playerNameInput.value);
   playerNameInput.setAttribute("aria-invalid", String(!name));
   if (!name) {
-    playerNameHelp.textContent = "Wpisz jeden wyraz (maks. 20 znaków, bez spacji).";
+    playerNameHelp.textContent = "Wpisz jedno słowo (maks. 20 znaków).";
     playerNameInput.focus({ preventScroll: false });
     return null;
   }
-  let profile = localPlayers.active;
-  if (creatingNewPlayer || !profile) {
-    try { profile = localPlayers.create(name); }
-    catch (error) {
-      playerNameHelp.textContent = error.message;
-      return null;
-    }
-    creatingNewPlayer = false;
-    closePlayerSwitch();
+  try { localPlayers.create(name); }
+  catch (error) {
+    playerNameHelp.textContent = error.message;
+    return null;
   }
+  creatingNewPlayer = false;
   applyActivePlayer();
-  return profile.name;
+  return name;
+}
+
+function promptStartSession(triggerButton, normalText = "Rozpocznij") {
+  if (profileDialogIntent || triggerButton.disabled || state === "preparing") return;
+  if (!localPlayers.active) {
+    deferredStartButton = triggerButton;
+    openProfileDialog("start", triggerButton);
+    return;
+  }
+  void prepareAndStartSession(triggerButton, normalText);
+}
+
+function confirmProfileDialog() {
+  if (!profileDialogIntent || !ensurePlayerName()) return;
+  const intent = profileDialogIntent;
+  const trigger = deferredStartButton;
+  closeProfileDialog({ restoreFocus: intent !== "start" });
+  if (intent === "start" && trigger && !trigger.disabled) {
+    void prepareAndStartSession(trigger, "Rozpocznij");
+  }
 }
 
 function refreshPendingResults() {
@@ -634,8 +721,6 @@ function prefetchClassicManifestAfterFirstPaint() {
 async function openGameMode(modeId) {
   if (preGameNavigationPending || preGameTransition?.busy || state === "preparing") return false;
   if (!isGameModeSelectable(modeId)) return false;
-  if (!ensurePlayerName()) return false;
-
   const mode = getGameModeDefinition(modeId);
   if (!mode || ![GAME_MODE_IDS.CLASSIC, GAME_MODE_IDS.SPEED_RUN].includes(mode.id)) return false;
 
@@ -972,32 +1057,62 @@ function bootstrap() {
   if (resultsOutbox.pending) void retryResultStorage();
 }
 
+profileButton.addEventListener("click", () => {
+  if (!["mode-select", "mode-setup", "result"].includes(state)) return;
+  openProfileDialog("manage", profileButton);
+});
+profileDialogConfirm.addEventListener("click", confirmProfileDialog);
+profileDialogCancel.addEventListener("click", () => closeProfileDialog());
+profileDialogClose.addEventListener("click", () => closeProfileDialog());
+profileDialogBackdrop.addEventListener("click", (event) => {
+  if (event.target === profileDialogBackdrop) closeProfileDialog();
+});
+profileDialogBackdrop.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeProfileDialog();
+  }
+  if (event.key === "Tab") {
+    const available = [...profileDialog.querySelectorAll('button:not([hidden]):not(:disabled),input:not([hidden]):not(:disabled)')]
+      .filter((element) => !element.closest('[hidden]'));
+    if (!available.length) return;
+    if (event.shiftKey && document.activeElement === available[0]) {
+      event.preventDefault();
+      available.at(-1).focus();
+    } else if (!event.shiftKey && document.activeElement === available.at(-1)) {
+      event.preventDefault();
+      available[0].focus();
+    }
+  }
+});
 changePlayerButton.addEventListener("click", () => {
-  if (state !== "mode-select") return;
+  if (!profileDialogIntent) return;
   if (playerSwitchPanel.hidden) openPlayerSwitch(); else closePlayerSwitch();
 });
 cancelPlayerSwitch.addEventListener("click", () => {
-  creatingNewPlayer = false;
-  applyActivePlayer();
   closePlayerSwitch();
+  changePlayerButton.focus({ preventScroll: true });
 });
 createPlayerButton.addEventListener("click", () => {
   creatingNewPlayer = true;
   playerNameInput.value = "";
   playerNameInput.readOnly = false;
-  playerNameHelp.textContent = "Wpisz nową nazwę i wybierz tryb gry. Może być taka sama jak innego profilu.";
+  playerNameHelp.textContent = "";
   closePlayerSwitch();
-  playerNameInput.focus();
+  updateProfileDialogCopy();
+  playerNameInput.focus({ preventScroll: false });
 });
 retryPendingButton.addEventListener("click", () => void retryResultStorage());
 window.addEventListener("online", () => { if (resultsOutbox.pending) void retryResultStorage(); });
-
-playerNameInput.addEventListener("input", () => {
-  // Edits are validated on mode selection; an old name must never override the current input.
-  playerNameInput.removeAttribute("aria-invalid");
-  if (!playerNameInput.readOnly) {
-    playerNameHelp.textContent = "Nazwa i identyfikator lokalnego profilu zostaną zapisane w tej przeglądarce.";
+playerNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && profileDialogIntent) {
+    event.preventDefault();
+    confirmProfileDialog();
   }
+});
+playerNameInput.addEventListener("input", () => {
+  playerNameInput.removeAttribute("aria-invalid");
+  playerNameHelp.textContent = "";
 });
 
 sessionSizeButtons.forEach((button) => {
@@ -1010,10 +1125,10 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) spee
 classicModeButton.addEventListener("click", () => void openGameMode(classicModeButton.dataset.gameMode));
 modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
 setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));
-startButton.addEventListener("click", () => prepareAndStartSession(startButton, "Rozpocznij"));
+startButton.addEventListener("click", () => promptStartSession(startButton));
 playAgainButton.addEventListener("click", openResultReplaySetup);
 resultHomeButton.addEventListener("click", returnResultToHome);
-resultStartButton.addEventListener("click", () => prepareAndStartSession(resultStartButton, "Rozpocznij"));
+resultStartButton.addEventListener("click", () => promptStartSession(resultStartButton));
 retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));

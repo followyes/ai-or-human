@@ -1,3 +1,7 @@
+# V1.7.1B-R1.2 — Profile Dialog & Public Header UX Corrective
+
+HOME shows only available game modes, without a visible login field or technical storage explanations. The upper-right profile icon opens the local profile chooser; if no profile is active, `Rozpocznij` opens the same modal before session preparation. Returning players may start immediately using their saved profile. The LIGHT/DARK switch is at upper-left and its original 560ms full-page circular reveal originates at that control. Existing local Browser ID / Player ID / Game ID, results/percent/trophy, unchanged R1 SQL and Classic/Speed mechanics are retained. `npm test`/`npm build` PASS locally; deploy + production SQL + real-phone QA still required.
+
 # V1.7.1B-R1 — Profiles and Results
 
 Browser-local Player IDs and Browser ID (not verified identities), one Game ID per completed game, trophy and percentage, and anonymous Supabase insert-only persistence. Run `OUTSIDE_REPO/SQL/V1_7_1B_R1.sql` and role postchecks **before** deploying the runtime. Admin results listing/delete is reserved for R2. `npm run test` and `npm run build` are local gates, not proof of live SQL/production QA.
@@ -8,7 +12,7 @@ Webowa gra, w której gracz zgaduje, czy obraz został wygenerowany przez AI, cz
 
 ## Current: V1.7.1B — Player Name / Classic 20-50-100 / Streaks
 
-Before mode selection, enter a one-word public display name; stored locally in browser (not secure sign-in, no backend account). Classic uses 20/50/100 images (default 20, only if pool permits). Both Classic and Speed Run celebrate **3** and **10** successive correct answers; wrong answer/timeout resets the streak, replay resets it for a new session. No new scoring or stats system and no SQL change. Local tests/build PASS, mobile/deployed QA pending.
+Before the first game starts, enter a one-word player name in a separate modal, or select an existing saved local profile; no secure login or backend account. Classic uses 20/50/100 images (default 20, only if pool permits). Both Classic and Speed Run celebrate **3** and **10** successive correct answers; wrong answer/timeout resets the streak, replay resets it for a new session. No new scoring or stats system and no SQL change. Local tests/build PASS, mobile/deployed QA pending.
 
 ## V1.7.1 — Speed Run (LOCAL QA PASS / real-phone pending)
 
@@ -51,7 +55,7 @@ V1.5.9 zmienia także prezentację obrazów w publicznej grze: pełny oryginał 
 
 V1.6 rozpoczyna przebudowę publicznego doświadczenia od wspólnej authority motywu. Publiczna strona ma teraz pełne warianty jasny i ciemny oparte na jednym zestawie tokenów CSS zamiast niezależnych, ręcznie wpisywanych kolorów. Motyw obejmuje ekran startowy, grę, wynik i błąd; Admin pozostaje poza tym etapem.
 
-W prawym górnym rogu publicznej strony znajduje się dostępny klawiaturowo suwak motywu. Wybór jest zapamiętywany w `localStorage` pod jedną kluczową preferencją i odtwarzany jeszcze w `<head>`, zanim UI zostanie pokazane, żeby uniknąć błysku złego motywu. Zmiana aktualizuje także `color-scheme` oraz `meta[name=theme-color]`.
+W bieżącej wersji suwak motywu znajduje się w lewym górnym rogu strony, naprzeciwko ikony profilu. Wybór jest zapamiętywany w `localStorage` pod jedną kluczową preferencją i odtwarzany jeszcze w `<head>`, zanim UI zostanie pokazane, żeby uniknąć błysku złego motywu. Zmiana aktualizuje także `color-scheme` oraz `meta[name=theme-color]`.
 
 Na wspieranych przeglądarkach nowy motyw rozchodzi się od położenia suwaka jako kołowy View Transition reveal. Na pozostałych przeglądarkach działa kontrolowany fallback fade. `prefers-reduced-motion` omija reveal i przełącza motyw bez rozbudowanej animacji. Mechanika sesji, swipe, feedback, preload, Supabase i Admin nie zostały zmienione przez V1.6.0. W samym V1.6.0 rewersy jasny/ciemny nie były jeszcze używane; ich integrację wprowadza V1.6.1.
 

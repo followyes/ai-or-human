@@ -3540,11 +3540,31 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.equal((html.match(/data-session-size="50"/g) || []).length, 2);
   assert.equal((html.match(/data-session-size="100"/g) || []).length, 2);
   assert.ok(html.includes('id="player-name"') && html.includes('maxlength="20"'),
-    "HOME must expose local player display-name input");
+    "profile dialog must preserve one-word player-name contract");
+  const homeMarkup = html.slice(html.indexOf('id="mode-select-panel"'), html.indexOf('id="mode-setup-panel"'));
+  assert.ok(!homeMarkup.includes('id="player-login"') && !homeMarkup.includes('player-name-help'),
+    "home must not show login fields or technical browser storage notes between mode cards");
+  assert.ok(html.includes('id="profile-dialog-backdrop" hidden') && html.includes('role="dialog" aria-modal="true"'),
+    "profile must open in an accessible, initially hidden overlay");
+  assert.ok(html.includes('id="profile-button"') && html.includes('id="profile-confirm-button"'),
+    "profile must have a dedicated header entry point and confirmation before play");
+  assert.ok(game.includes('promptStartSession(startButton)') && game.includes('promptStartSession(resultStartButton)') &&
+    game.includes('if (!localPlayers.active)') && game.includes('openProfileDialog("start", triggerButton)'),
+    "start and replay must require profile selection if local profile is missing");
+  assert.ok(game.includes('appShell.inert = true') && game.includes('appShell.inert = false') &&
+    game.includes('if (event.key === "Escape")') && game.includes('if (event.key === "Tab")'),
+    "profile overlay must isolate background keyboard controls, trap focus and support dismissal");
+  assert.ok(/\.theme-switch\s*\{[^}]*left:\s*max\(/m.test(css) &&
+    /\.profile-entry\s*\{[^}]*right:\s*max\(/m.test(css),
+    "theme switch must be top-left, while account icon stays top-right");
+  assert.ok(game.includes('profileButton.hidden = !profileVisible') &&
+    game.includes('profileButton.disabled = !profileVisible'),
+    "profile entry must be hidden while gameplay owns player input");
   assert.ok(html.includes('id="result-player-name"') && game.includes('resultPlayerName.textContent ='),
     "result displays the player alias as text rather than HTML");
-  assert.ok(game.includes('if (!ensurePlayerName()) return false'),
-    "entering Classic/Speed Run mode setup must require valid player name");
+  assert.ok(!game.slice(game.indexOf('async function openGameMode('), game.indexOf('async function returnToModeSelect(')).includes('ensurePlayerName()') &&
+    game.includes('if (!profileDialogIntent || !ensurePlayerName()) return;'),
+    "mode selection is unblocked; name validity is enforced by the profile dialog before play");
   assert.ok(game.includes('advanceAnswerStreak(answerStreak, outcome)') &&
     game.includes('advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect")'),
     "both Speed Run and Classic must share consecutive-correct semantics");
@@ -3614,8 +3634,8 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
 
   assert.ok(html.includes('id="end-screen"') && html.includes('data-result-state="celebration"'),
     "V1.6.3 result must enter in the celebration substate");
-  assert.ok(html.includes('href="./css/style.css?v=1.7.1b-r1"') &&
-    html.includes('src="./js/game.js?v=1.7.1b-r1"') &&
+  assert.ok(html.includes('href="./css/style.css?v=1.7.1b-r1-2"') &&
+    html.includes('src="./js/game.js?v=1.7.1b-r1-2"') &&
     game.includes('./result-celebration.js?v=1.7.1') &&
     game.includes('./speed-run.js?v=1.7.1a') &&
     game.includes('./answer-feedback.js?v=1.7.1b'),
@@ -3634,8 +3654,9 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(game.includes('playAgainButton.addEventListener("click", openResultReplaySetup)') &&
     !game.includes('prepareAndStartSession(playAgainButton'),
     "first Zagraj ponownie action must reveal replay setup and must not prepare a session directly");
-  assert.ok(game.includes('resultStartButton.addEventListener("click", () => prepareAndStartSession(resultStartButton, "Rozpocznij"))'),
-    "result replay Rozpocznij must remain the prepare/start authority");
+  assert.ok(game.includes('resultStartButton.addEventListener("click", () => promptStartSession(resultStartButton))') &&
+    game.includes('void prepareAndStartSession(trigger, "Rozpocznij")'),
+    "replay Rozpocznij remains the round-start authority, gated by profile selection");
   assert.ok(game.includes('function returnResultToHome()') &&
     game.includes('preGameTransition?.showImmediately(modeSelectPanel, preGamePanels)') &&
     game.includes('selectedGameMode = null') &&
