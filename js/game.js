@@ -1,7 +1,8 @@
 import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
-import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b";
+import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b-r2-2";
+import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-2";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
@@ -92,6 +93,7 @@ const errorMessage = document.querySelector("#error-message");
 const imageCard = document.querySelector("#image-card");
 const gameImage = document.querySelector("#game-image");
 const answerFeedbackElement = document.querySelector("#answer-feedback");
+const streakCelebrationElement = document.querySelector("#streak-celebration");
 const resultFloatingCardSurfaces = [...document.querySelectorAll(".floating-card__surface")];
 const resultFireworkBursts = [...document.querySelectorAll("[data-result-firework]")].map((element) => ({
   element,
@@ -115,6 +117,7 @@ let selector = null;
 let preloader = null;
 let swipe = null;
 let answerFeedback = null;
+let streakCelebration = null;
 let sessionSizePickers = [];
 let themeController = null;
 let preGameTransition = null;
@@ -301,6 +304,7 @@ function updateSwipeHints(progress, { decisionProgress = null } = {}) {
 
 function clearCardOverlays() {
   answerFeedback?.clear();
+  streakCelebration?.clear();
   updateSwipeHints(0);
 }
 
@@ -622,6 +626,8 @@ function showFatalError(message) {
   presentationRevision += 1;
   speedClock.stop();
   speedDeck?.cancel();
+  streakCelebration?.clear();
+  answerFeedback?.clear();
   setState("error");
   swipe?.resetVisuals();
   errorMessage.textContent = message;
@@ -918,10 +924,14 @@ async function settleSpeedOutcome(outcome, type = null) {
   answerStreak = streakResult.streak;
   updateSpeedHUD(outcome === "timeout" ? 0 : "keep");
 
-  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct", { milestone: streakResult.milestone });
+  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct");
   const dismissal = outcome === "timeout" ? swipe.dismiss() : swipe.throw(type);
   const [shown, dismissed] = await Promise.all([feedback, dismissal]);
   if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
+  if (streakResult.milestone !== null) {
+    const celebrated = await streakCelebration.play(streakResult.milestone);
+    if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
+  }
   if (speedRunState.finished) {
     finishSession();
     return;
@@ -963,11 +973,15 @@ async function answer(type) {
     scoreDisplay.textContent = String(score);
   }
 
-  const feedbackPromise = answerFeedback.play(correct, { milestone: streakResult.milestone });
+  const feedbackPromise = answerFeedback.play(correct);
   const throwPromise = swipe.throw(type);
 
   const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
-  if (!feedbackShown || !thrown || state === "error") return;
+  if (!feedbackShown || !thrown || state !== "answering") return;
+  if (streakResult.milestone !== null) {
+    const celebrated = await streakCelebration.play(streakResult.milestone);
+    if (!celebrated || state !== "answering") return;
+  }
 
   currentIndex += 1;
 
@@ -1023,6 +1037,7 @@ function finishSession() {
 
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
+  streakCelebration = new StreakCelebrationController(streakCelebrationElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
   preGameTransition = new PreGameTransitionCoordinator({ windowRef: window });
   preGameTransition.showImmediately(modeSelectPanel, preGamePanels);

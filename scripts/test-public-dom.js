@@ -52,3 +52,12 @@ assert.match(css, /\.result-player-name:empty\s*\{\s*display:\s*none;/);
 assert.equal(elementsById.get("result-player-name"), 1);
 
 console.log(`PUBLIC DOM BOOTSTRAP PASS (${checked} mandatory event targets)`);
+
+// R2.2: dedicated, non-green streak overlay must have its own DOM and script.
+for (const id of ["streak-celebration"]) {
+  assert.equal(elementsById.get(id), 1, `Missing standalone streak reward #${id}`);
+}
+assert.match(source, /new StreakCelebrationController\(streakCelebrationElement\)/);
+assert.match(source, /await streakCelebration\.play\(streakResult\.milestone\)/);
+assert.doesNotMatch(source, /answerFeedback\.play\([^\n]*milestone\s*:/,
+  "Streak message must never be passed to green DOBRZE feedback");

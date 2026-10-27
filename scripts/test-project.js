@@ -7,6 +7,7 @@ import { buildSite } from "./build-site.js";
 import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
 import { AnswerFeedbackController } from "../js/answer-feedback.js";
+import { StreakCelebrationController } from "../js/streak-celebration.js";
 import {
   SessionSizePicker,
   getIndicatorTransform,
@@ -550,21 +551,14 @@ async function testAnswerFeedbackLifecycle() {
       "timeout ring/burst must finish early and not keep moving through the reading beat");
     assert.equal(await timeoutPromise, true);
 
-    const streakRoot = new FakeFeedbackElement();
-    const streakFeedback = new AnswerFeedbackController(streakRoot);
-    const streakPromise = streakFeedback.play(true, { milestone: 3 });
-    assert.equal(streakRoot.children.label.textContent, "DOBRA ROBOTA! 3 Z RZĘDU");
-    assert.equal(streakRoot.children.icon.textContent, "★");
-    assert.equal(streakRoot.classList.contains("is-streak"), true);
-    assert.equal(streakRoot.dataset.result, "correct");
-    assert.equal(streakRoot.lastAnimationOptions.duration, 2350);
-    assert.ok((0.93 - 0.07) * 2350 >= 1700);
-    assert.equal(await streakPromise, true);
-
-    const tenthRoot = new FakeFeedbackElement();
-    const tenth = new AnswerFeedbackController(tenthRoot);
-    assert.equal(await tenth.play(true, { milestone: 10 }), true);
-    assert.equal(tenthRoot.children.label.textContent, "");
+    // A correct third/tenth response still says DOBRZE. The streak reward
+    // must be a separate viewport overlay, never part of the green pill.
+    const normalCorrectRoot = new FakeFeedbackElement();
+    const normalFeedback = new AnswerFeedbackController(normalCorrectRoot);
+    assert.equal(await normalFeedback.play(true), true);
+    assert.equal(normalCorrectRoot.dataset.result, "correct");
+    assert.equal(normalCorrectRoot.classList.contains("is-streak"), false);
+    assert.equal(normalCorrectRoot.lastAnimationOptions.duration, 950);
 
     globalThis.window.matchMedia = () => ({ matches: true });
     const timeoutReducedRoot = new FakeFeedbackElement();
@@ -573,13 +567,89 @@ async function testAnswerFeedbackLifecycle() {
     assert.equal(timeoutReducedRoot.lastAnimationOptions.duration, 1850);
     assert.ok((timeoutReducedRoot.lastKeyframes[2].offset - timeoutReducedRoot.lastKeyframes[1].offset) * 1850 >= 1500,
       "reduced-motion timeout must stay legible without decorative motion");
-    const streakReducedRoot = new FakeFeedbackElement();
-    const streakReduced = new AnswerFeedbackController(streakReducedRoot);
-    const streakReducedPromise = streakReduced.play(true, { milestone: 10 });
-    assert.equal(streakReducedRoot.children.label.textContent, "DOBRA ROBOTA! 10 Z RZĘDU");
-    assert.equal(streakReducedRoot.lastAnimationOptions.duration, 2050);
-    assert.ok((0.94 - 0.06) * 2050 >= 1700);
-    assert.equal(await streakReducedPromise, true);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+}
+
+class FakeStreakRoot {
+  constructor({ deferred = false } = {}) {
+    this.classList = new FakeClassList();
+    this.dataset = {};
+    this.attributes = new Map();
+    this.animated = [];
+    this.deferred = deferred;
+    this.children = Object.fromEntries(
+      ["count", "heading", "symbol", "emblem", "message"].map((key) => [key, {
+        textContent: "",
+        animate: (...args) => this.animate(...args)
+      }])
+    );
+    this.glints = Array.from({ length: 6 }, () => ({ animate: (...args) => this.animate(...args) }));
+  }
+  querySelector(selector) {
+    return {
+      "[data-streak-count]": this.children.count,
+      "[data-streak-heading]": this.children.heading,
+      "[data-streak-symbol]": this.children.symbol,
+      "[data-streak-emblem]": this.children.emblem,
+      "[data-streak-message]": this.children.message
+    }[selector] ?? null;
+  }
+  querySelectorAll(selector) { return selector === "[data-streak-glint]" ? this.glints : []; }
+  setAttribute(key, value) { this.attributes.set(key, String(value)); }
+  removeAttribute(key) { this.attributes.delete(key); }
+  animate(frames, options) {
+    const animation = new FakeAnimation({ deferred: this.deferred });
+    animation.frames = frames;
+    animation.options = options;
+    this.animated.push(animation);
+    return animation;
+  }
+}
+
+async function testSeparateStreakCelebration() {
+  const previousWindow = globalThis.window;
+  try {
+    globalThis.window = { matchMedia: () => ({ matches: false }) };
+    const ordinary = new FakeStreakRoot();
+    const three = new StreakCelebrationController(ordinary);
+    const pending = three.play(3);
+    assert.equal(ordinary.children.heading.textContent, "DOBRA ROBOTA!");
+    assert.equal(ordinary.children.count.textContent, "3 Z RZĘDU");
+    assert.equal(ordinary.dataset.milestone, "3");
+    assert.ok(ordinary.animated.length > 3, "3-streak celebration needs independent particles");
+    assert.equal(ordinary.animated[0].options.duration, 1750);
+    assert.equal(await pending, true);
+    assert.equal(ordinary.attributes.get("aria-hidden"), "true");
+
+    const majorRoot = new FakeStreakRoot();
+    const ten = new StreakCelebrationController(majorRoot);
+    const majorPending = ten.play(10);
+    assert.equal(majorRoot.children.heading.textContent, "NIESAMOWITA SERIA!");
+    assert.equal(majorRoot.children.count.textContent, "10 Z RZĘDU");
+    assert.equal(majorRoot.children.symbol.textContent, "🏆");
+    assert.equal(majorRoot.classList.contains("is-major"), true);
+    assert.equal(majorRoot.animated[0].options.duration, 2300);
+    assert.equal(await majorPending, true);
+
+    globalThis.window.matchMedia = () => ({ matches: true });
+    const reducedRoot = new FakeStreakRoot();
+    const reduced = new StreakCelebrationController(reducedRoot);
+    const reducedPending = reduced.play(10);
+    assert.equal(reducedRoot.animated.length, 1, "reduced motion must not spawn glint/emblem motion");
+    assert.equal(reducedRoot.animated[0].options.duration, 2000);
+    assert.equal(await reducedPending, true);
+    assert.equal(await reduced.play(4), true, "only actual milestones may celebrate");
+
+    const cancelledRoot = new FakeStreakRoot({ deferred: true });
+    const cancelled = new StreakCelebrationController(cancelledRoot);
+    const cancelledPending = cancelled.play(3);
+    cancelled.clear();
+    // A real WAAPI cancellation rejects finished; complete fake pending operations
+    // explicitly to verify revision guard even in runtimes that resolve cancellation.
+    for (const animation of cancelledRoot.animated) animation.finish();
+    assert.equal(await cancelledPending, false, "old celebration must not advance new session");
   } finally {
     globalThis.window = previousWindow;
   }
@@ -4359,6 +4429,7 @@ await testSupabaseOnlyBuild();
 await testSwipeLifecycle();
 await testImageReadinessContract();
 await testAnswerFeedbackLifecycle();
+await testSeparateStreakCelebration();
 await testPublicThemeController();
 await testResultCelebrationLifecycle();
 await testSourceContracts();
@@ -4366,7 +4437,8 @@ await testSourceContracts();
 console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 20/50/100: PASS");
-console.log("V1.7.1B local display name + 3/10 answer streak: PASS");
+console.log("V1.7.1B local display name + 3/10 streak milestones: PASS");
+console.log("R2.2 independent streak celebration after ordinary feedback: PASS");
 console.log("Dynamic preloader 20/50/100: PASS");
 console.log("Session selection + 100-image availability: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");

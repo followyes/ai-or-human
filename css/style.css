@@ -2598,15 +2598,6 @@ body.is-profile-dialog-open { overflow: hidden; }
   .result-player-name { padding: 6px 18px; margin-top: 5px; font-size: clamp(1.08rem, 4vw, 1.3rem); }
 }
 
-.answer-feedback.is-streak .answer-feedback__pill {
-  width: max-content;
-  max-width: calc(100vw - 32px);
-  padding: 12px 16px;
-  background: var(--correct);
-}
-.answer-feedback.is-streak .answer-feedback__label { font-size: clamp(.70rem, 3vw, .88rem); letter-spacing: .012em; white-space: nowrap; }
-.answer-feedback.is-streak .answer-feedback__icon { flex: 0 0 26px; }
-
 /* R1 retained result persistence and trophy presentation. */
 .pending-result-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: .75rem; }
 .pending-result-tools button { padding: 0 13px; }
@@ -2627,3 +2618,100 @@ body.is-profile-dialog-open { overflow: hidden; }
 
 /* R2 profile cleanup: only one actionable dismiss (top-right X). */
 .profile-dialog__cancel[hidden], .profile-dialog__description[hidden] { display: none !important; }
+
+/* V1.7.1B-R2.2 — milestone rewards are an independent viewport celebration,
+   AFTER normal green DOBRZE; never a variant of answer-feedback. */
+.streak-celebration {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: max(20px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(8, 19, 32, .77);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: #ffefc2;
+}
+.streak-celebration.is-active { visibility: visible; }
+.streak-celebration:not(.is-active) { visibility: hidden; }
+.streak-celebration__panel {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 390px);
+  min-height: 325px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 36px 24px;
+  border: 1px solid rgba(255,214,108,.66);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255,209,95,.26), transparent 52%),
+    linear-gradient(145deg, #233b54 0%, #101d2c 75%);
+  box-shadow: 0 12px 60px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.09), 0 0 55px rgba(244,182,58,.22);
+  text-align: center;
+}
+.streak-celebration__panel::before {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(251,208,105,.2);
+  border-radius: 22px;
+  pointer-events: none;
+}
+.streak-celebration__emblem {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 105px;
+  height: 105px;
+  border: 1px solid rgba(255,231,158,.72);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff0b7 0%, #f7bd43 50%, #9a5d09 100%);
+  box-shadow: 0 0 0 9px rgba(246,194,71,.12), 0 0 42px rgba(247,186,60,.55);
+  color: #192d43;
+  font-size: 3.4rem;
+  line-height: 1;
+}
+.streak-celebration__message { position: relative; z-index: 2; display: grid; justify-items: center; gap: 9px; }
+.streak-celebration__overline { margin: 0; color: #f1cc7b; font-size: .7rem; letter-spacing: .23em; font-weight: 800; }
+.streak-celebration__title { font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.7rem, 7vw, 2.3rem); line-height: 1.03; letter-spacing: -.045em; color: #fff6df; text-wrap: balance; }
+.streak-celebration__count { display: block; padding: 10px 20px; border: 1px solid rgba(255,212,113,.56); border-radius: 99px; background: rgba(247,183,58,.12); font-size: .94rem; line-height: 1; font-weight: 850; letter-spacing: .1em; color: #ffdb86; }
+.streak-celebration__sparkles { position: absolute; inset: 0; pointer-events: none; }
+.streak-celebration__sparkles span { position: absolute; color: #ffe296; font-size: 1.9rem; opacity: 0; }
+.streak-celebration__sparkles span:nth-child(1) { top: 12%; left: 14%; }
+.streak-celebration__sparkles span:nth-child(2) { top: 25%; right: 10%; }
+.streak-celebration__sparkles span:nth-child(3) { top: 50%; left: 7%; }
+.streak-celebration__sparkles span:nth-child(4) { top: 55%; right: 8%; }
+.streak-celebration__sparkles span:nth-child(5) { bottom: 10%; left: 20%; }
+.streak-celebration__sparkles span:nth-child(6) { bottom: 12%; right: 20%; }
+/* Ten-in-a-row uses a premium tier, not just a text substitution. */
+.streak-celebration.is-major .streak-celebration__panel {
+  border-color: #ffe9a6;
+  background: radial-gradient(circle at 50% 15%, rgba(255,220,130,.34), transparent 60%), linear-gradient(145deg, #4b2e24, #171d30 80%);
+  box-shadow: 0 12px 70px rgba(0,0,0,.54), inset 0 0 0 1px rgba(255,255,255,.15), 0 0 80px rgba(255,200,72,.44);
+}
+.streak-celebration.is-major .streak-celebration__emblem {
+  width: 125px;
+  height: 125px;
+  font-size: 3.65rem;
+  background: radial-gradient(circle, #fff8d5 0%, #f8d47a 45%, #dc901c 100%);
+  box-shadow: 0 0 0 12px rgba(246,194,71,.16), 0 0 65px rgba(255,204,70,.75);
+}
+.streak-celebration.is-major .streak-celebration__title { color: #fff2c2; }
+@media (max-width: 360px), (max-height: 650px) {
+  .streak-celebration__panel { min-height: 280px; padding: 22px 15px; gap: 12px; }
+  .streak-celebration__emblem { width: 85px; height: 85px; font-size: 2.8rem; }
+  .streak-celebration.is-major .streak-celebration__emblem { width: 100px; height: 100px; font-size: 3rem; }
+  .streak-celebration__title { font-size: clamp(1.6rem, 7vw, 2rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streak-celebration__sparkles { display: none; }
+}
