@@ -120,11 +120,9 @@ const noStorageOutbox = new ResultOutbox({storage: deniedStorage, submit: async 
 assert.equal(noStorageOutbox.enqueue(otherGame), true);
 assert.equal(noStorageOutbox.storageAvailable, false);
 assert.equal((await noStorageOutbox.retryAll()).pending, 0);
-const sql = await readFile(new URL("../../OUTSIDE_REPO/SQL/V1_7_1B_R1.sql", import.meta.url), "utf8");
-assert.ok(sql.includes("browser_id uuid NOT NULL") && sql.includes("client_session_id uuid NOT NULL UNIQUE"));
-assert.ok(sql.includes("ENABLE ROW LEVEL SECURITY"));
-assert.ok(/GRANT INSERT \(/.test(sql) && /\) ON TABLE public\.game_results TO anon/.test(sql));
-assert.ok(!/GRANT\s+(SELECT|DELETE|UPDATE)/i.test(sql));
+// Repository tests must run on a clean GitHub checkout. SQL lives in
+// OUTSIDE_REPO by design; its strict structural audit runs separately with
+// OUTSIDE_REPO/QA/verify-r1-sql.mjs before applying the migration.
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const game = await readFile(new URL("../js/game.js", import.meta.url), "utf8");
 assert.ok(html.includes('id="change-player-button"') && html.includes('id="local-player-list"'));
@@ -132,4 +130,4 @@ assert.ok(html.includes('id="result-accuracy"') && html.includes('id="result-sav
 assert.ok(game.includes("activeGameSessionId = newGameSessionId()"));
 assert.ok(game.includes("resultsOutbox.enqueue(snapshot)"));
 assert.ok(!game.includes("savePlayerName"), "no legacy overwrite of profile name");
-console.log("R1 TEST PASS — local profiles, duplicate names, browser ID, retry/outbox, result contract, SQL permissions");
+console.log("R1 TEST PASS — local profiles, duplicate names, browser ID, retry/outbox, result contract, repo integration hooks");
