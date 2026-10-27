@@ -28,8 +28,13 @@ import {
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
+import { AdminResultsPanel } from "../js/admin-results-ui.js";
 
 const adminCard = document.querySelector("#admin-card");
+const tabLibrary = document.querySelector("#tab-library");
+const tabResults = document.querySelector("#tab-results");
+const libraryWorkspace = document.querySelector("#admin-workspace");
+const resultsWorkspace = document.querySelector("#results-workspace");
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
 const bootView = document.querySelector("#boot-view");
@@ -99,6 +104,46 @@ let singleDeleteStats = createSingleDeleteStats();
 let sessionRefreshPromise = null;
 const uploadPreparationWorker = new UploadPreparationWorkerClient();
 
+
+const resultsPanel = new AdminResultsPanel({
+  root: resultsWorkspace,
+  getSession: async () => await refreshCurrentSessionForMutation(),
+  onAuthFailure: () => {
+    clearAdminSession();
+    showLogin("Sesja administratora wygasła lub brak uprawnień.");
+  }
+});
+let activeAdminTab = "library";
+function switchAdminTab(tab) {
+  if (!currentSession || (tab !== "library" && tab !== "results")) return;
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  if (tab === activeAdminTab) return;
+  activeAdminTab = tab;
+  const resultsActive = tab === "results";
+  tabLibrary.setAttribute("aria-selected", String(!resultsActive));
+  tabResults.setAttribute("aria-selected", String(resultsActive));
+  tabLibrary.tabIndex = resultsActive ? -1 : 0;
+  tabResults.tabIndex = resultsActive ? 0 : -1;
+  libraryWorkspace.hidden = resultsActive;
+  libraryWorkspace.inert = resultsActive;
+  resultsWorkspace.hidden = !resultsActive;
+  resultsWorkspace.inert = !resultsActive;
+  resultsPanel.setActive(resultsActive);
+}
+function resetAdminTab() {
+  activeAdminTab = "library";
+  tabLibrary.setAttribute("aria-selected", "true");
+  tabResults.setAttribute("aria-selected", "false");
+  tabLibrary.tabIndex = 0;
+  tabResults.tabIndex = -1;
+  libraryWorkspace.hidden = false;
+  libraryWorkspace.inert = false;
+  resultsWorkspace.hidden = true;
+  resultsWorkspace.inert = true;
+  resultsPanel.setActive(false);
+}
+tabLibrary.addEventListener("click", () => switchAdminTab("library"));
+tabResults.addEventListener("click", () => switchAdminTab("results"));
 
 const BOOT_REVEAL_DELAY_MS = 320;
 const VIEW_NODES = Object.freeze({
@@ -188,7 +233,9 @@ function syncBusyControls() {
   fileInput.disabled = contentInteractionBusy || !categorySelected;
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
-  logoutButton.disabled = authBusy || contentInteractionBusy;
+  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy;
+  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy;
+  tabResults.disabled = contentInteractionBusy || resultsPanel.busy;
   const noVisibleRows = filteredInventoryRows().length === 0;
   inventoryMoveButton.disabled = contentInteractionBusy || noVisibleRows;
   inventoryDeleteManyButton.disabled = contentInteractionBusy || noVisibleRows;
@@ -941,6 +988,8 @@ async function handleBulkMove(targetClass) {
 }
 
 function showLogin(message = "", { morph = true, focus = true } = {}) {
+  resultsPanel.clear();
+  resetAdminTab();
   currentSession = null;
   inventoryRows = [];
   inventoryActionMode = "idle";
@@ -961,6 +1010,7 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
 
 function showAuthorized(session, { morph = true, focus = false } = {}) {
   currentSession = session;
+  resetAdminTab();
   loginStatus.textContent = "";
   setAuthBusy(false);
   setBootVisible(false);
@@ -1277,7 +1327,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy) return;
 
   const session = currentSession;
   setAuthBusy(true);

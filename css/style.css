@@ -2601,3 +2601,6 @@ body.is-profile-dialog-open { overflow: hidden; }
   .result-save-status { margin-top: 5px; }
   .result-action-stage { margin-top: 12px; }
 }
+
+/* R2 profile cleanup: only one actionable dismiss (top-right X). */
+.profile-dialog__cancel[hidden], .profile-dialog__description[hidden] { display: none !important; }

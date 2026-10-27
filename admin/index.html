@@ -38,7 +38,12 @@
           <button class="admin-secondary-button compact-button logout-button" id="logout-button" type="button">Wyloguj</button>
         </header>
 
-        <div class="admin-workspace">
+        <nav class="admin-tab-nav" role="tablist" aria-label="Sekcje panelu administratora">
+          <button type="button" id="tab-library" role="tab" aria-controls="admin-workspace" aria-selected="true">Biblioteka</button>
+          <button type="button" id="tab-results" role="tab" aria-controls="results-workspace" aria-selected="false" tabindex="-1">Wyniki</button>
+        </nav>
+
+        <div class="admin-workspace" id="admin-workspace" role="tabpanel" aria-labelledby="tab-library">
           <section class="content-panel workspace-panel" aria-labelledby="content-heading">
             <div class="panel-heading">
               <h2 id="content-heading">Dodaj obrazy</h2>
@@ -139,6 +144,43 @@
             <div class="inventory-grid" id="inventory-grid"></div>
           </section>
         </div>
+
+        <section class="results-workspace" id="results-workspace" role="tabpanel" aria-labelledby="tab-results" hidden inert>
+          <div class="results-topline">
+            <h2>Wyniki rozgrywek</h2>
+            <button type="button" id="results-clear" class="admin-secondary-button compact-button danger-button">Wyczyść historię</button>
+          </div>
+          <form id="results-filters" class="results-filters" autocomplete="off">
+            <label class="results-field results-search">
+              <span>Szukaj</span>
+              <input id="results-search" type="search" maxlength="80" placeholder="Nazwa lub pełny identyfikator" aria-label="Nazwa gracza lub pełne ID">
+            </label>
+            <label class="results-field"><span>Tryb</span>
+              <select id="results-mode"><option value="">Wszystkie</option><option value="classic">Klasyczny</option><option value="speed-run">Speed Run</option></select>
+            </label>
+            <label class="results-field"><span>Trudność</span>
+              <select id="results-difficulty" disabled><option value="">Wszystkie</option><option value="easy">Łatwy</option><option value="medium">Średni</option><option value="hard">Trudny</option></select>
+            </label>
+            <label class="results-field"><span>Zakończono od</span><input id="results-date-from" type="date"></label>
+            <label class="results-field"><span>Zakończono do</span><input id="results-date-to" type="date"></label>
+            <label class="results-field"><span>Sortowanie</span>
+              <select id="results-sort"><option value="newest">Najnowsze</option><option value="oldest">Najstarsze</option><option value="best">Najwyższy %</option><option value="most">Najwięcej trafień</option></select>
+            </label>
+            <button type="button" class="admin-secondary-button compact-button results-reset" id="results-reset">Wyczyść filtry</button>
+          </form>
+          <p id="results-status" class="results-status" role="status" aria-live="polite">Wybierz zakładkę Wyniki, aby załadować historię.</p>
+          <div class="results-scroll" id="results-scroll">
+            <div class="results-head" aria-hidden="true"><span>Gracz</span><span>Wynik</span><span>Zakończenie / zapis</span><span>Powiązania i akcje</span></div>
+            <div id="results-list" class="results-list"></div>
+          </div>
+          <div class="results-footer">
+            <span id="results-page-label">—</span>
+            <div class="results-pager">
+              <button type="button" class="admin-secondary-button compact-button" id="results-prev" disabled>Poprzednia</button>
+              <button type="button" class="admin-secondary-button compact-button" id="results-next" disabled>Następna</button>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section id="boot-view" class="boot-state admin-view" aria-live="polite" aria-hidden="true" inert>

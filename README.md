@@ -1,3 +1,7 @@
+# V1.7.1B-R2 — Admin Results (LOCAL QA PASS / SQL+PROD+PHONE QA PENDING)
+
+Admin now separates `Biblioteka | Wyniki`. Results explorer performs server-side paging (25), nickname/UUID search, filters, sorted results, related browser/profile lookup, and administrator-confirmed single/bulk deletion. Database access requires `OUTSIDE_REPO/SQL/V1_7_1B_R2.sql` AFTER R1 and BEFORE deploying these files. SQL stays OUTSIDE_REPO, never bundled in Pages. Frontend public profile popup removes repeated text. `npm run test` and `npm run build` pass locally; production SQL and real-phone checks remain mandatory.
+
 # V1.7.1B-R1.3 — Profile Dialog & Public Header UX Corrective
 
 HOME shows only available game modes, without a visible login field or technical storage explanations. The upper-right profile icon opens the local profile chooser; if no profile is active, `Rozpocznij` opens the same modal before session preparation. Returning players may start immediately using their saved profile. The LIGHT/DARK switch is at upper-left and its original 560ms full-page circular reveal originates at that control. Existing local Browser ID / Player ID / Game ID, results/percent/trophy, unchanged R1 SQL and Classic/Speed mechanics are retained. `npm test`/`npm build` PASS locally; deploy + production SQL + real-phone QA still required.

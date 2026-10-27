@@ -484,7 +484,8 @@ function updateProfileDialogCopy() {
   const name = creatingNewPlayer ? null : localPlayers.active?.name;
   profileDialogDescription.textContent = name
     ? `Grasz jako ${name}.`
-    : "Wpisz nazwę gracza.";
+    : "";
+  profileDialogDescription.hidden = !name;
   profileDialogConfirm.textContent = profileDialogIntent === "start"
     ? "Graj"
     : "Zapisz profil";

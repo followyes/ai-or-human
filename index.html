@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r1-3">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -328,16 +328,16 @@
   </main>
 
   <div class="profile-dialog-backdrop" id="profile-dialog-backdrop" hidden>
-    <section class="profile-dialog" id="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title" aria-describedby="profile-dialog-description" tabindex="-1">
+    <section class="profile-dialog" id="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"  tabindex="-1">
       <button class="profile-dialog__close" id="profile-dialog-close" type="button" aria-label="Zamknij okno profilu">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5l14 14M19 5 5 19"></path></svg>
       </button>
-      <p class="eyebrow profile-dialog__eyebrow">AI OR HUMAN</p>
+      
       <h2 class="profile-dialog__title" id="profile-dialog-title">Twój profil</h2>
-      <p class="profile-dialog__description" id="profile-dialog-description">Wpisz nazwę gracza.</p>
+      <p class="profile-dialog__description" id="profile-dialog-description" hidden></p>
       <div class="player-login" id="player-login">
-        <label class="meta-label" for="player-name">NAZWA GRACZA</label>
-        <input id="player-name" class="player-login__input" type="text" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" placeholder="Jedno słowo" aria-describedby="player-name-help" required>
+        <label class="meta-label" for="player-name">Nazwa gracza</label>
+        <input id="player-name" class="player-login__input" type="text" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" placeholder="np. Marek" aria-describedby="player-name-help" required>
         <span class="player-login__help" id="player-name-help" role="status" aria-live="polite"></span>
         <button id="change-player-button" class="player-switch-toggle" type="button" hidden aria-expanded="false" aria-controls="player-switch-panel">Wybierz inny profil</button>
         <div id="player-switch-panel" class="player-switch-panel" hidden inert>
@@ -352,10 +352,10 @@
         <button id="retry-pending-button" type="button">Ponów zapis wyników</button>
       </div>
       <button class="profile-dialog__confirm" id="profile-confirm-button" type="button">Kontynuuj</button>
-      <button class="profile-dialog__cancel" id="profile-cancel-button" type="button">Anuluj</button>
+      <button class="profile-dialog__cancel" id="profile-cancel-button" type="button" hidden>Anuluj</button>
     </section>
   </div>
 
-  <script type="module" src="./js/game.js?v=1.7.1b-r1-3"></script>
+  <script type="module" src="./js/game.js?v=1.7.1b-r2"></script>
 </body>
 </html>
