@@ -1,0 +1,1 @@
+If and only if the GitHub repository has exactly R2.2, copy the listed paths from UPDATED_FILES into matching paths in the repository. Do NOT add OUTSIDE_REPO to GitHub. R2.3 does not require a new SQL migration. R2 Admin Results still requires previously issued R2 SQL if not yet deployed. Test GitHub Actions and real phone before PASS/CLOSED.

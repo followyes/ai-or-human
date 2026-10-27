@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-2">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-3">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -265,23 +265,6 @@
         </div>
       </div>
 
-      <!-- Standalone streak reward: never inside the green DOBRZE feedback. -->
-      <div class="streak-celebration" id="streak-celebration" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
-        <div class="streak-celebration__panel">
-          <div class="streak-celebration__sparkles" aria-hidden="true">
-            <span data-streak-glint>✦</span><span data-streak-glint>✧</span>
-            <span data-streak-glint>✦</span><span data-streak-glint>✧</span>
-            <span data-streak-glint>✦</span><span data-streak-glint>✧</span>
-          </div>
-          <div class="streak-celebration__emblem" data-streak-emblem aria-hidden="true"><span data-streak-symbol>★</span></div>
-          <div class="streak-celebration__message" data-streak-message>
-            <p class="streak-celebration__overline">SERIA TRAFIEŃ</p>
-            <strong class="streak-celebration__title" data-streak-heading></strong>
-            <span class="streak-celebration__count" data-streak-count></span>
-          </div>
-        </div>
-      </div>
-
       <div class="controls" aria-label="Wybór odpowiedzi">
         <button class="choice-button choice-button-human" id="human-button" type="button">CZŁOWIEK</button>
         <button class="choice-button choice-button-ai" id="ai-button" type="button">AI</button>
@@ -344,6 +327,17 @@
     </section>
   </main>
 
+  <!-- A brief, non-blocking milestone toast; never dims or pauses gameplay. -->
+  <div class="streak-celebration" id="streak-celebration" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
+    <div class="streak-celebration__panel">
+      <span class="streak-celebration__emblem" data-streak-symbol aria-hidden="true">★</span>
+      <span class="streak-celebration__message">
+        <strong class="streak-celebration__title" data-streak-heading></strong>
+        <span class="streak-celebration__count" data-streak-count></span>
+      </span>
+    </div>
+  </div>
+
   <div class="profile-dialog-backdrop" id="profile-dialog-backdrop" hidden>
     <section class="profile-dialog" id="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"  tabindex="-1">
       <button class="profile-dialog__close" id="profile-dialog-close" type="button" aria-label="Zamknij okno profilu">
@@ -373,6 +367,6 @@
     </section>
   </div>
 
-  <script type="module" src="./js/game.js?v=1.7.1b-r2-2"></script>
+  <script type="module" src="./js/game.js?v=1.7.1b-r2-3"></script>
 </body>
 </html>

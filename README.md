@@ -1,3 +1,7 @@
+# V1.7.1B-R2.3 — Dyskretne gratulacje za serie (LOCAL QA PASS / PHONE PENDING)
+
+Po zwykłym zielonym `DOBRZE` i ujawnieniu kolejnego obrazu pojawia się krótki, nieblokujący dymek: po 3 poprawnych z rzędu `Super Ci idzie!`, po 10 `Świetna robota!`. Bez pełnoekranowej celebracji, zaciemniania, cząstek i wstrzymywania zegara Speed Run. Nowa odpowiedź natychmiast usuwa poprzedni dymek. Zasady punktacji, Supabase, Admin i SQL bez zmian. Testy Node/build i symulowane kliknięcia w Chromium PASS; produkcja i prawdziwy telefon nadal wymagają QA.
+
 # V1.7.1B-R2 — Admin Results (LOCAL QA PASS / SQL+PROD+PHONE QA PENDING)
 
 Admin now separates `Biblioteka | Wyniki`. Results explorer performs server-side paging (25), nickname/UUID search, filters, sorted results, related browser/profile lookup, and administrator-confirmed single/bulk deletion. Database access requires `OUTSIDE_REPO/SQL/V1_7_1B_R2.sql` AFTER R1 and BEFORE deploying these files. SQL stays OUTSIDE_REPO, never bundled in Pages. Frontend public profile popup removes repeated text. `npm run test` and `npm run build` pass locally; production SQL and real-phone checks remain mandatory.

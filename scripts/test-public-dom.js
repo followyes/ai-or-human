@@ -53,11 +53,14 @@ assert.equal(elementsById.get("result-player-name"), 1);
 
 console.log(`PUBLIC DOM BOOTSTRAP PASS (${checked} mandatory event targets)`);
 
-// R2.2: dedicated, non-green streak overlay must have its own DOM and script.
-for (const id of ["streak-celebration"]) {
-  assert.equal(elementsById.get(id), 1, `Missing standalone streak reward #${id}`);
-}
+// R2.3: short, pointer-inert milestone toast stays separate from green DOBRZE.
+assert.equal(elementsById.get("streak-celebration"), 1);
 assert.match(source, /new StreakCelebrationController\(streakCelebrationElement\)/);
-assert.match(source, /await streakCelebration\.play\(streakResult\.milestone\)/);
+assert.doesNotMatch(source, /await streakCelebration\.play\(/,
+  "Streak toast must never block input/reveal or the next Speed Run clock");
+assert.match(source, /void streakCelebration\.play\(streakResult\.milestone\)/);
+assert.match(css, /\.streak-celebration\s*\{[^}]*pointer-events:\s*none;/s);
+assert.doesNotMatch(css, /\.streak-celebration\s*\{[^}]*inset:\s*0/s,
+  "Milestone toast must not dim the entire game viewport");
 assert.doesNotMatch(source, /answerFeedback\.play\([^\n]*milestone\s*:/,
-  "Streak message must never be passed to green DOBRZE feedback");
+  "Streak text must never replace the green DOBRZE feedback");

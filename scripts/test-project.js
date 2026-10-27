@@ -615,30 +615,30 @@ async function testSeparateStreakCelebration() {
     const ordinary = new FakeStreakRoot();
     const three = new StreakCelebrationController(ordinary);
     const pending = three.play(3);
-    assert.equal(ordinary.children.heading.textContent, "DOBRA ROBOTA!");
-    assert.equal(ordinary.children.count.textContent, "3 Z RZĘDU");
+    assert.equal(ordinary.children.heading.textContent, "Super Ci idzie!");
+    assert.equal(ordinary.children.count.textContent, "3 trafienia z rzędu");
     assert.equal(ordinary.dataset.milestone, "3");
-    assert.ok(ordinary.animated.length > 3, "3-streak celebration needs independent particles");
-    assert.equal(ordinary.animated[0].options.duration, 1750);
+    assert.equal(ordinary.animated.length, 1, "compact streak toast must not spawn particles");
+    assert.equal(ordinary.animated[0].options.duration, 1450);
     assert.equal(await pending, true);
     assert.equal(ordinary.attributes.get("aria-hidden"), "true");
 
     const majorRoot = new FakeStreakRoot();
     const ten = new StreakCelebrationController(majorRoot);
     const majorPending = ten.play(10);
-    assert.equal(majorRoot.children.heading.textContent, "NIESAMOWITA SERIA!");
-    assert.equal(majorRoot.children.count.textContent, "10 Z RZĘDU");
-    assert.equal(majorRoot.children.symbol.textContent, "🏆");
+    assert.equal(majorRoot.children.heading.textContent, "Świetna robota!");
+    assert.equal(majorRoot.children.count.textContent, "10 trafień z rzędu");
+    assert.equal(majorRoot.children.symbol.textContent, "✦");
     assert.equal(majorRoot.classList.contains("is-major"), true);
-    assert.equal(majorRoot.animated[0].options.duration, 2300);
+    assert.equal(majorRoot.animated[0].options.duration, 1650);
     assert.equal(await majorPending, true);
 
     globalThis.window.matchMedia = () => ({ matches: true });
     const reducedRoot = new FakeStreakRoot();
     const reduced = new StreakCelebrationController(reducedRoot);
     const reducedPending = reduced.play(10);
-    assert.equal(reducedRoot.animated.length, 1, "reduced motion must not spawn glint/emblem motion");
-    assert.equal(reducedRoot.animated[0].options.duration, 2000);
+    assert.equal(reducedRoot.animated.length, 1, "reduced motion must use one simple animation");
+    assert.equal(reducedRoot.animated[0].options.duration, 1450);
     assert.equal(await reducedPending, true);
     assert.equal(await reduced.play(4), true, "only actual milestones may celebrate");
 
@@ -3450,6 +3450,13 @@ async function testSourceContracts() {
   const resultCelebrationSource = await fs.readFile(path.join(projectRoot, "js", "result-celebration.js"), "utf8");
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
+  const streakSource = await fs.readFile(path.join(projectRoot, "js", "streak-celebration.js"), "utf8");
+  assert.ok(!game.includes("await streakCelebration.play("), "streak toast must not block card reveal or Speed Run deadline");
+  assert.equal((game.match(/void streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 4,
+    "milestone toast must display without await for next card and final result in both modes");
+  assert.ok(streakSource.includes("duration: 1450") === false && streakSource.includes("normal: 1450"),
+    "streak toast must be short and only use milestone durations");
+
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
   const sessionPicker = await fs.readFile(path.join(projectRoot, "js", "session-size-picker.js"), "utf8");
   const contentSource = await fs.readFile(path.join(projectRoot, "js", "content-source.js"), "utf8");
@@ -4438,7 +4445,7 @@ console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 20/50/100: PASS");
 console.log("V1.7.1B local display name + 3/10 streak milestones: PASS");
-console.log("R2.2 independent streak celebration after ordinary feedback: PASS");
+console.log("R2.3 independent non-blocking streak toast after ordinary feedback: PASS");
 console.log("Dynamic preloader 20/50/100: PASS");
 console.log("Session selection + 100-image availability: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");

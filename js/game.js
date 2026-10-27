@@ -2,7 +2,7 @@ import { RoundSelector } from "./round-selector.js";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b-r2-2";
-import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-2";
+import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-3";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
@@ -917,6 +917,7 @@ async function settleSpeedOutcome(outcome, type = null) {
   if (state !== "playing" || selectedGameMode !== GAME_MODE_IDS.SPEED_RUN || !speedRunState) return;
   const revision = presentationRevision;
   setState("answering"); // locks both buttons, swipe, and competing deadline events
+  streakCelebration?.clear(); // A new answer/timeout supersedes a still-visible toast.
   speedClock.stop();
   speedRunState = resolveSpeedRunOutcome(speedRunState, outcome);
   score = speedRunState.score;
@@ -928,12 +929,9 @@ async function settleSpeedOutcome(outcome, type = null) {
   const dismissal = outcome === "timeout" ? swipe.dismiss() : swipe.throw(type);
   const [shown, dismissed] = await Promise.all([feedback, dismissal]);
   if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
-  if (streakResult.milestone !== null) {
-    const celebrated = await streakCelebration.play(streakResult.milestone);
-    if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
-  }
   if (speedRunState.finished) {
     finishSession();
+    if (streakResult.milestone !== null) void streakCelebration.play(streakResult.milestone);
     return;
   }
   setState("presenting");
@@ -943,7 +941,10 @@ async function settleSpeedOutcome(outcome, type = null) {
     currentIndex += 1;
     sessionDeck = [nextImage];
     currentIndex = 0;
-    await presentCurrentCard();
+    const presented = await presentCurrentCard();
+    if (presented && streakResult.milestone !== null && state === "playing") {
+      void streakCelebration.play(streakResult.milestone);
+    }
   } catch (error) {
     if (revision === presentationRevision && state === "presenting") {
       console.error(error);
@@ -964,6 +965,7 @@ async function answer(type) {
   }
 
   setState("answering");
+  streakCelebration?.clear(); // Never overlap a new DOBRZE/ŹLE with the previous toast.
 
   const correct = type === item.type;
   const streakResult = advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect");
@@ -978,19 +980,18 @@ async function answer(type) {
 
   const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
   if (!feedbackShown || !thrown || state !== "answering") return;
-  if (streakResult.milestone !== null) {
-    const celebrated = await streakCelebration.play(streakResult.milestone);
-    if (!celebrated || state !== "answering") return;
-  }
-
   currentIndex += 1;
 
   if (currentIndex >= activeSessionSize) {
     finishSession();
+    if (streakResult.milestone !== null) void streakCelebration.play(streakResult.milestone);
     return;
   }
 
-  await presentCurrentCard();
+  const presented = await presentCurrentCard();
+  if (presented && streakResult.milestone !== null && state === "playing") {
+    void streakCelebration.play(streakResult.milestone);
+  }
 }
 
 function finishSession() {

@@ -1,25 +1,10 @@
-AI OR HUMAN — V1.6.4.5 ORIGINAL FULL-PAGE CIRCULAR THEME REVEAL — UPDATED_FILES
+V1.7.1B-R2.3 — exact UPDATED_FILES delta relative to V1.7.1B-R2.2
 
-Exact delta vs V1.6.4.4: 7 modified REPO files, 0 added, 0 removed.
-
-MODIFIED
 README.md
 css/style.css
 index.html
 js/game.js
-js/theme-controller.js
+js/streak-celebration.js
 package.json
 scripts/test-project.js
-
-CHANGES
-- Revert theme-controller.js BYTE-FOR-BYTE to V1.6.3-test.11 full-page View Transition original.
-- Restore original View Transition CSS keyframes and fallback; delete background-only reveal CSS and DOM.
-- Version public CSS/JS graph including theme-controller import to prevent mixed cache on iPhone.
-- Replace wrong tests that demanded backdrop-only effect.
-- Update README and version metadata.
-
-LIMITATION / REAL-PHONE QA
-Original full-page snapshots can still show a card at another angle if it rotates while the reveal runs. Restoring this animation is verified; no guarantee on Safari rotating-card stability. The visible switch is never blocked by card-completion wait.
-
-DEPLOY
-Only REPO to GitHub Pages. OUTSIDE_REPO is documentation, not deployed; UPDATED_FILES is exact runtime delta.
+scripts/test-public-dom.js
