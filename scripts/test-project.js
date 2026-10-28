@@ -579,24 +579,28 @@ class FakeStreakRoot {
     this.attributes = new Map();
     this.animated = [];
     this.deferred = deferred;
-    this.children = Object.fromEntries(
-      ["count", "heading", "symbol", "emblem", "message"].map((key) => [key, {
-        textContent: "",
-        animate: (...args) => this.animate(...args)
-      }])
-    );
-    this.glints = Array.from({ length: 6 }, () => ({ animate: (...args) => this.animate(...args) }));
+    this.children = {
+      heading: { textContent: "" },
+      kicker: { textContent: "" },
+      particles: { children: [], appendChild(node) { this.children.push(node); } }
+    };
+    this.ownerDocument = {
+      createElement: () => ({
+        className: "",
+        attributes: new Map(),
+        classList: new FakeClassList(),
+        setAttribute(key, value) { this.attributes.set(key, value); },
+        style: { values: {}, setProperty(key, value) { this.values[key] = value; } }
+      })
+    };
   }
   querySelector(selector) {
     return {
-      "[data-streak-count]": this.children.count,
       "[data-streak-heading]": this.children.heading,
-      "[data-streak-symbol]": this.children.symbol,
-      "[data-streak-emblem]": this.children.emblem,
-      "[data-streak-message]": this.children.message
+      "[data-streak-kicker]": this.children.kicker,
+      "[data-streak-particles]": this.children.particles
     }[selector] ?? null;
   }
-  querySelectorAll(selector) { return selector === "[data-streak-glint]" ? this.glints : []; }
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   removeAttribute(key) { this.attributes.delete(key); }
   animate(frames, options) {
@@ -614,31 +618,33 @@ async function testSeparateStreakCelebration() {
     globalThis.window = { matchMedia: () => ({ matches: false }) };
     const ordinary = new FakeStreakRoot();
     const three = new StreakCelebrationController(ordinary);
+    assert.equal(ordinary.children.particles.children.length, 18, "bounded particles built once");
     const pending = three.play(3);
-    assert.equal(ordinary.children.heading.textContent, "Super Ci idzie!");
-    assert.equal(ordinary.children.count.textContent, "3 trafienia z rzędu");
+    assert.equal(ordinary.children.heading.textContent, "Świetna robota!");
+    assert.equal(ordinary.children.kicker.textContent, "3 poprawne z rzędu");
     assert.equal(ordinary.dataset.milestone, "3");
-    assert.equal(ordinary.animated.length, 1, "compact streak toast must not spawn particles");
-    assert.equal(ordinary.animated[0].options.duration, 1450);
+    assert.equal(ordinary.animated.length, 1, "only one awaited root animation");
+    assert.equal(ordinary.animated[0].options.duration, 1250);
     assert.equal(await pending, true);
     assert.equal(ordinary.attributes.get("aria-hidden"), "true");
+    await three.play(3);
+    assert.equal(ordinary.children.particles.children.length, 18, "replaying never adds duplicate particle DOM");
 
     const majorRoot = new FakeStreakRoot();
     const ten = new StreakCelebrationController(majorRoot);
     const majorPending = ten.play(10);
-    assert.equal(majorRoot.children.heading.textContent, "Świetna robota!");
-    assert.equal(majorRoot.children.count.textContent, "10 trafień z rzędu");
-    assert.equal(majorRoot.children.symbol.textContent, "✦");
+    assert.equal(majorRoot.children.heading.textContent, "Niesamowita seria!");
+    assert.equal(majorRoot.children.kicker.textContent, "10 poprawnych z rzędu");
     assert.equal(majorRoot.classList.contains("is-major"), true);
-    assert.equal(majorRoot.animated[0].options.duration, 1650);
+    assert.equal(majorRoot.animated[0].options.duration, 1470);
     assert.equal(await majorPending, true);
 
     globalThis.window.matchMedia = () => ({ matches: true });
     const reducedRoot = new FakeStreakRoot();
     const reduced = new StreakCelebrationController(reducedRoot);
     const reducedPending = reduced.play(10);
-    assert.equal(reducedRoot.animated.length, 1, "reduced motion must use one simple animation");
-    assert.equal(reducedRoot.animated[0].options.duration, 1450);
+    assert.equal(reducedRoot.animated.length, 1);
+    assert.equal(reducedRoot.animated[0].options.duration, 570);
     assert.equal(await reducedPending, true);
     assert.equal(await reduced.play(4), true, "only actual milestones may celebrate");
 
@@ -646,10 +652,8 @@ async function testSeparateStreakCelebration() {
     const cancelled = new StreakCelebrationController(cancelledRoot);
     const cancelledPending = cancelled.play(3);
     cancelled.clear();
-    // A real WAAPI cancellation rejects finished; complete fake pending operations
-    // explicitly to verify revision guard even in runtimes that resolve cancellation.
     for (const animation of cancelledRoot.animated) animation.finish();
-    assert.equal(await cancelledPending, false, "old celebration must not advance new session");
+    assert.equal(await cancelledPending, false, "old reward must not advance a different session");
   } finally {
     globalThis.window = previousWindow;
   }
@@ -3451,11 +3455,13 @@ async function testSourceContracts() {
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const streakSource = await fs.readFile(path.join(projectRoot, "js", "streak-celebration.js"), "utf8");
-  assert.ok(!game.includes("await streakCelebration.play("), "streak toast must not block card reveal or Speed Run deadline");
-  assert.equal((game.match(/void streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 4,
-    "milestone toast must display without await for next card and final result in both modes");
-  assert.ok(streakSource.includes("duration: 1450") === false && streakSource.includes("normal: 1450"),
-    "streak toast must be short and only use milestone durations");
+  assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 2,
+    "both modes must finish reward before revealing another card or ending the session");
+  assert.doesNotMatch(game, /void streakCelebration\.play\(/, "no obsolete nonblocking global toast path");
+  assert.ok(streakSource.includes("normal: 1250") && streakSource.includes("normal: 1470"),
+    "milestone timings are short and bounded");
+  assert.ok(game.includes('if (!celebrated || state !== "answering" || revision !== presentationRevision) return;'),
+    "stale animations must never advance a cancelled session");
 
   const sessionConfig = await fs.readFile(path.join(projectRoot, "js", "session-config.js"), "utf8");
   const sessionPicker = await fs.readFile(path.join(projectRoot, "js", "session-size-picker.js"), "utf8");
@@ -4445,7 +4451,7 @@ console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 20/50/100: PASS");
 console.log("V1.7.1B local display name + 3/10 streak milestones: PASS");
-console.log("R2.3 independent non-blocking streak toast after ordinary feedback: PASS");
+console.log("R2.4 card-local kinetic reward after ordinary feedback + swipe: PASS");
 console.log("Dynamic preloader 20/50/100: PASS");
 console.log("Session selection + 100-image availability: PASS");
 console.log("Supabase-only content source + pagination + controlled failure: PASS");

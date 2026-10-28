@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-3">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-4">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -263,6 +263,20 @@
             <span class="answer-feedback__label" data-feedback-label></span>
           </div>
         </div>
+        <!-- Short, unframed reward inhabiting the empty card stage after a milestone throw. -->
+        <div class="streak-reward" id="streak-celebration" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
+          <div class="streak-reward__atmosphere" aria-hidden="true"></div>
+          <div class="streak-reward__wave" aria-hidden="true"></div>
+          <div class="streak-reward__particles" data-streak-particles aria-hidden="true"></div>
+          <div class="streak-reward__copy">
+            <span class="streak-reward__kicker" data-streak-kicker></span>
+            <strong class="streak-reward__title" data-streak-heading></strong>
+            <span class="streak-reward__underline" aria-hidden="true"></span>
+          </div>
+          <span class="streak-reward__glint streak-reward__glint--one" aria-hidden="true"></span>
+          <span class="streak-reward__glint streak-reward__glint--two" aria-hidden="true"></span>
+          <span class="streak-reward__glint streak-reward__glint--three" aria-hidden="true"></span>
+        </div>
       </div>
 
       <div class="controls" aria-label="Wybór odpowiedzi">
@@ -327,17 +341,6 @@
     </section>
   </main>
 
-  <!-- A brief, non-blocking milestone toast; never dims or pauses gameplay. -->
-  <div class="streak-celebration" id="streak-celebration" role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
-    <div class="streak-celebration__panel">
-      <span class="streak-celebration__emblem" data-streak-symbol aria-hidden="true">★</span>
-      <span class="streak-celebration__message">
-        <strong class="streak-celebration__title" data-streak-heading></strong>
-        <span class="streak-celebration__count" data-streak-count></span>
-      </span>
-    </div>
-  </div>
-
   <div class="profile-dialog-backdrop" id="profile-dialog-backdrop" hidden>
     <section class="profile-dialog" id="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title"  tabindex="-1">
       <button class="profile-dialog__close" id="profile-dialog-close" type="button" aria-label="Zamknij okno profilu">
@@ -367,6 +370,6 @@
     </section>
   </div>
 
-  <script type="module" src="./js/game.js?v=1.7.1b-r2-3"></script>
+  <script type="module" src="./js/game.js?v=1.7.1b-r2-4"></script>
 </body>
 </html>

@@ -53,14 +53,16 @@ assert.equal(elementsById.get("result-player-name"), 1);
 
 console.log(`PUBLIC DOM BOOTSTRAP PASS (${checked} mandatory event targets)`);
 
-// R2.3: short, pointer-inert milestone toast stays separate from green DOBRZE.
+// R2.4: finite kinetic reward inhabits the card stage after the outgoing swipe.
 assert.equal(elementsById.get("streak-celebration"), 1);
+assert.match(html, /class="streak-reward" id="streak-celebration"/);
+assert.match(html, /data-streak-particles/);
 assert.match(source, /new StreakCelebrationController\(streakCelebrationElement\)/);
-assert.doesNotMatch(source, /await streakCelebration\.play\(/,
-  "Streak toast must never block input/reveal or the next Speed Run clock");
-assert.match(source, /void streakCelebration\.play\(streakResult\.milestone\)/);
-assert.match(css, /\.streak-celebration\s*\{[^}]*pointer-events:\s*none;/s);
-assert.doesNotMatch(css, /\.streak-celebration\s*\{[^}]*inset:\s*0/s,
-  "Milestone toast must not dim the entire game viewport");
+assert.equal((source.match(/await streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 2,
+  "both modes must await card-local milestone before next card/deadline");
+assert.doesNotMatch(source, /void streakCelebration\.play\(/);
+assert.match(css, /\.streak-reward\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
+assert.doesNotMatch(css, /\.streak-celebration\s*\{/,
+  "old global toast stylesheet must be deleted");
 assert.doesNotMatch(source, /answerFeedback\.play\([^\n]*milestone\s*:/,
-  "Streak text must never replace the green DOBRZE feedback");
+  "green DOBRZE remains independent of the streak reward");
