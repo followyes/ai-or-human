@@ -2,14 +2,14 @@
 
 Mobilna gra przeglądarkowa: rozpoznawanie, czy obraz stworzył człowiek, czy AI. GitHub Pages + Supabase.
 
-## Aktualne funkcje (baseline V1.7.1B-R2.4A)
+## Aktualne funkcje (baseline V1.7.1B-R2.5)
 
 - **Klasyczny:** 20, 50 lub 100 obrazów bez powtórek aż do wyczerpania puli (także między rozgrywkami), zależnie od dostępności puli.
 - **Speed Run:** łatwy 7 s / 3 życia, średni 5 s / 2 życia, trudny 3 s / 1 życie; gra do utraty żyć.
 - **Profile lokalne:** login bez spacji, animowane przykłady pseudonimów, bez konta i hasła; odrębne Player ID, Browser ID i Game ID. Identyfikatory nie potwierdzają tożsamości.
 - **Wynik:** liczba trafień, procent i trofeum. Każda ukończona sesja to osobny rekord w Supabase (R1), z lokalnym ponawianiem niepotwierdzonego zapisu.
-- **Seria trafień:** po 3 i 10 kolejnych poprawnych odpowiedziach, po zwykłym „DOBRZE”, krótki złoty napis i świetlne iskry w zwolnionej przestrzeni po karcie. Następna karta i zegar Speed Run zaczynają działać dopiero po tej krótkiej celebracji.
-- **Admin `/admin/`:** Biblioteka obrazów oraz prywatne Wyniki — wyszukiwanie, filtry, paginacja i usuwanie (R2).
+- **Seria trafień:** po 3, 10, 20, 30… kolejnych poprawnych odpowiedziach, po zwykłym „DOBRZE”, krótki złoty napis i świetlne iskry w zwolnionej przestrzeni po karcie. Następna karta i zegar Speed Run zaczynają działać dopiero po tej krótkiej celebracji.
+- **Admin `/admin/`:** Biblioteka obrazów, prywatne Wyniki oraz prosta edytowalna lista Gratyfikacji. Komunikaty losowane bez powtórzeń w jednej rozgrywce i zapisywane w Supabase (R2.5).
 
 ## Interfejs
 
@@ -32,12 +32,12 @@ Wdrożenie: GitHub **Settings → Pages → Build and deployment → GitHub Acti
 
 ## Migracje i bezpieczeństwo
 
-Pliki SQL **nie są częścią repo GitHub**. Dla istniejącej instalacji wykonuj R1, następnie R2 (każda: PRECHECK → migracja → POSTCHECK), zanim opublikujesz frontend wymagający nowych uprawnień. `OUTSIDE_REPO/SQL/ALL_IN_ONE.sql` służy do odtworzenia nowego projektu; nie uruchamiaj go na działającej bazie jako migracji.
+Pliki SQL **nie są częścią repo GitHub**. Dla istniejącej instalacji wykonuj R1, następnie R2 i R2.5 (każda: PRECHECK → migracja → POSTCHECK), zanim opublikujesz frontend wymagający nowych uprawnień. `OUTSIDE_REPO/SQL/ALL_IN_ONE.sql` służy do odtworzenia nowego projektu; nie uruchamiaj go na działającej bazie jako migracji.
 
 Gracze mogą anonimowo wysyłać wyniki, ale nie mogą ich czytać ani usuwać. Tabela Admina jest chroniona przez Supabase RLS i operacje administracyjne. Wynik anonimowy i losowe ID nie dowodzą tożsamości ani poprawności odpowiedzi.
 
 ## Status i dokumentacja
 
-**R2.4A: LOCAL QA PASS; produkcyjne SQL R1/R2, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
+**R2.5: LOCAL NODE/BUILD/CHROMIUM PASS; produkcyjne SQL R1/R2/R2.5, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
 
 Dokumentacja poza repo: `AGENTS.md` (zasady), `ROADMAP.md` (plan), `CHANGELOG.md` (pełna historia), `CONTINUE_IN_NEW_CHAT.md` (kontynuacja), `QA_CURRENT.md` (otwarte testy), `README_FIRST.txt` (wdrożenie). Historycznych opisów wydań nie powielamy w README.

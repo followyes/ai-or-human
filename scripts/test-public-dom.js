@@ -63,7 +63,7 @@ assert.equal(elementsById.get("streak-celebration"), 1);
 assert.match(html, /class="streak-reward" id="streak-celebration"/);
 assert.match(html, /data-streak-particles/);
 assert.match(source, /new StreakCelebrationController\(streakCelebrationElement\)/);
-assert.equal((source.match(/await streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 2,
+assert.equal((source.match(/await streakCelebration\.play\(streakResult\.milestone, streakMessageBag\.next\(\)\)/g) || []).length, 2,
   "both modes must await card-local milestone before next card/deadline");
 assert.doesNotMatch(source, /void streakCelebration\.play\(/);
 assert.match(css, /\.streak-reward\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);

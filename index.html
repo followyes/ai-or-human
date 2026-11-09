@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-dark.webp">
   <link rel="preload" as="image" type="image/webp" href="./assets/game/card-back-light.webp">
-  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-4b">
+  <link rel="stylesheet" href="./css/style.css?v=1.7.1b-r2-5">
 </head>
 <body data-public-view="mode-select">
   <div class="game-atmosphere" id="game-atmosphere" aria-hidden="true">
@@ -346,10 +346,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 5l14 14M19 5 5 19"></path></svg>
       </button>
       
-      <h2 class="profile-dialog__title" id="profile-dialog-title">Twój profil</h2>
+      <h2 class="profile-dialog__title" id="profile-dialog-title">Nazwa gracza</h2>
       <p class="profile-dialog__description" id="profile-dialog-description" hidden></p>
       <div class="player-login" id="player-login">
-        <label class="meta-label" for="player-name">Nazwa gracza</label>
+        <label class="visually-hidden" for="player-name">Nazwa gracza</label>
         <input id="player-name" class="player-login__input" type="text" maxlength="20" autocomplete="nickname" autocapitalize="none" spellcheck="false" placeholder="Login" aria-describedby="player-name-help" required>
         <span class="player-login__help" id="player-name-help" role="status" aria-live="polite"></span>
         <button id="change-player-button" class="player-switch-toggle" type="button" hidden aria-expanded="false" aria-controls="player-switch-panel">Wybierz inny profil</button>
@@ -369,6 +369,6 @@
     </section>
   </div>
 
-  <script type="module" src="./js/game.js?v=1.7.1b-r2-4b"></script>
+  <script type="module" src="./js/game.js?v=1.7.1b-r2-5"></script>
 </body>
 </html>

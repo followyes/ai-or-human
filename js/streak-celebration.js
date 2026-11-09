@@ -2,8 +2,8 @@
  * Does not own a timer, input listeners, scoring, images or the swipe animation.
  * The caller awaits this short beat while the outgoing card is already gone. */
 const DURATIONS = Object.freeze({
-  3: Object.freeze({ normal: 1250, reduced: 480 }),
-  10: Object.freeze({ normal: 1470, reduced: 570 })
+  minor: Object.freeze({ normal: 1250, reduced: 480 }),
+  major: Object.freeze({ normal: 1470, reduced: 570 })
 });
 
 // Fixed, bounded decoration: no emitter, repeated DOM creation or animation loop.
@@ -51,16 +51,16 @@ export class StreakCelebrationController {
     this.root.removeAttribute("data-milestone");
   }
 
-  async play(milestone) {
-    if (!Object.hasOwn(DURATIONS, milestone)) return true;
+  async play(milestone, message) {
+    if (milestone !== 3 && !(milestone >= 10 && milestone % 10 === 0)) return true;
     this.clear();
     const revision = ++this.revision;
     const reduced = Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
-    const duration = DURATIONS[milestone][reduced ? "reduced" : "normal"];
-    const major = milestone === 10;
+    const major = milestone >= 10;
+    const duration = DURATIONS[major ? "major" : "minor"][reduced ? "reduced" : "normal"];
 
-    this.heading.textContent = major ? "Niesamowita seria!" : "Świetna robota!";
-    this.kicker.textContent = major ? "10 poprawnych z rzędu" : "3 poprawne z rzędu";
+    this.heading.textContent = typeof message === "string" && message.trim() ? message.trim() : "Dobra robota!";
+    this.kicker.textContent = `${milestone} ${milestone === 3 ? "poprawne" : "poprawnych"} z rzędu`;
     this.root.dataset.milestone = String(milestone);
     this.root.classList.toggle("is-major", major);
     this.root.classList.add("is-active");

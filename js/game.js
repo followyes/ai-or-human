@@ -2,14 +2,15 @@ import { ImageRotation, browserImageRotationStorage } from "./image-rotation.js?
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b-r2-2";
-import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-4";
+import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-5";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { preloadImage } from "./image-preloader.js";
 import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, getSpeedTimerView, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js?v=1.7.1a";
-import { advanceAnswerStreak } from "./answer-streak.js";
+import { advanceAnswerStreak } from "./answer-streak.js?v=1.7.1b-r2-5";
+import { createStreakMessageBag, fetchPublicStreakMessages, DEFAULT_STREAK_MESSAGES } from "./streak-messages.js?v=1.7.1b-r2-5";
 import { normalizePlayerName } from "./player-name.js";
 import { LoginPlaceholderController, containsLoginWhitespace, rejectWhitespaceEdit } from "./login-placeholder.js?v=1.7.1b-r2-4a";
 import { createBrowserProfiles } from "./player-profiles.js?v=1.7.1b-r1";
@@ -143,6 +144,16 @@ let availableImageCount = 0;
 let currentIndex = 0;
 let score = 0;
 let answerStreak = 0;
+let streakMessagesCache = [...DEFAULT_STREAK_MESSAGES];
+let streakMessageBag = createStreakMessageBag(streakMessagesCache);
+let streakFetchInFlight = null;
+function refreshStreakMessages() {
+  if (streakFetchInFlight) return streakFetchInFlight;
+  streakFetchInFlight = fetchPublicStreakMessages()
+    .then((messages) => { streakMessagesCache = messages; })
+    .finally(() => { streakFetchInFlight = null; });
+  return streakFetchInFlight;
+}
 let activePlayerName = null;
 const localPlayers = createBrowserProfiles();
 const loginPlaceholder = new LoginPlaceholderController(playerNameInput);
@@ -263,6 +274,7 @@ function openResultReplaySetup() {
   if (state !== "result" || resultSubstate === "replay-setup") return;
   resultCelebration?.leave();
   setResultSubstate("replay-setup", { focus: true });
+  void refreshStreakMessages();
 }
 
 function returnResultToHome() {
@@ -287,6 +299,7 @@ function returnResultToHome() {
   preGameTransition?.showImmediately(modeSelectPanel, preGamePanels);
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select", themeSwitchVisible: true });
+  void refreshStreakMessages();
 
   window.requestAnimationFrame(() => {
     classicModeButton?.focus({ preventScroll: true });
@@ -869,6 +882,7 @@ async function prepareAndStartSpeedSession(triggerButton, normalText) {
     currentIndex = 0;
     score = 0;
     answerStreak = 0;
+    streakMessageBag = createStreakMessageBag(streakMessagesCache);
     syncModePresentation();
     updateSpeedHUD();
     await presentCurrentCard({ revealGameScreen: true });
@@ -918,6 +932,7 @@ async function prepareAndStartSession(triggerButton, normalText) {
     currentIndex = 0;
     score = 0;
     answerStreak = 0;
+    streakMessageBag = createStreakMessageBag(streakMessagesCache);
     scoreDisplay.textContent = "0";
 
     await presentCurrentCard({ revealGameScreen: true });
@@ -947,7 +962,7 @@ async function settleSpeedOutcome(outcome, type = null) {
   const [shown, dismissed] = await Promise.all([feedback, dismissal]);
   if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
   if (streakResult.milestone !== null) {
-    const celebrated = await streakCelebration.play(streakResult.milestone);
+    const celebrated = await streakCelebration.play(streakResult.milestone, streakMessageBag.next());
     if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
   }
   if (speedRunState.finished) {
@@ -999,7 +1014,7 @@ async function answer(type) {
   const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
   if (!feedbackShown || !thrown || state !== "answering" || revision !== presentationRevision) return;
   if (streakResult.milestone !== null) {
-    const celebrated = await streakCelebration.play(streakResult.milestone);
+    const celebrated = await streakCelebration.play(streakResult.milestone, streakMessageBag.next());
     if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
   }
   currentIndex += 1;
@@ -1091,6 +1106,8 @@ function bootstrap() {
   syncModePresentation();
   syncClassicSetupControls();
   prefetchClassicManifestAfterFirstPaint();
+  // Fetch outside the feedback/clock path. A running game owns a fixed snapshot.
+  void refreshStreakMessages();
   if (resultsOutbox.pending) void retryResultStorage();
 }
 

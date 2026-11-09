@@ -619,8 +619,8 @@ async function testSeparateStreakCelebration() {
     const ordinary = new FakeStreakRoot();
     const three = new StreakCelebrationController(ordinary);
     assert.equal(ordinary.children.particles.children.length, 18, "bounded particles built once");
-    const pending = three.play(3);
-    assert.equal(ordinary.children.heading.textContent, "Świetna robota!");
+    const pending = three.play(3, "Brawo!");
+    assert.equal(ordinary.children.heading.textContent, "Brawo!");
     assert.equal(ordinary.children.kicker.textContent, "3 poprawne z rzędu");
     assert.equal(ordinary.dataset.milestone, "3");
     assert.equal(ordinary.animated.length, 1, "only one awaited root animation");
@@ -632,9 +632,9 @@ async function testSeparateStreakCelebration() {
 
     const majorRoot = new FakeStreakRoot();
     const ten = new StreakCelebrationController(majorRoot);
-    const majorPending = ten.play(10);
-    assert.equal(majorRoot.children.heading.textContent, "Niesamowita seria!");
-    assert.equal(majorRoot.children.kicker.textContent, "10 poprawnych z rzędu");
+    const majorPending = ten.play(20, "Jesteś świetny!");
+    assert.equal(majorRoot.children.heading.textContent, "Jesteś świetny!");
+    assert.equal(majorRoot.children.kicker.textContent, "20 poprawnych z rzędu");
     assert.equal(majorRoot.classList.contains("is-major"), true);
     assert.equal(majorRoot.animated[0].options.duration, 1470);
     assert.equal(await majorPending, true);
@@ -642,7 +642,7 @@ async function testSeparateStreakCelebration() {
     globalThis.window.matchMedia = () => ({ matches: true });
     const reducedRoot = new FakeStreakRoot();
     const reduced = new StreakCelebrationController(reducedRoot);
-    const reducedPending = reduced.play(10);
+    const reducedPending = reduced.play(30, "Tak trzymaj!");
     assert.equal(reducedRoot.animated.length, 1);
     assert.equal(reducedRoot.animated[0].options.duration, 570);
     assert.equal(await reducedPending, true);
@@ -3423,7 +3423,7 @@ async function testSourceContracts() {
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const streakSource = await fs.readFile(path.join(projectRoot, "js", "streak-celebration.js"), "utf8");
-  assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 2,
+  assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone, streakMessageBag\.next\(\)\)/g) || []).length, 2,
     "both modes must finish reward before revealing another card or ending the session");
   assert.doesNotMatch(game, /void streakCelebration\.play\(/, "no obsolete nonblocking global toast path");
   assert.ok(streakSource.includes("normal: 1250") && streakSource.includes("normal: 1470"),
@@ -4417,7 +4417,7 @@ await testSourceContracts();
 console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 20/50/100: PASS");
-console.log("V1.7.1B local display name + 3/10 streak milestones: PASS");
+console.log("V1.7.1B local display name + 3/10/20+ streak milestones: PASS");
 console.log("R2.4 card-local kinetic reward after ordinary feedback + swipe: PASS");
 console.log("Dynamic preloader 20/50/100: PASS");
 console.log("Session selection + 100-image availability: PASS");

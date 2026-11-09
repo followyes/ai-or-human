@@ -29,12 +29,15 @@ import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { AdminResultsPanel } from "../js/admin-results-ui.js";
+import { AdminStreakPanel } from "../js/admin-streak-ui.js";
 
 const adminCard = document.querySelector("#admin-card");
 const tabLibrary = document.querySelector("#tab-library");
 const tabResults = document.querySelector("#tab-results");
+const tabStreak = document.querySelector("#tab-streak");
 const libraryWorkspace = document.querySelector("#admin-workspace");
 const resultsWorkspace = document.querySelector("#results-workspace");
+const streakWorkspace = document.querySelector("#streak-workspace");
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
 const bootView = document.querySelector("#boot-view");
@@ -113,37 +116,41 @@ const resultsPanel = new AdminResultsPanel({
     showLogin("Sesja administratora wygasła lub brak uprawnień.");
   }
 });
+const streakPanel = new AdminStreakPanel({
+  root: streakWorkspace,
+  getSession: async () => await refreshCurrentSessionForMutation(),
+  onAuthFailure: () => {
+    clearAdminSession();
+    showLogin("Sesja administratora wygasła lub brak uprawnień.");
+  }
+});
 let activeAdminTab = "library";
-function switchAdminTab(tab) {
-  if (!currentSession || (tab !== "library" && tab !== "results")) return;
-  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
-  if (tab === activeAdminTab) return;
+const adminTabs = [
+  { id: "library", button: tabLibrary, workspace: libraryWorkspace },
+  { id: "results", button: tabResults, workspace: resultsWorkspace },
+  { id: "streak", button: tabStreak, workspace: streakWorkspace }
+];
+function applyAdminTab(tab) {
   activeAdminTab = tab;
-  const resultsActive = tab === "results";
-  tabLibrary.setAttribute("aria-selected", String(!resultsActive));
-  tabResults.setAttribute("aria-selected", String(resultsActive));
-  tabLibrary.tabIndex = resultsActive ? -1 : 0;
-  tabResults.tabIndex = resultsActive ? 0 : -1;
-  libraryWorkspace.hidden = resultsActive;
-  libraryWorkspace.inert = resultsActive;
-  resultsWorkspace.hidden = !resultsActive;
-  resultsWorkspace.inert = !resultsActive;
-  resultsPanel.setActive(resultsActive);
+  for (const entry of adminTabs) {
+    const selected = entry.id === tab;
+    entry.button.setAttribute("aria-selected", String(selected));
+    entry.button.tabIndex = selected ? 0 : -1;
+    entry.workspace.hidden = !selected;
+    entry.workspace.inert = !selected;
+  }
+  resultsPanel.setActive(tab === "results");
+  streakPanel.setActive(tab === "streak");
 }
-function resetAdminTab() {
-  activeAdminTab = "library";
-  tabLibrary.setAttribute("aria-selected", "true");
-  tabResults.setAttribute("aria-selected", "false");
-  tabLibrary.tabIndex = 0;
-  tabResults.tabIndex = -1;
-  libraryWorkspace.hidden = false;
-  libraryWorkspace.inert = false;
-  resultsWorkspace.hidden = true;
-  resultsWorkspace.inert = true;
-  resultsPanel.setActive(false);
+function switchAdminTab(tab) {
+  if (!currentSession || !adminTabs.some(entry => entry.id === tab)) return;
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
+  if (tab !== activeAdminTab) applyAdminTab(tab);
 }
+function resetAdminTab() { applyAdminTab("library"); }
 tabLibrary.addEventListener("click", () => switchAdminTab("library"));
 tabResults.addEventListener("click", () => switchAdminTab("results"));
+tabStreak.addEventListener("click", () => switchAdminTab("streak"));
 
 const BOOT_REVEAL_DELAY_MS = 320;
 const VIEW_NODES = Object.freeze({
@@ -233,9 +240,9 @@ function syncBusyControls() {
   fileInput.disabled = contentInteractionBusy || !categorySelected;
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
-  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy;
-  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy;
-  tabResults.disabled = contentInteractionBusy || resultsPanel.busy;
+  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
+  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
+  tabResults.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
   const noVisibleRows = filteredInventoryRows().length === 0;
   inventoryMoveButton.disabled = contentInteractionBusy || noVisibleRows;
   inventoryDeleteManyButton.disabled = contentInteractionBusy || noVisibleRows;
@@ -989,6 +996,7 @@ async function handleBulkMove(targetClass) {
 
 function showLogin(message = "", { morph = true, focus = true } = {}) {
   resultsPanel.clear();
+  streakPanel.clear();
   resetAdminTab();
   currentSession = null;
   inventoryRows = [];
@@ -1327,7 +1335,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy) return;
+  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
 
   const session = currentSession;
   setAuthBusy(true);

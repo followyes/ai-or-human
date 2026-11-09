@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <title>AI or Human — Admin</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./admin.css">
+  <link rel="stylesheet" href="./admin.css?v=1.7.1b-r2-5">
 </head>
 <body>
   <main class="admin-shell">
@@ -41,6 +41,7 @@
         <nav class="admin-tab-nav" role="tablist" aria-label="Sekcje panelu administratora">
           <button type="button" id="tab-library" role="tab" aria-controls="admin-workspace" aria-selected="true">Biblioteka</button>
           <button type="button" id="tab-results" role="tab" aria-controls="results-workspace" aria-selected="false" tabindex="-1">Wyniki</button>
+          <button type="button" id="tab-streak" role="tab" aria-controls="streak-workspace" aria-selected="false" tabindex="-1">Gratyfikacje</button>
         </nav>
 
         <div class="admin-workspace" id="admin-workspace" role="tabpanel" aria-labelledby="tab-library">
@@ -145,6 +146,16 @@
           </section>
         </div>
 
+        <section class="streak-workspace" id="streak-workspace" role="tabpanel" aria-labelledby="tab-streak" hidden inert>
+          <p class="streak-admin-status" id="streak-admin-status" role="status" aria-live="polite"></p>
+          <div class="streak-admin-list" id="streak-admin-list"></div>
+          <form class="streak-admin-form" id="streak-admin-form" autocomplete="off">
+            <label class="visually-hidden" for="streak-admin-input">Nowy komunikat</label>
+            <input id="streak-admin-input" maxlength="60" placeholder="Nowy komunikat…" required>
+            <button class="admin-primary-button compact-button" id="streak-admin-add" type="submit">Dodaj</button>
+          </form>
+        </section>
+
         <section class="results-workspace" id="results-workspace" role="tabpanel" aria-labelledby="tab-results" hidden inert>
           <div class="results-topline">
             <h2>Wyniki rozgrywek</h2>
@@ -190,6 +201,6 @@
     </section>
   </main>
 
-  <script type="module" src="./admin.js"></script>
+  <script type="module" src="./admin.js?v=1.7.1b-r2-5"></script>
 </body>
 </html>

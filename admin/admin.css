@@ -1127,3 +1127,17 @@ h2 {
   .results-row { padding: 10px; gap: 8px; }
   .results-pager button { padding-inline: 9px; }
 }
+
+/* R2.5: simple editable copy list, no dashboard widgets or technical captions. */
+.streak-workspace[hidden] { display: none !important; }
+.streak-workspace { padding: 18px; border: 1px solid var(--border); border-radius: 20px; display: grid; gap: 14px; align-content: start; }
+.streak-admin-status { margin: 0; color: var(--muted); font-size: .83rem; min-height: 1em; }
+.streak-admin-status:empty { display: none; }
+.streak-admin-list { display: grid; gap: 8px; }
+.streak-admin-row { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; }
+.streak-admin-message { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; font-weight: 650; }
+.streak-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.streak-admin-form { display: flex; gap: 10px; }
+.streak-admin-form input, .streak-admin-edit { min-width: 0; flex: 1; height: 43px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 12px; background: var(--surface); color: var(--text); font: inherit; }
+.streak-admin-list :is(button,input):focus-visible, .streak-admin-form :is(button,input):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+@media (max-width: 480px) { .admin-tab-nav { gap: 4px; } .admin-tab-nav button { padding-inline: 9px; font-size: .78rem; } .streak-workspace { padding: 12px; } .streak-admin-row { align-items: stretch; flex-direction: column; } .streak-admin-actions { justify-content: flex-end; } }

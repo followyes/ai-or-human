@@ -53,7 +53,8 @@ for (const id of ["results-workspace", "tab-library", "tab-results", "results-cl
   assert.ok(html.includes(`id="${id}"`), `Missing Admin UI control ${id}`);
 }
 const code = await readFile(new URL("../admin/admin.js", import.meta.url), "utf8");
-assert.ok(code.includes('resultsPanel.clear()') && code.includes('resultsPanel.setActive(resultsActive)'));
+assert.ok(code.includes('resultsPanel.clear()') && code.includes('resultsPanel.setActive(tab === "results")'), 'Results panel must be activated only for Results tab');
+assert.ok(code.includes('streakPanel.setActive(tab === "streak")'), 'Gratifications panel must be activated only for its tab');
 const ui = await readFile(new URL("../js/admin-results-ui.js", import.meta.url), "utf8");
 assert.ok(ui.includes("name.textContent = record.player_name"), "public names must use textContent");
 assert.ok(!ui.includes("innerHTML"), "no untrusted HTML injection");
