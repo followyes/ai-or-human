@@ -101,7 +101,7 @@ async function preloadWithConcurrency(candidates, { timeoutMs, concurrency }) {
 
 export class RoundPreloader {
   constructor(
-    selector,
+    rotation,
     {
       roundSize = 20,
       timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -112,30 +112,28 @@ export class RoundPreloader {
       throw new RangeError("concurrency must be a positive integer");
     }
 
-    this.selector = selector;
+    this.rotation = rotation;
     this.roundSize = roundSize;
     this.timeoutMs = timeoutMs;
     this.concurrency = concurrency;
     this.invalidImageIds = new Set();
   }
 
-  async prepare(roundNumber, { roundSize = this.roundSize } = {}) {
+  async prepare({ roundSize = this.roundSize } = {}) {
     if (!Number.isInteger(roundSize) || roundSize < 1) {
       throw new RangeError("roundSize must be a positive integer");
     }
 
     const prepared = [];
-    const selectedIds = new Set();
 
     while (prepared.length < roundSize) {
       const needed = roundSize - prepared.length;
-      const excluded = new Set([...this.invalidImageIds, ...selectedIds]);
       let candidates;
 
       try {
-        candidates = this.selector.select(needed, {
-          roundNumber,
-          excludeIds: excluded
+        candidates = this.rotation.select(needed, {
+          priorIds: prepared.map((item) => item.id),
+          invalidIds: this.invalidImageIds
         });
       } catch {
         throw new Error(
@@ -149,7 +147,6 @@ export class RoundPreloader {
       });
 
       candidates.forEach((item, index) => {
-        selectedIds.add(item.id);
         if (results[index].status === "fulfilled") {
           prepared.push(item);
         } else {

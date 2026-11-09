@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSite } from "./build-site.js";
-import { RoundSelector, recencyWeight } from "../js/round-selector.js";
+import { ImageRotation } from "../js/image-rotation.js";
 import { SwipeController } from "../js/swipe-controller.js";
 import { AnswerFeedbackController } from "../js/answer-feedback.js";
 import { StreakCelebrationController } from "../js/streak-celebration.js";
@@ -862,11 +862,11 @@ async function testDynamicRoundPreloader() {
   globalThis.Image = FakePreloadImage;
 
   try {
-    const selector = new RoundSelector(makeImages(120, "ai"), { rng: createSeededRng(99) });
-    const preloader = new RoundPreloader(selector, { concurrency: 4, timeoutMs: 500 });
+    const rotation = new ImageRotation(makeImages(120, "ai"), { rng: createSeededRng(99) });
+    const preloader = new RoundPreloader(rotation, { concurrency: 4, timeoutMs: 500 });
 
     for (const [roundNumber, roundSize] of [[1, 20], [2, 50], [3, 100]]) {
-      const deck = await preloader.prepare(roundNumber, { roundSize });
+      const deck = await preloader.prepare({ roundSize });
       assert.equal(deck.length, roundSize);
       assert.equal(new Set(deck.map((item) => item.id)).size, roundSize);
     }
@@ -876,60 +876,19 @@ async function testDynamicRoundPreloader() {
   }
 }
 
-async function testRoundSelector() {
-  const mixed = [
-    ...makeImages(30, "ai"),
-    ...Array.from({ length: 30 }, (_, index) => ({
-      id: `human-${index}`,
-      src: `./images/HUMAN/${index}.svg`,
-      type: "human"
-    }))
-  ];
-
-  const selector = new RoundSelector(mixed, { rng: createSeededRng(42) });
-  const round = selector.select(20, { roundNumber: 1 });
-  assert.equal(round.length, 20, "round must contain exactly 20 images");
-  assert.equal(new Set(round.map((item) => item.id)).size, 20, "round IDs must be unique");
-
-  const ten = selector.select(10, { roundNumber: 1 });
-  assert.equal(ten.length, 10, "10-image session must contain exactly 10 images");
-  assert.equal(new Set(ten.map((item) => item.id)).size, 10);
-
-  const fifty = selector.select(50, { roundNumber: 1 });
-  assert.equal(fifty.length, 50, "50-image session must contain exactly 50 images");
-  assert.equal(new Set(fifty.map((item) => item.id)).size, 50);
-
-  const allAiSelector = new RoundSelector(makeImages(25, "ai"), { rng: createSeededRng(11) });
-  const allAiRound = allAiSelector.select(20, { roundNumber: 1 });
-  assert.equal(allAiRound.length, 20, "selection must not require a 10/10 class split");
-  assert.ok(allAiRound.every((item) => item.type === "ai"), "class ratio must not be forced");
-
-  assert.equal(recencyWeight(null), 1);
-  assert.equal(recencyWeight(1), 0.15);
-  assert.equal(recencyWeight(2), 0.35);
-  assert.equal(recencyWeight(3), 0.60);
-  assert.equal(recencyWeight(4), 1);
-
-  const repeatSelector = new RoundSelector(makeImages(20, "ai"), { rng: createSeededRng(5) });
-  const first = repeatSelector.select(20, { roundNumber: 1 });
-  first.forEach((item) => repeatSelector.recordExposure(item.id, 1));
-  const second = repeatSelector.select(20, { roundNumber: 2 });
-  assert.equal(second.length, 20, "previous-round images must remain eligible");
-  assert.equal(new Set(second.map((item) => item.id)).size, 20);
-
-  const weightedImages = makeImages(40, "ai");
-  const weightedSelector = new RoundSelector(weightedImages, { rng: createSeededRng(42) });
-  for (let i = 0; i < 20; i += 1) weightedSelector.recordExposure(`img-${i}`, 1);
-  const weightedRound = weightedSelector.select(20, { roundNumber: 2 });
-  const immediateRepeats = weightedRound.filter((item) => Number(item.id.slice(4)) < 20).length;
-  assert.ok(immediateRepeats < 10, "previous-round images should be statistically deprioritized");
-
-  const refreshedSelector = new RoundSelector(weightedImages, { rng: createSeededRng(42) });
-  assert.equal(refreshedSelector.getWeight("img-0", 1), 1, "new page session must start with neutral weights");
-
-  const excluded = new Set(["img-0", "img-1", "img-2"]);
-  const exclusionRound = allAiSelector.select(20, { roundNumber: 1, excludeIds: excluded });
-  assert.ok(exclusionRound.every((item) => !excluded.has(item.id)), "excluded IDs must not be selected");
+async function testImageRotationCatalog() {
+  const images = [...makeImages(30, "ai"), ...Array.from({length: 30}, (_, index) => ({
+    id: `human-${index}`, src: `human-${index}`, type: "human"
+  }))];
+  const rotation = new ImageRotation(images, { rng: createSeededRng(42) });
+  const round = rotation.select(20);
+  assert.equal(round.length, 20);
+  assert.equal(new Set(round.map((item) => item.id)).size, 20);
+  const allAi = new ImageRotation(makeImages(25, "ai"), { rng: createSeededRng(11) });
+  assert.equal(allAi.select(20).filter((item) => item.type === "ai").length, 20,
+    "the existing game must not force a class ratio");
+  assert.throws(() => new ImageRotation([...images, images[0]]), /unique/);
+  assert.throws(() => rotation.select(61), /eligible/);
 }
 
 
@@ -2861,26 +2820,35 @@ async function testSpeedRunContracts() {
   assert.ok(cancelled.length > 0);
 
   const images = Array.from({ length: 10 }, (_, index) => ({ id: `image-${index}`, src: `source-${index}` }));
-  const deck = new SpeedRunDeck(images, { preload: async () => {}, rng: () => 0.5, ahead: 3 });
+  const rotation = new ImageRotation(images, { rng: () => 0.5 });
+  const deck = new SpeedRunDeck(rotation, { preload: async () => {}, ahead: 3 });
   const received = [];
-  for (let index = 0; index < 21; index += 1) received.push((await deck.next()).id);
+  for (let index = 0; index < 21; index += 1) {
+    const item = await deck.next();
+    received.push(item.id);
+    rotation.recordExposure(item.id); // the actual game commits after reveal
+  }
   assert.equal(new Set(received.slice(0, 10)).size, 10, "first cycle has no repeats");
   assert.equal(new Set(received.slice(10, 20)).size, 10, "second cycle has no repeats");
   assert.notEqual(received[9], received[10], "cycle boundaries must not repeat the last image");
   deck.cancel();
   assert.equal(await deck.next(), null);
-  const failed = new SpeedRunDeck(images, {
-    rng: () => 0.5,
+  const failedRotation = new ImageRotation(images, { rng: () => 0.5 });
+  const failed = new SpeedRunDeck(failedRotation, {
     preload: async (src) => { if (src.endsWith("4") || src.endsWith("7")) throw new Error("404"); }
   });
   const valid = [];
-  for (let index = 0; index < 8; index += 1) valid.push((await failed.next()).id);
+  for (let index = 0; index < 8; index += 1) {
+    const item = await failed.next();
+    valid.push(item.id);
+    failedRotation.recordExposure(item.id);
+  }
   assert.equal(new Set(valid).size, 8);
   assert.ok(!valid.includes("image-4") && !valid.includes("image-7"));
-  const exhausted = new SpeedRunDeck(images, { preload: async () => { throw new Error("offline"); } });
+  const exhausted = new SpeedRunDeck(new ImageRotation(images), { preload: async () => { throw new Error("offline"); } });
   await assert.rejects(exhausted.next(), /poprawnego obrazu|dostępnych obrazów/);
   const held = [];
-  const awaiting = new SpeedRunDeck(images, { preload: () => new Promise((resolve) => held.push(resolve)) });
+  const awaiting = new SpeedRunDeck(new ImageRotation(images), { preload: () => new Promise((resolve) => held.push(resolve)) });
   const pending = awaiting.next();
   awaiting.cancel();
   await Promise.resolve();
@@ -3982,13 +3950,13 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
   assert.ok(feedbackDuration > throwDuration, "feedback should outlive the outgoing card");
   assert.ok(game.includes("swipe.prepareHidden()"));
   assert.ok(game.includes("await swipe.reveal()"));
-  assert.ok(game.includes("selector.recordExposure(item.id, sessionNumber)"));
+  assert.ok(game.includes("rotation.recordExposure(item.id,"));
   assert.ok(
-    game.indexOf("await swipe.reveal()") < game.indexOf("selector.recordExposure(item.id, sessionNumber)"),
+    game.indexOf("await swipe.reveal()") < game.indexOf("rotation.recordExposure(item.id,"),
     "exposure must be recorded only after reveal"
   );
   assert.ok(
-    game.indexOf("selector.recordExposure(item.id, sessionNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, sessionNumber)")),
+    game.indexOf("rotation.recordExposure(item.id,") < game.indexOf('setState("playing")', game.indexOf("rotation.recordExposure(item.id,")),
     "input must unlock only after reveal/exposure"
   );
   assert.ok(!contentSource.includes("./data/images.json"));
@@ -4424,7 +4392,7 @@ await testSlidingPillLifecycle();
 testSessionConfig();
 testPlayerNameAndAnswerStreak();
 await testDynamicRoundPreloader();
-await testRoundSelector();
+await testImageRotationCatalog();
 await testExternalContentSource();
 await testAdminAuthContract();
 await testAvifConversionContracts();
@@ -4469,7 +4437,7 @@ console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");
 console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
-console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
+console.log("Shared image rotation without repeats before catalog exhaustion: PASS");
 console.log("Supabase-only static build + no repository artifact leakage: PASS");
 console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");

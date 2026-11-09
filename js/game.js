@@ -1,4 +1,4 @@
-import { RoundSelector } from "./round-selector.js";
+import { ImageRotation, browserImageRotationStorage } from "./image-rotation.js?v=1.7.1b-r2-4a";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
 import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b-r2-2";
@@ -11,6 +11,7 @@ import { preloadImage } from "./image-preloader.js";
 import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, getSpeedTimerView, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js?v=1.7.1a";
 import { advanceAnswerStreak } from "./answer-streak.js";
 import { normalizePlayerName } from "./player-name.js";
+import { LoginPlaceholderController, containsLoginWhitespace, rejectWhitespaceEdit } from "./login-placeholder.js?v=1.7.1b-r2-4a";
 import { createBrowserProfiles } from "./player-profiles.js?v=1.7.1b-r1";
 import { createBrowserResultOutbox, calculateAccuracy, createCompletedResult, newGameSessionId } from "./game-results.js?v=1.7.1b-r1";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
@@ -113,7 +114,8 @@ const resultFireworkExclusions = [
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
-let selector = null;
+let catalogImages = [];
+let rotation = null;
 let preloader = null;
 let swipe = null;
 let answerFeedback = null;
@@ -143,6 +145,8 @@ let score = 0;
 let answerStreak = 0;
 let activePlayerName = null;
 const localPlayers = createBrowserProfiles();
+const loginPlaceholder = new LoginPlaceholderController(playerNameInput);
+let lastAllowedLoginValue = "";
 const resultsOutbox = createBrowserResultOutbox();
 let creatingNewPlayer = false;
 let profileDialogIntent = null; // "start" or "manage"; never owns the gameplay lifecycle.
@@ -154,6 +158,7 @@ let finishedSessionId = null;
 let state = "boot";
 let resultSubstate = "celebration";
 let presentationRevision = 0;
+
 
 function publicViewForScreen(screen) {
   if (screen === preGameScreen) return state === "mode-setup" ? "mode-setup" : "mode-select";
@@ -313,7 +318,7 @@ function hideImageContent() {
 }
 
 function getUsableImageCount() {
-  return Math.max(0, availableImageCount - (preloader?.invalidImageIds?.size ?? 0));
+  return availableImageCount; // Availability is catalog-wide; preload failures are run-scoped.
 }
 
 function isSessionSizeAvailable(size) {
@@ -461,6 +466,7 @@ function applyActivePlayer() {
   const player = localPlayers.active;
   activePlayerName = player?.name ?? null;
   playerNameInput.value = player?.name ?? "";
+  lastAllowedLoginValue = playerNameInput.value;
   playerNameInput.readOnly = Boolean(player);
   playerNameInput.setAttribute("aria-invalid", "false");
   playerNameHelp.textContent = "";
@@ -506,6 +512,7 @@ function openProfileDialog(intent = "manage", trigger = profileButton) {
   closePlayerSwitch();
   updateProfileDialogCopy();
   profileDialogBackdrop.hidden = false;
+  loginPlaceholder.start();
   appShell.inert = true;
   profileButton.inert = true;
   themeSwitchButton.inert = true;
@@ -524,6 +531,7 @@ function closeProfileDialog({ restoreFocus = true } = {}) {
   profileDialogTrigger = null;
   deferredStartButton = null;
   creatingNewPlayer = false;
+  loginPlaceholder.stop();
   closePlayerSwitch();
   profileDialogBackdrop.hidden = true;
   document.body.classList.remove("is-profile-dialog-open");
@@ -680,8 +688,9 @@ async function loadManifest() {
   const images = validateManifest(result.manifest);
   console.info(`[AI OR HUMAN] Źródło obrazów: ${result.source}; pula: ${images.length}.`);
 
-  selector = new RoundSelector(images);
-  preloader = new RoundPreloader(selector);
+  catalogImages = images;
+  rotation = null;
+  preloader = null;
   configureSessionSizeAvailability(images.length);
 }
 
@@ -692,7 +701,8 @@ function ensureClassicManifest({ force = false } = {}) {
   classicManifestStatus = "loading";
   classicManifestError = null;
   if (force) {
-    selector = null;
+    catalogImages = [];
+    rotation = null;
     preloader = null;
     availableImageCount = 0;
   }
@@ -817,7 +827,10 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
   const revealed = await swipe.reveal();
   if (!revealed || revision !== presentationRevision || state === "error") return false;
 
-  selector.recordExposure(item.id, sessionNumber);
+  rotation.recordExposure(item.id, {
+    invalidIds: selectedGameMode === GAME_MODE_IDS.SPEED_RUN
+      ? speedDeck?.invalidIds : preloader?.invalidImageIds
+  });
   setState("playing");
   if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) {
     const seconds = getSpeedDifficulty(speedRunState.difficultyId).seconds;
@@ -830,7 +843,7 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
 }
 
 async function prepareAndStartSpeedSession(triggerButton, normalText) {
-  if (classicManifestStatus !== "ready" || !selector || state === "preparing") return;
+  if (classicManifestStatus !== "ready" || !catalogImages.length || state === "preparing") return;
   if (!getSpeedDifficulty(selectedSpeedDifficulty) || getUsableImageCount() < 1) return;
   setState("preparing");
   setButtonBusy(triggerButton, true, normalText);
@@ -838,10 +851,11 @@ async function prepareAndStartSpeedSession(triggerButton, normalText) {
   const revision = ++presentationRevision;
   speedClock.stop();
   speedDeck?.cancel();
-  const nextDeck = new SpeedRunDeck(
-    selector.images.filter((item) => !preloader.invalidImageIds.has(item.id)),
-    { preload: (src) => preloadImage(src) }
-  );
+  rotation = new ImageRotation(catalogImages, {
+    playerId: localPlayers.active.id,
+    storage: browserImageRotationStorage()
+  });
+  const nextDeck = new SpeedRunDeck(rotation, { preload: (src) => preloadImage(src) });
   speedDeck = nextDeck;
   try {
     const first = await nextDeck.next();
@@ -874,7 +888,7 @@ async function prepareAndStartSession(triggerButton, normalText) {
     return prepareAndStartSpeedSession(triggerButton, normalText);
   }
   if (selectedGameMode !== GAME_MODE_IDS.CLASSIC) return;
-  if (classicManifestStatus !== "ready" || !preloader || state === "preparing") return;
+  if (classicManifestStatus !== "ready" || !catalogImages.length || state === "preparing") return;
   if (!isSessionSizeAvailable(selectedSessionSize)) return;
 
   setState("preparing");
@@ -884,9 +898,12 @@ async function prepareAndStartSession(triggerButton, normalText) {
   try {
     const requestedSessionSize = selectedSessionSize;
     const nextSessionNumber = sessionNumber + 1;
-    const preparedDeck = await preloader.prepare(nextSessionNumber, {
-      roundSize: requestedSessionSize
+    rotation = new ImageRotation(catalogImages, {
+      playerId: localPlayers.active.id,
+      storage: browserImageRotationStorage()
     });
+    preloader = new RoundPreloader(rotation);
+    const preparedDeck = await preloader.prepare({ roundSize: requestedSessionSize });
 
     speedClock.stop();
     speedDeck?.cancel();
@@ -1114,7 +1131,9 @@ cancelPlayerSwitch.addEventListener("click", () => {
 createPlayerButton.addEventListener("click", () => {
   creatingNewPlayer = true;
   playerNameInput.value = "";
+  lastAllowedLoginValue = "";
   playerNameInput.readOnly = false;
+  loginPlaceholder.start();
   playerNameHelp.textContent = "";
   closePlayerSwitch();
   updateProfileDialogCopy();
@@ -1128,10 +1147,36 @@ playerNameInput.addEventListener("keydown", (event) => {
     confirmProfileDialog();
   }
 });
-playerNameInput.addEventListener("input", () => {
+playerNameInput.addEventListener("beforeinput", (event) => {
+  if (!event.isComposing && containsLoginWhitespace(event.data)) {
+    event.preventDefault();
+    playerNameHelp.textContent = "Login bez spacji.";
+  }
+});
+playerNameInput.addEventListener("paste", (event) => {
+  if (containsLoginWhitespace(event.clipboardData?.getData("text"))) {
+    event.preventDefault();
+    playerNameHelp.textContent = "Login bez spacji.";
+  }
+});
+function validateLiveLoginInput() {
+  const proposed = playerNameInput.value;
+  if (containsLoginWhitespace(proposed)) {
+    playerNameInput.value = rejectWhitespaceEdit(proposed, lastAllowedLoginValue);
+    playerNameHelp.textContent = "Login bez spacji.";
+    playerNameInput.setAttribute("aria-invalid", "true");
+    return;
+  }
+  lastAllowedLoginValue = proposed;
   playerNameInput.removeAttribute("aria-invalid");
   playerNameHelp.textContent = "";
+  if (proposed) loginPlaceholder.stop();
+  else if (profileDialogIntent) loginPlaceholder.start();
+}
+playerNameInput.addEventListener("input", (event) => {
+  if (!event.isComposing) validateLiveLoginInput();
 });
+playerNameInput.addEventListener("compositionend", validateLiveLoginInput);
 
 sessionSizeButtons.forEach((button) => {
   button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));
