@@ -15,7 +15,7 @@ import { LoginPlaceholderController, containsLoginWhitespace, rejectWhitespaceEd
 import { createBrowserProfiles } from "./player-profiles.js?v=1.7.1b-r1";
 import { createBrowserResultOutbox, calculateAccuracy, createCompletedResult, newGameSessionId } from "./game-results.js?v=1.7.1b-r1";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1b-r2-4b";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -593,13 +593,13 @@ function refreshPendingResults() {
 async function retryResultStorage() {
   retryPendingButton.disabled = true;
   const sessionAtStart = finishedSessionId;
-  if (state === "result") resultSaveStatus.textContent = "Zapisywanie wyniku…";
+  // Successful/pending saves are background work, not player-facing UI copy.
   const response = await resultsOutbox.retryAll(refreshPendingResults);
   refreshPendingResults();
   retryPendingButton.disabled = false;
   if (state === "result" && finishedSessionId === sessionAtStart) {
     if (!resultsOutbox.queue.some((item) => item.client_session_id === sessionAtStart)) {
-      resultSaveStatus.textContent = "Wynik zapisany.";
+      resultSaveStatus.textContent = "";
     } else {
       resultSaveStatus.textContent = response.lastError?.code === "CONFLICT"
         ? "Nie można potwierdzić zapisu. Skontaktuj się z administratorem."
@@ -1044,7 +1044,9 @@ function finishSession() {
   resultPlayerName.textContent = player.name || "";
   const accuracy = calculateAccuracy(score, attempts);
   resultAccuracy.textContent = accuracy === null ? "Brak ocenionych odpowiedzi" : `${accuracy.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}% poprawnych odpowiedzi`;
-  resultSaveStatus.textContent = queued ? "Zapisywanie wyniku…" : "Nie udało się zachować wyniku. Sprawdź pamięć przeglądarki.";
+  // No success/pending caption on the celebration screen. Surface only
+  // actionable failures; the separate profile tools handle manual retry.
+  resultSaveStatus.textContent = queued ? "" : "Nie zapisano wyniku. Spróbuj ponownie.";
   refreshPendingResults();
   resetResultPresentation();
   syncSessionSizeControls();

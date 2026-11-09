@@ -3210,14 +3210,14 @@ async function testResultCelebrationLifecycle() {
   for (const id of initialTimerIds) windowRef.run(id);
   assert.equal(cards.every((card) => card.animations.length === 1), true,
     "all five cards must be eligible to rotate independently");
-  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
-    "every active result turn must snapshot the current card-art theme before rotation starts");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === undefined), true,
+    "turning cards use the live CSS theme instead of pinning an artwork variant");
   assert.equal(cards.every((card) => card.dataset.cardTurning === "true"), true,
     "only actively turning cards own temporary 3D faces");
   // A theme change never pauses, cancels or disarms any currently running card.
   for (const card of cards) card.ownerDocument.documentElement.dataset.theme = "dark";
-  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
-    "a running turn retains its original artwork while the global theme changes immediately");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === undefined), true,
+    "theme changes do not interrupt rotation or pin the old artwork during a turn");
 
   for (const card of cards) {
     const endTransform = card.animations[0].keyframes.at(-1).transform;
@@ -3241,7 +3241,7 @@ async function testResultCelebrationLifecycle() {
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(cards.every((card) => card.dataset.cardTurning === undefined && card.dataset.turnArtwork === undefined), true,
-    "a completed full turn must release its pinned artwork so the canonical current theme becomes visible");
+    "a completed full turn must release only its temporary 3D renderer");
   assert.equal(windowRef.timers.size, 0,
     "completed turns must not reschedule after the celebration window has closed");
 
@@ -3841,15 +3841,14 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !themeControllerSource.includes('runningAnimation') &&
     !themeControllerSource.includes('theme-reveal-backdrop'),
     "original full-page transition must be restored without card-animation wait/lease or shadow reveal");
-  assert.ok(resultCelebrationSource.includes('resolveSurfaceTheme') &&
-    resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
-    resultCelebrationSource.includes('surface.dataset.turnArtwork = turnTheme') &&
-    resultCelebrationSource.includes('delete surface.dataset.turnArtwork') &&
+  assert.ok(resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
+    !resultCelebrationSource.includes('turnArtwork') &&
+    !resultCelebrationSource.includes('resolveSurfaceTheme') &&
     !resultCelebrationSource.includes('this.notifyVisualIdle()'),
-    "a turn owns a temporary card renderer and its starting artwork through completion");
-  assert.ok(/data-turn-artwork="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
-    /data-turn-artwork="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
-    "temporary turn artwork must use the same CSS inverse theme authority as flat cards");
+    "card turns must use the live theme without snapshotting the starting artwork");
+  assert.ok(/\.floating-card__surface\[data-card-turning="true"\]::before,[\s\S]*?background-image: var\(--floating-card-image\)/m.test(css) &&
+    !css.includes('data-turn-artwork'),
+    "both 3D faces must follow the shared live --floating-card-image token");
   assert.ok(!themeControllerSource.includes('result') &&
     !themeControllerSource.includes('floating-card') &&
     !themeControllerSource.includes('turnArtwork'),

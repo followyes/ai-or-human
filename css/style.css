@@ -1353,18 +1353,9 @@ body[data-public-view="result"] .game-atmosphere {
   -webkit-backface-visibility: hidden;
 }
 
-/* Capture only the theme identity of an ongoing full turn. Asset URLs remain
-   owned exclusively by the existing inverse-theme CSS tokens. */
-.floating-card__surface[data-card-turning="true"][data-turn-artwork="light"]::before,
-.floating-card__surface[data-card-turning="true"][data-turn-artwork="light"]::after {
-  background-image: var(--floating-card-image-light-ui);
-}
-
-.floating-card__surface[data-card-turning="true"][data-turn-artwork="dark"]::before,
-.floating-card__surface[data-card-turning="true"][data-turn-artwork="dark"]::after {
-  background-image: var(--floating-card-image-dark-ui);
-}
-
+/* A turning card follows the *live* theme token on both 3D faces. Never
+   pin theme artwork for the duration of a turn: the circular reveal must
+   update every card without awaiting the end of its animation. */
 .floating-card__surface[data-card-turning="true"]::before {
   transform: rotateY(0deg) translateZ(.1px);
 }
@@ -2574,28 +2565,39 @@ body.is-profile-dialog-open { overflow: hidden; }
   .profile-dialog { gap: 9px; padding: 18px; max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px); }
 }
 @media (prefers-reduced-motion: reduce) { .profile-dialog { animation: none; } }
-/* V1.7.1B-R2.1: a readable player identity, not a technical caption. */
+/* R2.4B — result identity is the hero; the game's brand is already known.
+   Avoid a framed nickname chip, technical captions and repeated labels. */
+.result-brand { gap: 10px; }
+.result-title {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: clamp(.82rem, 2.6vw, .94rem);
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
 .result-player-name {
   display: block;
-  width: fit-content;
-  max-width: min(100%, 350px);
-  margin: 8px auto 0;
-  padding: 8px 22px;
-  border: 1px solid color-mix(in srgb, var(--accent-gold) 56%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-panel) 88%, var(--accent-gold) 12%);
+  max-width: min(84vw, 430px);
+  margin: 0;
+  padding: 0 8px;
   color: var(--landing-title);
-  box-shadow: 0 7px 24px color-mix(in srgb, var(--accent-gold) 11%, transparent);
-  font-size: clamp(1.15rem, 4.3vw, 1.42rem);
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: -.012em;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 8.5vw, 3rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -.04em;
   text-align: center;
   overflow-wrap: anywhere;
+  text-wrap: balance;
+  text-shadow: 0 5px 22px color-mix(in srgb, var(--accent-gold) 14%, transparent);
 }
 .result-player-name:empty { display: none; }
+.result-brand .cosmic-divider { margin-top: 2px; }
 @media (max-height: 740px) and (orientation: portrait) {
-  .result-player-name { padding: 6px 18px; margin-top: 5px; font-size: clamp(1.08rem, 4vw, 1.3rem); }
+  .result-brand { gap: 6px; }
+  .result-player-name { font-size: clamp(1.85rem, 7.8vw, 2.55rem); }
 }
 
 /* R1 retained result persistence and trophy presentation. */
@@ -2603,7 +2605,8 @@ body.is-profile-dialog-open { overflow: hidden; }
 .pending-result-tools button { padding: 0 13px; }
 .result-trophy { display: block; position: relative; z-index: 1; font-size: clamp(1.8rem, 6vw, 2.6rem); line-height: 1.1; margin-bottom: 8px; }
 .result-accuracy { position: relative; z-index: 1; margin: 10px 0 0; color: var(--landing-title); font-size: clamp(.87rem, 3vw, 1.08rem); font-weight: 650; text-align: center; }
-.result-save-status { position: relative; z-index: 1; margin: 8px auto 0; max-width: min(90vw, 320px); color: var(--muted); font-size: .73rem; line-height: 1.35; text-align: center; }
+.result-save-status { position: relative; z-index: 1; margin: 8px auto 0; max-width: min(90vw, 320px); color: var(--incorrect); font-size: .8rem; line-height: 1.4; text-align: center; }
+.result-save-status:empty { display: none; }
 .result-score-stage { width: min(100%, 380px); margin-top: 18px; }
 .result-score-stage strong { font-size: clamp(3.3rem, 14vw, 5.1rem); }
 .result-action-stage { margin-top: 17px; }
@@ -2815,4 +2818,27 @@ body.is-profile-dialog-open { overflow: hidden; }
   .streak-reward.is-active .streak-reward__copy { animation: none; opacity: 1; transform: none; }
   .streak-reward.is-active .streak-reward__title { animation: none; background-position: 0 center; }
   .streak-reward.is-active .streak-reward__underline { animation: none; width: 40%; opacity: .6; }
+}
+
+/* R2.4B — Results keep a clear area around the player name and actions.
+   No over-sized corner card may compete with the result typography. */
+body[data-public-view="result"] .floating-card--one {
+  width: clamp(108px, 20vw, 154px);
+  top: -77px;
+  left: -68px;
+  opacity: .73;
+}
+body[data-public-view="result"] .floating-card--two {
+  width: clamp(104px, 19vw, 144px);
+  top: 58px;
+  right: -83px;
+  opacity: .54;
+}
+body[data-public-view="result"] .floating-card--five { visibility: hidden; }
+/* The bottom-left card should read as an intentional accent, not a slice. */
+body[data-public-view="result"] .floating-card--three {
+  width: clamp(82px, 22vw, 116px);
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  opacity: .43;
 }
