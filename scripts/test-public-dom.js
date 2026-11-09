@@ -42,6 +42,17 @@ for (const id of ["pending-result-tools", "pending-results-info", "retry-pending
   assert.equal(elementsById.get(id), 1, `Required offline-results control missing: #${id}`);
 }
 assert.match(html, /id="profile-dialog-backdrop"\s+hidden/, "Profile dialog must be closed initially");
+// R2.5.1: do not repeat a visible heading with an accidentally visible label.
+// Use the heading as the input's accessible name; CSS classes without definitions
+// must never be relied on for hiding duplicate product copy.
+const profileHtml = html.split('id="profile-dialog-backdrop"')[1].split('</section>')[0];
+assert.equal((profileHtml.match(/>Nazwa gracza</g) || []).length, 1, "Exactly one visible profile heading");
+assert.match(profileHtml, /id="player-name"[^>]*aria-labelledby="profile-dialog-title"/);
+assert.doesNotMatch(profileHtml, /<label[^>]*for="player-name"/, "No duplicate login label");
+assert.doesNotMatch(profileHtml, /profile-dialog-description|profile-cancel-button/, "No dead redundant profile nodes");
+assert.doesNotMatch(source, /profileDialogDescription|profileDialogCancel/, "No listeners for removed DOM nodes");
+assert.match(source, /!creatingNewPlayer && localPlayers\.active \? "Gotowe" : "Zapisz profil"/, "Existing profile must not imply that it still needs saving");
+
 // R2.4B: the player name is the result hero, without a repeated brand caption
 // or success telemetry in the main flow. Preserve textContent for aliases.
 const css = await readFile(new URL("../css/style.css", import.meta.url), "utf8");

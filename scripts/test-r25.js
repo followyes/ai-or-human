@@ -92,6 +92,8 @@ assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone
 assert.match(game, /streakMessageBag = createStreakMessageBag\(streakMessagesCache\)/);
 assert.match(game, /fetchPublicStreakMessages\(\)/);
 assert.match(publicHtml, /id="profile-dialog-title">Nazwa gracza<\/h2>/);
-assert.match(publicHtml, /class="visually-hidden" for="player-name">Nazwa gracza<\/label>/);
+assert.match(publicHtml, /id="player-name"[^>]*aria-labelledby="profile-dialog-title"/, "Input uses the visible heading as its accessible label");
+assert.doesNotMatch(publicHtml, /<label[^>]+for="player-name"/, "No duplicate field label");
+assert.equal((publicHtml.match(/>Nazwa gracza</g) || []).length, 1, "One visible player-name prompt");
 assert.doesNotMatch(publicHtml, />Twój profil<\/h2>/);
 console.log("R2.5 DYNAMIC REWARDS: milestones / shuffle / fallback / Admin API / DOM PASS");

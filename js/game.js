@@ -28,9 +28,7 @@ const playerNameInput = document.querySelector("#player-name");
 const profileButton = document.querySelector("#profile-button");
 const profileDialogBackdrop = document.querySelector("#profile-dialog-backdrop");
 const profileDialog = document.querySelector("#profile-dialog");
-const profileDialogDescription = document.querySelector("#profile-dialog-description");
 const profileDialogConfirm = document.querySelector("#profile-confirm-button");
-const profileDialogCancel = document.querySelector("#profile-cancel-button");
 const profileDialogClose = document.querySelector("#profile-dialog-close");
 const appShell = document.querySelector(".app-shell");
 const themeSwitchButton = document.querySelector("#theme-switch");
@@ -467,7 +465,7 @@ function renderLocalProfiles() {
       creatingNewPlayer = false;
       applyActivePlayer();
       closePlayerSwitch();
-      updateProfileDialogCopy();
+      updateProfileActionLabel();
       profileDialogConfirm.focus({ preventScroll: true });
     });
     localPlayerList.append(button);
@@ -503,15 +501,10 @@ function openPlayerSwitch() {
   localPlayerList.querySelector("button")?.focus({ preventScroll: true });
 }
 
-function updateProfileDialogCopy() {
-  const name = creatingNewPlayer ? null : localPlayers.active?.name;
-  profileDialogDescription.textContent = name
-    ? `Grasz jako ${name}.`
-    : "";
-  profileDialogDescription.hidden = !name;
+function updateProfileActionLabel() {
   profileDialogConfirm.textContent = profileDialogIntent === "start"
     ? "Graj"
-    : "Zapisz profil";
+    : (!creatingNewPlayer && localPlayers.active ? "Gotowe" : "Zapisz profil");
 }
 
 function openProfileDialog(intent = "manage", trigger = profileButton) {
@@ -523,7 +516,7 @@ function openProfileDialog(intent = "manage", trigger = profileButton) {
   creatingNewPlayer = false;
   applyActivePlayer();
   closePlayerSwitch();
-  updateProfileDialogCopy();
+  updateProfileActionLabel();
   profileDialogBackdrop.hidden = false;
   loginPlaceholder.start();
   appShell.inert = true;
@@ -1116,7 +1109,6 @@ profileButton.addEventListener("click", () => {
   openProfileDialog("manage", profileButton);
 });
 profileDialogConfirm.addEventListener("click", confirmProfileDialog);
-profileDialogCancel.addEventListener("click", () => closeProfileDialog());
 profileDialogClose.addEventListener("click", () => closeProfileDialog());
 profileDialogBackdrop.addEventListener("click", (event) => {
   if (event.target === profileDialogBackdrop) closeProfileDialog();
@@ -1155,7 +1147,7 @@ createPlayerButton.addEventListener("click", () => {
   loginPlaceholder.start();
   playerNameHelp.textContent = "";
   closePlayerSwitch();
-  updateProfileDialogCopy();
+  updateProfileActionLabel();
   playerNameInput.focus({ preventScroll: false });
 });
 retryPendingButton.addEventListener("click", () => void retryResultStorage());

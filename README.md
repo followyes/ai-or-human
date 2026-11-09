@@ -2,7 +2,7 @@
 
 Mobilna gra przeglądarkowa: rozpoznawanie, czy obraz stworzył człowiek, czy AI. GitHub Pages + Supabase.
 
-## Aktualne funkcje (baseline V1.7.1B-R2.5)
+## Aktualne funkcje (baseline V1.7.1B-R2.5.1)
 
 - **Klasyczny:** 20, 50 lub 100 obrazów bez powtórek aż do wyczerpania puli (także między rozgrywkami), zależnie od dostępności puli.
 - **Speed Run:** łatwy 7 s / 3 życia, średni 5 s / 2 życia, trudny 3 s / 1 życie; gra do utraty żyć.
@@ -13,7 +13,7 @@ Mobilna gra przeglądarkowa: rozpoznawanie, czy obraz stworzył człowiek, czy A
 
 ## Interfejs
 
-Ekran główny służy wyborowi trybu. Profil wybiera się w osobnym, minimalnym oknie przed startem sesji, jeśli brak aktywnego gracza; ikona profilu jest w prawym górnym rogu, a motyw LIGHT/DARK w lewym. Nie pokazujemy w normalnym UI szczegółów technicznych ani redundantnych instrukcji. Zobacz wiążące zasady w `OUTSIDE_REPO/AGENTS.md` (w paczce projektowej, **nie** na GitHubie).
+Ekran główny służy wyborowi trybu. Profil wybiera się w osobnym oknie z jednym widocznym nagłówkiem „Nazwa gracza”, bez podwójnej etykiety; input korzysta z tego nagłówka jako nazwy dostępnej. Dla aktywnego profilu potwierdzenie brzmi „Gotowe”. ikona profilu jest w prawym górnym rogu, a motyw LIGHT/DARK w lewym. Nie pokazujemy w normalnym UI szczegółów technicznych ani redundantnych instrukcji. Zobacz wiążące zasady w `OUTSIDE_REPO/AGENTS.md` (w paczce projektowej, **nie** na GitHubie).
 
 Historia obrazów jest zapisywana w przeglądarce dla Player ID. Oba tryby korzystają z jednej rotacji, a do historii trafiają tylko obrazy rzeczywiście wyświetlone graczowi. Wyczyszczenie danych strony lub zmiana urządzenia rozpoczyna historię od nowa.
 
@@ -38,6 +38,6 @@ Gracze mogą anonimowo wysyłać wyniki, ale nie mogą ich czytać ani usuwać. 
 
 ## Status i dokumentacja
 
-**R2.5: LOCAL NODE/BUILD/CHROMIUM PASS; produkcyjne SQL R1/R2/R2.5, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
+**R2.5.1: LOCAL NODE/BUILD/CHROMIUM PASS; produkcyjne SQL R1/R2/R2.5, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
 
 Dokumentacja poza repo: `AGENTS.md` (zasady), `ROADMAP.md` (plan), `CHANGELOG.md` (pełna historia), `CONTINUE_IN_NEW_CHAT.md` (kontynuacja), `QA_CURRENT.md` (otwarte testy), `README_FIRST.txt` (wdrożenie). Historycznych opisów wydań nie powielamy w README.
