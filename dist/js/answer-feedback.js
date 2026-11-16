@@ -2,9 +2,7 @@ const DEFAULTS = Object.freeze({
   duration: 950,
   reducedDuration: 700,
   timeoutDuration: 2050,
-  timeoutReducedDuration: 1850,
-  milestoneDuration: 2350,
-  milestoneReducedDuration: 2050
+  timeoutReducedDuration: 1850
 });
 
 function prefersReducedMotion() {
@@ -42,7 +40,7 @@ export class AnswerFeedbackController {
     }
 
     this.animations = [];
-    this.root.classList.remove("is-active", "is-correct", "is-incorrect", "is-timeout", "is-streak");
+    this.root.classList.remove("is-active", "is-correct", "is-incorrect", "is-timeout");
     this.root.setAttribute("aria-hidden", "true");
     this.root.removeAttribute("data-result");
 
@@ -50,35 +48,31 @@ export class AnswerFeedbackController {
     if (this.label) this.label.textContent = "";
   }
 
-  async play(correct, { milestone = null } = {}) {
+  async play(correct) {
     this.clear();
     const timeout = correct === "timeout";
     const isCorrect = correct === true;
-    const streakMilestone = isCorrect && [3, 10].includes(milestone) ? milestone : null;
 
     const revision = ++this.revision;
     const reduced = prefersReducedMotion();
     const duration = timeout
       ? (reduced ? this.options.timeoutReducedDuration : this.options.timeoutDuration)
-      : streakMilestone
-        ? (reduced ? this.options.milestoneReducedDuration : this.options.milestoneDuration)
-        : (reduced ? this.options.reducedDuration : this.options.duration);
+      : (reduced ? this.options.reducedDuration : this.options.duration);
     const stateClass = timeout ? "is-timeout" : (isCorrect ? "is-correct" : "is-incorrect");
 
     this.root.classList.add("is-active", stateClass);
-    if (streakMilestone) this.root.classList.add("is-streak");
     this.root.dataset.result = timeout ? "timeout" : (isCorrect ? "correct" : "incorrect");
     this.root.setAttribute("aria-hidden", "false");
 
-    if (this.icon) this.icon.textContent = timeout ? "⌛" : (streakMilestone ? "★" : (isCorrect ? "✓" : "×"));
-    if (this.label) this.label.textContent = timeout ? "CZAS MINĄŁ" : (streakMilestone ? `DOBRA ROBOTA! ${streakMilestone} Z RZĘDU` : (isCorrect ? "DOBRZE" : "ŹLE"));
+    if (this.icon) this.icon.textContent = timeout ? "⌛" : (isCorrect ? "✓" : "×");
+    if (this.label) this.label.textContent = timeout ? "CZAS MINĄŁ" : (isCorrect ? "DOBRZE" : "ŹLE");
 
     if (reduced) {
       const animation = this.root.animate(
         [
           { opacity: 0, transform: "translate3d(0,0,0) scale(.995)" },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.05 : (streakMilestone ? 0.06 : 0.14) },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.95 : (streakMilestone ? 0.94 : 0.80) },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.05 : 0.14 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.95 : 0.80 },
           { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
         ],
         { duration, easing: "ease-out", fill: "forwards" }
@@ -88,8 +82,8 @@ export class AnswerFeedbackController {
       const main = this.root.animate(
         [
           { opacity: 0, transform: "translate3d(0,0,0) scale(.985)" },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.08 : (streakMilestone ? 0.07 : 0.12) },
-          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.92 : (streakMilestone ? 0.93 : 0.78) },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.08 : 0.12 },
+          { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: timeout ? 0.92 : 0.78 },
           { opacity: 0, transform: "translate3d(0,0,0) scale(1.008)" }
         ],
         { duration, easing: "cubic-bezier(.2,.75,.3,1)", fill: "forwards" }
@@ -111,7 +105,7 @@ export class AnswerFeedbackController {
           ];
 
       const ring = this.ring?.animate?.(ringFrames, {
-        duration: timeout || streakMilestone ? 880 : duration,
+        duration: timeout ? 880 : duration,
         easing: "cubic-bezier(.15,.7,.25,1)",
         fill: "forwards"
       });
@@ -123,14 +117,14 @@ export class AnswerFeedbackController {
           { opacity: isCorrect ? .48 : .54, transform: "translate(-50%, -50%) scale(1.08)", offset: 0.48 },
           { opacity: 0, transform: "translate(-50%, -50%) scale(1.34)" }
         ],
-        { duration: timeout || streakMilestone ? 880 : duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
+        { duration: timeout ? 880 : duration, easing: "cubic-bezier(.16,.75,.22,1)", fill: "forwards" }
       );
 
-      const pillFrames = (timeout || streakMilestone)
+      const pillFrames = timeout
         ? [
             { opacity: 0, transform: "translate3d(0,8px,0) scale(.94)" },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: streakMilestone ? 0.07 : 0.08 },
-            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: streakMilestone ? 0.93 : 0.92 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.08 },
+            { opacity: 1, transform: "translate3d(0,0,0) scale(1)", offset: 0.92 },
             { opacity: 0, transform: "translate3d(0,0,0) scale(1)" }
           ]
         : isCorrect
@@ -172,7 +166,7 @@ export class AnswerFeedbackController {
               { transform: "rotate(0deg) scale(1)", offset: 0.44 },
               { transform: "rotate(0deg) scale(1)" }
             ],
-        { duration: timeout || streakMilestone ? 880 : duration, easing: "cubic-bezier(.2,.78,.28,1)", fill: "forwards" }
+        { duration: timeout ? 880 : duration, easing: "cubic-bezier(.2,.78,.28,1)", fill: "forwards" }
       );
 
       this.animations = compactAnimations(main, ring, burst, pill, icon);

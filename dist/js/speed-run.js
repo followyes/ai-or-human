@@ -116,70 +116,45 @@ export class SpeedDeadlineClock {
   }
 }
 
-// Rolling, bounded prefetch. Preloads in a new cycle may overlap with the
-// current cycle, but each item is issued once per cycle. Broken images are
-// retired from the current run, rather than showing a broken card.
+// Bounded prefetch driven by the same Player ID rotation as Classic.
+// Pending images are only virtual exposures. Only the game's successful reveal
+// commits to ImageRotation; cancelled / failed preload never consumes an image.
 export class SpeedRunDeck {
-  constructor(images, { preload, rng = Math.random, ahead = 3 } = {}) {
-    if (!Array.isArray(images) || !images.length || typeof preload !== "function") {
-      throw new TypeError("SpeedRunDeck requires images and a preload function");
+  constructor(rotation, { preload, ahead = 3 } = {}) {
+    if (!rotation || typeof rotation.select !== "function" ||
+        !Array.isArray(rotation.images) || !rotation.images.length || typeof preload !== "function") {
+      throw new TypeError("SpeedRunDeck requires an ImageRotation and preload function");
     }
     if (!Number.isInteger(ahead) || ahead < 1) throw new RangeError("ahead must be positive");
-    this.images = [...images];
+    this.rotation = rotation;
     this.preload = preload;
-    this.rng = rng;
-    this.ahead = Math.min(ahead, images.length);
+    this.ahead = Math.min(ahead, rotation.images.length);
     this.invalidIds = new Set();
-    this.cycle = [];
-    this.cursor = 0;
-    this.lastIssuedId = null;
     this.pending = [];
     this.cancelled = false;
   }
 
-  shuffle() {
-    const items = this.images.filter((item) => !this.invalidIds.has(item.id));
-    for (let index = items.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(this.rng() * (index + 1));
-      [items[index], items[swapIndex]] = [items[swapIndex], items[index]];
-    }
-    if (items.length > 1 && items[0].id === this.lastIssuedId) {
-      [items[0], items[1]] = [items[1], items[0]];
-    }
-    this.cycle = items;
-    this.cursor = 0;
-  }
-
-  issue() {
-    if (this.cancelled) return null;
-    if (this.cursor >= this.cycle.length) this.shuffle();
-    while (this.cursor < this.cycle.length) {
-      const item = this.cycle[this.cursor++];
-      if (this.invalidIds.has(item.id)) continue;
-      this.lastIssuedId = item.id;
-      return item;
-    }
-    // Remaining images may have failed after the cycle was made.
-    this.shuffle();
-    const item = this.cycle[this.cursor++];
-    if (item) {
-      this.lastIssuedId = item.id;
-    }
-    return item ?? null;
-  }
-
   fill() {
     while (!this.cancelled && this.pending.length < this.ahead) {
-      const item = this.issue();
+      let item;
+      try {
+        item = this.rotation.select(1, {
+          priorIds: this.pending.map((entry) => entry.item.id),
+          invalidIds: this.invalidIds
+        })[0];
+      } catch {
+        // Every eligible image may already be reserved by bounded prefetch.
+        break;
+      }
       if (!item) break;
-      const result = Promise.resolve()
+      const promise = Promise.resolve()
         .then(() => this.preload(item.src))
-        .then(() => (this.cancelled ? null : item))
+        .then(() => this.cancelled ? null : item)
         .catch(() => {
           this.invalidIds.add(item.id);
           return null;
         });
-      this.pending.push(result);
+      this.pending.push({ item, promise });
     }
   }
 
@@ -187,11 +162,13 @@ export class SpeedRunDeck {
     while (!this.cancelled) {
       this.fill();
       if (!this.pending.length) throw new Error("Brak dostępnych obrazów do Speed Run.");
-      const item = await this.pending.shift();
+      const entry = this.pending.shift();
+      const item = await entry.promise;
       if (this.cancelled) return null;
-      this.fill();
+      // Do not fill here: the returned card has not yet been revealed, so its
+      // ID has not been recorded. The next() call follows the reveal in game.js.
       if (item && !this.invalidIds.has(item.id)) return item;
-      if (this.invalidIds.size >= this.images.length) {
+      if (this.invalidIds.size >= this.rotation.images.length) {
         throw new Error("Nie udało się pobrać żadnego poprawnego obrazu do Speed Run.");
       }
     }

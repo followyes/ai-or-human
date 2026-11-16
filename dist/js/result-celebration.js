@@ -190,10 +190,6 @@ function animationFinished(animation) {
   return Promise.resolve(animation?.finished).catch(() => undefined);
 }
 
-function resolveSurfaceTheme(surface) {
-  return surface?.ownerDocument?.documentElement?.dataset?.theme === "dark" ? "dark" : "light";
-}
-
 function normalizeFireworkSlot(slot) {
   if (!slot) return null;
   if (slot.element && Array.isArray(slot.particles)) {
@@ -381,9 +377,7 @@ export class ResultCelebrationController {
     const angle = getFullTurnAngle(this.random, turns);
     const duration = randomInteger(this.random, this.options.oneTurnDurationMinMs, this.options.oneTurnDurationMaxMs)
       + (turns - 1) * randomInteger(this.random, this.options.extraTurnDurationMinMs, this.options.extraTurnDurationMaxMs);
-    const turnTheme = resolveSurfaceTheme(surface);
     surface.dataset.cardTurning = "true";
-    surface.dataset.turnArtwork = turnTheme;
 
     let animation;
     try {
@@ -393,7 +387,6 @@ export class ResultCelebrationController {
       );
     } catch {
       delete surface.dataset.cardTurning;
-      delete surface.dataset.turnArtwork;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
       this.scheduleCard(surface, index, nextDelay);
       return false;
@@ -405,7 +398,6 @@ export class ResultCelebrationController {
       if (this.activeCardAnimations.get(surface) === animation) this.activeCardAnimations.delete(surface);
       delete surface.dataset.resultTurnCard;
       delete surface.dataset.cardTurning;
-      delete surface.dataset.turnArtwork;
       if (!this.isSchedulingAllowed()) return;
       const nextDelay = randomInteger(this.random, this.options.idleTurnDelayMinMs, this.options.idleTurnDelayMaxMs);
       this.scheduleCard(surface, index, nextDelay);

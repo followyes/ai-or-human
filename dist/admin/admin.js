@@ -28,8 +28,16 @@ import {
 import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
+import { AdminResultsPanel } from "../js/admin-results-ui.js";
+import { AdminStreakPanel } from "../js/admin-streak-ui.js";
 
 const adminCard = document.querySelector("#admin-card");
+const tabLibrary = document.querySelector("#tab-library");
+const tabResults = document.querySelector("#tab-results");
+const tabStreak = document.querySelector("#tab-streak");
+const libraryWorkspace = document.querySelector("#admin-workspace");
+const resultsWorkspace = document.querySelector("#results-workspace");
+const streakWorkspace = document.querySelector("#streak-workspace");
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
 const bootView = document.querySelector("#boot-view");
@@ -99,6 +107,50 @@ let singleDeleteStats = createSingleDeleteStats();
 let sessionRefreshPromise = null;
 const uploadPreparationWorker = new UploadPreparationWorkerClient();
 
+
+const resultsPanel = new AdminResultsPanel({
+  root: resultsWorkspace,
+  getSession: async () => await refreshCurrentSessionForMutation(),
+  onAuthFailure: () => {
+    clearAdminSession();
+    showLogin("Sesja administratora wygasła lub brak uprawnień.");
+  }
+});
+const streakPanel = new AdminStreakPanel({
+  root: streakWorkspace,
+  getSession: async () => await refreshCurrentSessionForMutation(),
+  onAuthFailure: () => {
+    clearAdminSession();
+    showLogin("Sesja administratora wygasła lub brak uprawnień.");
+  }
+});
+let activeAdminTab = "library";
+const adminTabs = [
+  { id: "library", button: tabLibrary, workspace: libraryWorkspace },
+  { id: "results", button: tabResults, workspace: resultsWorkspace },
+  { id: "streak", button: tabStreak, workspace: streakWorkspace }
+];
+function applyAdminTab(tab) {
+  activeAdminTab = tab;
+  for (const entry of adminTabs) {
+    const selected = entry.id === tab;
+    entry.button.setAttribute("aria-selected", String(selected));
+    entry.button.tabIndex = selected ? 0 : -1;
+    entry.workspace.hidden = !selected;
+    entry.workspace.inert = !selected;
+  }
+  resultsPanel.setActive(tab === "results");
+  streakPanel.setActive(tab === "streak");
+}
+function switchAdminTab(tab) {
+  if (!currentSession || !adminTabs.some(entry => entry.id === tab)) return;
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
+  if (tab !== activeAdminTab) applyAdminTab(tab);
+}
+function resetAdminTab() { applyAdminTab("library"); }
+tabLibrary.addEventListener("click", () => switchAdminTab("library"));
+tabResults.addEventListener("click", () => switchAdminTab("results"));
+tabStreak.addEventListener("click", () => switchAdminTab("streak"));
 
 const BOOT_REVEAL_DELAY_MS = 320;
 const VIEW_NODES = Object.freeze({
@@ -188,7 +240,9 @@ function syncBusyControls() {
   fileInput.disabled = contentInteractionBusy || !categorySelected;
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
-  logoutButton.disabled = authBusy || contentInteractionBusy;
+  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
+  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
+  tabResults.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
   const noVisibleRows = filteredInventoryRows().length === 0;
   inventoryMoveButton.disabled = contentInteractionBusy || noVisibleRows;
   inventoryDeleteManyButton.disabled = contentInteractionBusy || noVisibleRows;
@@ -941,6 +995,9 @@ async function handleBulkMove(targetClass) {
 }
 
 function showLogin(message = "", { morph = true, focus = true } = {}) {
+  resultsPanel.clear();
+  streakPanel.clear();
+  resetAdminTab();
   currentSession = null;
   inventoryRows = [];
   inventoryActionMode = "idle";
@@ -961,6 +1018,7 @@ function showLogin(message = "", { morph = true, focus = true } = {}) {
 
 function showAuthorized(session, { morph = true, focus = false } = {}) {
   currentSession = session;
+  resetAdminTab();
   loginStatus.textContent = "";
   setAuthBusy(false);
   setBootVisible(false);
@@ -1277,7 +1335,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy) return;
+  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
 
   const session = currentSession;
   setAuthBusy(true);

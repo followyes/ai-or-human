@@ -1,19 +1,22 @@
-import { RoundSelector } from "./round-selector.js";
+import { ImageRotation, browserImageRotationStorage } from "./image-rotation.js?v=1.7.1b-r2-4a";
 import { RoundPreloader, loadImageIntoElement } from "./image-preloader.js";
 import { SwipeController } from "./swipe-controller.js";
-import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b";
+import { AnswerFeedbackController } from "./answer-feedback.js?v=1.7.1b-r2-2";
+import { StreakCelebrationController } from "./streak-celebration.js?v=1.7.1b-r2-5";
 import { SessionSizePicker } from "./session-size-picker.js";
 import { loadContentManifest } from "./content-source.js";
 import { initializeThemeController } from "./theme-controller.js?v=1.7.1";
 import { GAME_MODE_IDS, getGameModeDefinition, isGameModeSelectable } from "./game-modes.js";
 import { preloadImage } from "./image-preloader.js";
 import { SpeedDeadlineClock, SpeedRunDeck, createSpeedRunState, resolveSpeedRunOutcome, getSpeedDifficulty, getSpeedTimerView, DEFAULT_SPEED_DIFFICULTY } from "./speed-run.js?v=1.7.1a";
-import { advanceAnswerStreak } from "./answer-streak.js";
+import { advanceAnswerStreak } from "./answer-streak.js?v=1.7.1b-r2-5";
+import { createStreakMessageBag, fetchPublicStreakMessages, DEFAULT_STREAK_MESSAGES } from "./streak-messages.js?v=1.7.1b-r2-5";
 import { normalizePlayerName } from "./player-name.js";
+import { LoginPlaceholderController, containsLoginWhitespace, rejectWhitespaceEdit } from "./login-placeholder.js?v=1.7.1b-r2-4a";
 import { createBrowserProfiles } from "./player-profiles.js?v=1.7.1b-r1";
 import { createBrowserResultOutbox, calculateAccuracy, createCompletedResult, newGameSessionId } from "./game-results.js?v=1.7.1b-r1";
 import { PreGameTransitionCoordinator } from "./pre-game-transition.js";
-import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1";
+import { ResultCelebrationController } from "./result-celebration.js?v=1.7.1b-r2-4b";
 import {
   DEFAULT_SESSION_SIZE,
   MIN_SESSION_SIZE,
@@ -22,6 +25,13 @@ import {
 } from "./session-config.js?v=1.7.1b";
 
 const playerNameInput = document.querySelector("#player-name");
+const profileButton = document.querySelector("#profile-button");
+const profileDialogBackdrop = document.querySelector("#profile-dialog-backdrop");
+const profileDialog = document.querySelector("#profile-dialog");
+const profileDialogConfirm = document.querySelector("#profile-confirm-button");
+const profileDialogClose = document.querySelector("#profile-dialog-close");
+const appShell = document.querySelector(".app-shell");
+const themeSwitchButton = document.querySelector("#theme-switch");
 const playerNameHelp = document.querySelector("#player-name-help");
 const resultPlayerName = document.querySelector("#result-player-name");
 const resultAccuracy = document.querySelector("#result-accuracy");
@@ -83,6 +93,7 @@ const errorMessage = document.querySelector("#error-message");
 const imageCard = document.querySelector("#image-card");
 const gameImage = document.querySelector("#game-image");
 const answerFeedbackElement = document.querySelector("#answer-feedback");
+const streakCelebrationElement = document.querySelector("#streak-celebration");
 const resultFloatingCardSurfaces = [...document.querySelectorAll(".floating-card__surface")];
 const resultFireworkBursts = [...document.querySelectorAll("[data-result-firework]")].map((element) => ({
   element,
@@ -102,10 +113,12 @@ const resultFireworkExclusions = [
 const humanHint = imageCard.querySelector(".choice-hint-human");
 const aiHint = imageCard.querySelector(".choice-hint-ai");
 
-let selector = null;
+let catalogImages = [];
+let rotation = null;
 let preloader = null;
 let swipe = null;
 let answerFeedback = null;
+let streakCelebration = null;
 let sessionSizePickers = [];
 let themeController = null;
 let preGameTransition = null;
@@ -129,16 +142,32 @@ let availableImageCount = 0;
 let currentIndex = 0;
 let score = 0;
 let answerStreak = 0;
+let streakMessagesCache = [...DEFAULT_STREAK_MESSAGES];
+let streakMessageBag = createStreakMessageBag(streakMessagesCache);
+let streakFetchInFlight = null;
+function refreshStreakMessages() {
+  if (streakFetchInFlight) return streakFetchInFlight;
+  streakFetchInFlight = fetchPublicStreakMessages()
+    .then((messages) => { streakMessagesCache = messages; })
+    .finally(() => { streakFetchInFlight = null; });
+  return streakFetchInFlight;
+}
 let activePlayerName = null;
 const localPlayers = createBrowserProfiles();
+const loginPlaceholder = new LoginPlaceholderController(playerNameInput);
+let lastAllowedLoginValue = "";
 const resultsOutbox = createBrowserResultOutbox();
 let creatingNewPlayer = false;
+let profileDialogIntent = null; // "start" or "manage"; never owns the gameplay lifecycle.
+let profileDialogTrigger = null;
+let deferredStartButton = null;
 let activeGameSessionId = null;
 let activeSessionProfile = null;
 let finishedSessionId = null;
 let state = "boot";
 let resultSubstate = "celebration";
 let presentationRevision = 0;
+
 
 function publicViewForScreen(screen) {
   if (screen === preGameScreen) return state === "mode-setup" ? "mode-setup" : "mode-select";
@@ -158,6 +187,9 @@ function refreshSessionSizePickersSoon() {
 function applyPublicView(screen, { view = publicViewForScreen(screen), themeSwitchVisible = view !== "gameplay" } = {}) {
   document.body.dataset.publicView = view;
   themeController?.setVisible(themeSwitchVisible);
+  const profileVisible = view === "mode-select" || view === "mode-setup" || view === "result";
+  profileButton.hidden = !profileVisible;
+  profileButton.disabled = !profileVisible;
 }
 
 function showOnly(screen, options = {}) {
@@ -240,6 +272,7 @@ function openResultReplaySetup() {
   if (state !== "result" || resultSubstate === "replay-setup") return;
   resultCelebration?.leave();
   setResultSubstate("replay-setup", { focus: true });
+  void refreshStreakMessages();
 }
 
 function returnResultToHome() {
@@ -264,6 +297,7 @@ function returnResultToHome() {
   preGameTransition?.showImmediately(modeSelectPanel, preGamePanels);
   setState("mode-select");
   showOnly(preGameScreen, { view: "mode-select", themeSwitchVisible: true });
+  void refreshStreakMessages();
 
   window.requestAnimationFrame(() => {
     classicModeButton?.focus({ preventScroll: true });
@@ -286,6 +320,7 @@ function updateSwipeHints(progress, { decisionProgress = null } = {}) {
 
 function clearCardOverlays() {
   answerFeedback?.clear();
+  streakCelebration?.clear();
   updateSwipeHints(0);
 }
 
@@ -294,7 +329,7 @@ function hideImageContent() {
 }
 
 function getUsableImageCount() {
-  return Math.max(0, availableImageCount - (preloader?.invalidImageIds?.size ?? 0));
+  return availableImageCount; // Availability is catalog-wide; preload failures are run-scoped.
 }
 
 function isSessionSizeAvailable(size) {
@@ -430,6 +465,8 @@ function renderLocalProfiles() {
       creatingNewPlayer = false;
       applyActivePlayer();
       closePlayerSwitch();
+      updateProfileActionLabel();
+      profileDialogConfirm.focus({ preventScroll: true });
     });
     localPlayerList.append(button);
   }
@@ -440,11 +477,13 @@ function applyActivePlayer() {
   const player = localPlayers.active;
   activePlayerName = player?.name ?? null;
   playerNameInput.value = player?.name ?? "";
+  lastAllowedLoginValue = playerNameInput.value;
   playerNameInput.readOnly = Boolean(player);
   playerNameInput.setAttribute("aria-invalid", "false");
-  playerNameHelp.textContent = localPlayers.persisted
-    ? "Profil zapamiętany w tej przeglądarce."
-    : "Pamięć przeglądarki niedostępna — profil może zniknąć po zamknięciu strony.";
+  playerNameHelp.textContent = "";
+  profileButton.setAttribute("aria-label", player ? `Profil gracza: ${player.name}` : "Wybierz gracza");
+  profileButton.title = player ? `Profil: ${player.name}` : "Profil gracza";
+  profileButton.classList.toggle("has-profile", Boolean(player));
   renderLocalProfiles();
 }
 
@@ -459,28 +498,95 @@ function openPlayerSwitch() {
   playerSwitchPanel.hidden = false;
   playerSwitchPanel.inert = false;
   changePlayerButton.setAttribute("aria-expanded", "true");
+  localPlayerList.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function updateProfileActionLabel() {
+  profileDialogConfirm.textContent = profileDialogIntent === "start"
+    ? "Graj"
+    : (!creatingNewPlayer && localPlayers.active ? "Gotowe" : "Zapisz profil");
+}
+
+function openProfileDialog(intent = "manage", trigger = profileButton) {
+  if (profileDialogIntent || preGameNavigationPending || preGameTransition?.busy ||
+    state === "preparing" || state === "playing" || state === "answering" || state === "presenting") return false;
+  if (intent !== "manage" && intent !== "start") return false;
+  profileDialogIntent = intent;
+  profileDialogTrigger = trigger;
+  creatingNewPlayer = false;
+  applyActivePlayer();
+  closePlayerSwitch();
+  updateProfileActionLabel();
+  profileDialogBackdrop.hidden = false;
+  loginPlaceholder.start();
+  appShell.inert = true;
+  profileButton.inert = true;
+  themeSwitchButton.inert = true;
+  document.body.classList.add("is-profile-dialog-open");
+  window.requestAnimationFrame(() => {
+    if (!profileDialogIntent) return;
+    (localPlayers.active ? profileDialogConfirm : playerNameInput).focus({ preventScroll: true });
+  });
+  return true;
+}
+
+function closeProfileDialog({ restoreFocus = true } = {}) {
+  if (!profileDialogIntent) return;
+  const trigger = profileDialogTrigger;
+  profileDialogIntent = null;
+  profileDialogTrigger = null;
+  deferredStartButton = null;
+  creatingNewPlayer = false;
+  loginPlaceholder.stop();
+  closePlayerSwitch();
+  profileDialogBackdrop.hidden = true;
+  document.body.classList.remove("is-profile-dialog-open");
+  appShell.inert = false;
+  profileButton.inert = false;
+  themeSwitchButton.inert = false;
+  applyActivePlayer();
+  if (restoreFocus && trigger && !trigger.disabled && !trigger.hidden) {
+    trigger.focus({ preventScroll: true });
+  }
 }
 
 function ensurePlayerName() {
+  if (!creatingNewPlayer && localPlayers.active) return localPlayers.active.name;
   const name = normalizePlayerName(playerNameInput.value);
   playerNameInput.setAttribute("aria-invalid", String(!name));
   if (!name) {
-    playerNameHelp.textContent = "Wpisz jeden wyraz (maks. 20 znaków, bez spacji).";
+    playerNameHelp.textContent = "Wpisz jedno słowo (maks. 20 znaków).";
     playerNameInput.focus({ preventScroll: false });
     return null;
   }
-  let profile = localPlayers.active;
-  if (creatingNewPlayer || !profile) {
-    try { profile = localPlayers.create(name); }
-    catch (error) {
-      playerNameHelp.textContent = error.message;
-      return null;
-    }
-    creatingNewPlayer = false;
-    closePlayerSwitch();
+  try { localPlayers.create(name); }
+  catch (error) {
+    playerNameHelp.textContent = error.message;
+    return null;
   }
+  creatingNewPlayer = false;
   applyActivePlayer();
-  return profile.name;
+  return name;
+}
+
+function promptStartSession(triggerButton, normalText = "Rozpocznij") {
+  if (profileDialogIntent || triggerButton.disabled || state === "preparing") return;
+  if (!localPlayers.active) {
+    deferredStartButton = triggerButton;
+    openProfileDialog("start", triggerButton);
+    return;
+  }
+  void prepareAndStartSession(triggerButton, normalText);
+}
+
+function confirmProfileDialog() {
+  if (!profileDialogIntent || !ensurePlayerName()) return;
+  const intent = profileDialogIntent;
+  const trigger = deferredStartButton;
+  closeProfileDialog({ restoreFocus: intent !== "start" });
+  if (intent === "start" && trigger && !trigger.disabled) {
+    void prepareAndStartSession(trigger, "Rozpocznij");
+  }
 }
 
 function refreshPendingResults() {
@@ -493,13 +599,13 @@ function refreshPendingResults() {
 async function retryResultStorage() {
   retryPendingButton.disabled = true;
   const sessionAtStart = finishedSessionId;
-  if (state === "result") resultSaveStatus.textContent = "Zapisywanie wyniku…";
+  // Successful/pending saves are background work, not player-facing UI copy.
   const response = await resultsOutbox.retryAll(refreshPendingResults);
   refreshPendingResults();
   retryPendingButton.disabled = false;
   if (state === "result" && finishedSessionId === sessionAtStart) {
     if (!resultsOutbox.queue.some((item) => item.client_session_id === sessionAtStart)) {
-      resultSaveStatus.textContent = "Wynik zapisany.";
+      resultSaveStatus.textContent = "";
     } else {
       resultSaveStatus.textContent = response.lastError?.code === "CONFLICT"
         ? "Nie można potwierdzić zapisu. Skontaktuj się z administratorem."
@@ -534,6 +640,8 @@ function showFatalError(message) {
   presentationRevision += 1;
   speedClock.stop();
   speedDeck?.cancel();
+  streakCelebration?.clear();
+  answerFeedback?.clear();
   setState("error");
   swipe?.resetVisuals();
   errorMessage.textContent = message;
@@ -586,8 +694,9 @@ async function loadManifest() {
   const images = validateManifest(result.manifest);
   console.info(`[AI OR HUMAN] Źródło obrazów: ${result.source}; pula: ${images.length}.`);
 
-  selector = new RoundSelector(images);
-  preloader = new RoundPreloader(selector);
+  catalogImages = images;
+  rotation = null;
+  preloader = null;
   configureSessionSizeAvailability(images.length);
 }
 
@@ -598,7 +707,8 @@ function ensureClassicManifest({ force = false } = {}) {
   classicManifestStatus = "loading";
   classicManifestError = null;
   if (force) {
-    selector = null;
+    catalogImages = [];
+    rotation = null;
     preloader = null;
     availableImageCount = 0;
   }
@@ -634,8 +744,6 @@ function prefetchClassicManifestAfterFirstPaint() {
 async function openGameMode(modeId) {
   if (preGameNavigationPending || preGameTransition?.busy || state === "preparing") return false;
   if (!isGameModeSelectable(modeId)) return false;
-  if (!ensurePlayerName()) return false;
-
   const mode = getGameModeDefinition(modeId);
   if (!mode || ![GAME_MODE_IDS.CLASSIC, GAME_MODE_IDS.SPEED_RUN].includes(mode.id)) return false;
 
@@ -725,7 +833,10 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
   const revealed = await swipe.reveal();
   if (!revealed || revision !== presentationRevision || state === "error") return false;
 
-  selector.recordExposure(item.id, sessionNumber);
+  rotation.recordExposure(item.id, {
+    invalidIds: selectedGameMode === GAME_MODE_IDS.SPEED_RUN
+      ? speedDeck?.invalidIds : preloader?.invalidImageIds
+  });
   setState("playing");
   if (selectedGameMode === GAME_MODE_IDS.SPEED_RUN) {
     const seconds = getSpeedDifficulty(speedRunState.difficultyId).seconds;
@@ -738,7 +849,7 @@ async function presentCurrentCard({ revealGameScreen = false } = {}) {
 }
 
 async function prepareAndStartSpeedSession(triggerButton, normalText) {
-  if (classicManifestStatus !== "ready" || !selector || state === "preparing") return;
+  if (classicManifestStatus !== "ready" || !catalogImages.length || state === "preparing") return;
   if (!getSpeedDifficulty(selectedSpeedDifficulty) || getUsableImageCount() < 1) return;
   setState("preparing");
   setButtonBusy(triggerButton, true, normalText);
@@ -746,10 +857,11 @@ async function prepareAndStartSpeedSession(triggerButton, normalText) {
   const revision = ++presentationRevision;
   speedClock.stop();
   speedDeck?.cancel();
-  const nextDeck = new SpeedRunDeck(
-    selector.images.filter((item) => !preloader.invalidImageIds.has(item.id)),
-    { preload: (src) => preloadImage(src) }
-  );
+  rotation = new ImageRotation(catalogImages, {
+    playerId: localPlayers.active.id,
+    storage: browserImageRotationStorage()
+  });
+  const nextDeck = new SpeedRunDeck(rotation, { preload: (src) => preloadImage(src) });
   speedDeck = nextDeck;
   try {
     const first = await nextDeck.next();
@@ -763,6 +875,7 @@ async function prepareAndStartSpeedSession(triggerButton, normalText) {
     currentIndex = 0;
     score = 0;
     answerStreak = 0;
+    streakMessageBag = createStreakMessageBag(streakMessagesCache);
     syncModePresentation();
     updateSpeedHUD();
     await presentCurrentCard({ revealGameScreen: true });
@@ -782,7 +895,7 @@ async function prepareAndStartSession(triggerButton, normalText) {
     return prepareAndStartSpeedSession(triggerButton, normalText);
   }
   if (selectedGameMode !== GAME_MODE_IDS.CLASSIC) return;
-  if (classicManifestStatus !== "ready" || !preloader || state === "preparing") return;
+  if (classicManifestStatus !== "ready" || !catalogImages.length || state === "preparing") return;
   if (!isSessionSizeAvailable(selectedSessionSize)) return;
 
   setState("preparing");
@@ -792,9 +905,12 @@ async function prepareAndStartSession(triggerButton, normalText) {
   try {
     const requestedSessionSize = selectedSessionSize;
     const nextSessionNumber = sessionNumber + 1;
-    const preparedDeck = await preloader.prepare(nextSessionNumber, {
-      roundSize: requestedSessionSize
+    rotation = new ImageRotation(catalogImages, {
+      playerId: localPlayers.active.id,
+      storage: browserImageRotationStorage()
     });
+    preloader = new RoundPreloader(rotation);
+    const preparedDeck = await preloader.prepare({ roundSize: requestedSessionSize });
 
     speedClock.stop();
     speedDeck?.cancel();
@@ -809,6 +925,7 @@ async function prepareAndStartSession(triggerButton, normalText) {
     currentIndex = 0;
     score = 0;
     answerStreak = 0;
+    streakMessageBag = createStreakMessageBag(streakMessagesCache);
     scoreDisplay.textContent = "0";
 
     await presentCurrentCard({ revealGameScreen: true });
@@ -825,6 +942,7 @@ async function settleSpeedOutcome(outcome, type = null) {
   if (state !== "playing" || selectedGameMode !== GAME_MODE_IDS.SPEED_RUN || !speedRunState) return;
   const revision = presentationRevision;
   setState("answering"); // locks both buttons, swipe, and competing deadline events
+  streakCelebration?.clear(); // Clean any interrupted previous milestone.
   speedClock.stop();
   speedRunState = resolveSpeedRunOutcome(speedRunState, outcome);
   score = speedRunState.score;
@@ -832,10 +950,14 @@ async function settleSpeedOutcome(outcome, type = null) {
   answerStreak = streakResult.streak;
   updateSpeedHUD(outcome === "timeout" ? 0 : "keep");
 
-  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct", { milestone: streakResult.milestone });
+  const feedback = answerFeedback.play(outcome === "timeout" ? "timeout" : outcome === "correct");
   const dismissal = outcome === "timeout" ? swipe.dismiss() : swipe.throw(type);
   const [shown, dismissed] = await Promise.all([feedback, dismissal]);
   if (!shown || !dismissed || state !== "answering" || revision !== presentationRevision) return;
+  if (streakResult.milestone !== null) {
+    const celebrated = await streakCelebration.play(streakResult.milestone, streakMessageBag.next());
+    if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
+  }
   if (speedRunState.finished) {
     finishSession();
     return;
@@ -868,6 +990,7 @@ async function answer(type) {
   }
 
   setState("answering");
+  streakCelebration?.clear(); // Clean any interrupted previous milestone.
 
   const correct = type === item.type;
   const streakResult = advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect");
@@ -877,12 +1000,16 @@ async function answer(type) {
     scoreDisplay.textContent = String(score);
   }
 
-  const feedbackPromise = answerFeedback.play(correct, { milestone: streakResult.milestone });
+  const feedbackPromise = answerFeedback.play(correct);
   const throwPromise = swipe.throw(type);
 
+  const revision = presentationRevision;
   const [feedbackShown, thrown] = await Promise.all([feedbackPromise, throwPromise]);
-  if (!feedbackShown || !thrown || state === "error") return;
-
+  if (!feedbackShown || !thrown || state !== "answering" || revision !== presentationRevision) return;
+  if (streakResult.milestone !== null) {
+    const celebrated = await streakCelebration.play(streakResult.milestone, streakMessageBag.next());
+    if (!celebrated || state !== "answering" || revision !== presentationRevision) return;
+  }
   currentIndex += 1;
 
   if (currentIndex >= activeSessionSize) {
@@ -922,10 +1049,12 @@ function finishSession() {
   clearCardOverlays();
   hideImageContent();
   finalScore.textContent = selectedGameMode === GAME_MODE_IDS.SPEED_RUN ? String(score) : `${score} / ${activeSessionSize}`;
-  resultPlayerName.textContent = player.name ? `Gracz: ${player.name}` : "";
+  resultPlayerName.textContent = player.name || "";
   const accuracy = calculateAccuracy(score, attempts);
   resultAccuracy.textContent = accuracy === null ? "Brak ocenionych odpowiedzi" : `${accuracy.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}% poprawnych odpowiedzi`;
-  resultSaveStatus.textContent = queued ? "Zapisywanie wyniku…" : "Nie udało się zachować wyniku. Sprawdź pamięć przeglądarki.";
+  // No success/pending caption on the celebration screen. Surface only
+  // actionable failures; the separate profile tools handle manual retry.
+  resultSaveStatus.textContent = queued ? "" : "Nie zapisano wyniku. Spróbuj ponownie.";
   refreshPendingResults();
   resetResultPresentation();
   syncSessionSizeControls();
@@ -937,6 +1066,7 @@ function finishSession() {
 
 function initializeInteractions() {
   answerFeedback = new AnswerFeedbackController(answerFeedbackElement);
+  streakCelebration = new StreakCelebrationController(streakCelebrationElement);
   sessionSizePickers = sessionSizeOptionGroups.map((root) => new SessionSizePicker(root));
   preGameTransition = new PreGameTransitionCoordinator({ windowRef: window });
   preGameTransition.showImmediately(modeSelectPanel, preGamePanels);
@@ -969,36 +1099,95 @@ function bootstrap() {
   syncModePresentation();
   syncClassicSetupControls();
   prefetchClassicManifestAfterFirstPaint();
+  // Fetch outside the feedback/clock path. A running game owns a fixed snapshot.
+  void refreshStreakMessages();
   if (resultsOutbox.pending) void retryResultStorage();
 }
 
+profileButton.addEventListener("click", () => {
+  if (!["mode-select", "mode-setup", "result"].includes(state)) return;
+  openProfileDialog("manage", profileButton);
+});
+profileDialogConfirm.addEventListener("click", confirmProfileDialog);
+profileDialogClose.addEventListener("click", () => closeProfileDialog());
+profileDialogBackdrop.addEventListener("click", (event) => {
+  if (event.target === profileDialogBackdrop) closeProfileDialog();
+});
+profileDialogBackdrop.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeProfileDialog();
+  }
+  if (event.key === "Tab") {
+    const available = [...profileDialog.querySelectorAll('button:not([hidden]):not(:disabled),input:not([hidden]):not(:disabled)')]
+      .filter((element) => !element.closest('[hidden]'));
+    if (!available.length) return;
+    if (event.shiftKey && document.activeElement === available[0]) {
+      event.preventDefault();
+      available.at(-1).focus();
+    } else if (!event.shiftKey && document.activeElement === available.at(-1)) {
+      event.preventDefault();
+      available[0].focus();
+    }
+  }
+});
 changePlayerButton.addEventListener("click", () => {
-  if (state !== "mode-select") return;
+  if (!profileDialogIntent) return;
   if (playerSwitchPanel.hidden) openPlayerSwitch(); else closePlayerSwitch();
 });
 cancelPlayerSwitch.addEventListener("click", () => {
-  creatingNewPlayer = false;
-  applyActivePlayer();
   closePlayerSwitch();
+  changePlayerButton.focus({ preventScroll: true });
 });
 createPlayerButton.addEventListener("click", () => {
   creatingNewPlayer = true;
   playerNameInput.value = "";
+  lastAllowedLoginValue = "";
   playerNameInput.readOnly = false;
-  playerNameHelp.textContent = "Wpisz nową nazwę i wybierz tryb gry. Może być taka sama jak innego profilu.";
+  loginPlaceholder.start();
+  playerNameHelp.textContent = "";
   closePlayerSwitch();
-  playerNameInput.focus();
+  updateProfileActionLabel();
+  playerNameInput.focus({ preventScroll: false });
 });
 retryPendingButton.addEventListener("click", () => void retryResultStorage());
 window.addEventListener("online", () => { if (resultsOutbox.pending) void retryResultStorage(); });
-
-playerNameInput.addEventListener("input", () => {
-  // Edits are validated on mode selection; an old name must never override the current input.
-  playerNameInput.removeAttribute("aria-invalid");
-  if (!playerNameInput.readOnly) {
-    playerNameHelp.textContent = "Nazwa i identyfikator lokalnego profilu zostaną zapisane w tej przeglądarce.";
+playerNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && profileDialogIntent) {
+    event.preventDefault();
+    confirmProfileDialog();
   }
 });
+playerNameInput.addEventListener("beforeinput", (event) => {
+  if (!event.isComposing && containsLoginWhitespace(event.data)) {
+    event.preventDefault();
+    playerNameHelp.textContent = "Login bez spacji.";
+  }
+});
+playerNameInput.addEventListener("paste", (event) => {
+  if (containsLoginWhitespace(event.clipboardData?.getData("text"))) {
+    event.preventDefault();
+    playerNameHelp.textContent = "Login bez spacji.";
+  }
+});
+function validateLiveLoginInput() {
+  const proposed = playerNameInput.value;
+  if (containsLoginWhitespace(proposed)) {
+    playerNameInput.value = rejectWhitespaceEdit(proposed, lastAllowedLoginValue);
+    playerNameHelp.textContent = "Login bez spacji.";
+    playerNameInput.setAttribute("aria-invalid", "true");
+    return;
+  }
+  lastAllowedLoginValue = proposed;
+  playerNameInput.removeAttribute("aria-invalid");
+  playerNameHelp.textContent = "";
+  if (proposed) loginPlaceholder.stop();
+  else if (profileDialogIntent) loginPlaceholder.start();
+}
+playerNameInput.addEventListener("input", (event) => {
+  if (!event.isComposing) validateLiveLoginInput();
+});
+playerNameInput.addEventListener("compositionend", validateLiveLoginInput);
 
 sessionSizeButtons.forEach((button) => {
   button.addEventListener("click", () => chooseSessionSize(Number(button.dataset.sessionSize)));
@@ -1010,10 +1199,10 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) spee
 classicModeButton.addEventListener("click", () => void openGameMode(classicModeButton.dataset.gameMode));
 modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
 setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));
-startButton.addEventListener("click", () => prepareAndStartSession(startButton, "Rozpocznij"));
+startButton.addEventListener("click", () => promptStartSession(startButton));
 playAgainButton.addEventListener("click", openResultReplaySetup);
 resultHomeButton.addEventListener("click", returnResultToHome);
-resultStartButton.addEventListener("click", () => prepareAndStartSession(resultStartButton, "Rozpocznij"));
+resultStartButton.addEventListener("click", () => promptStartSession(resultStartButton));
 retryButton.addEventListener("click", () => window.location.reload());
 humanButton.addEventListener("click", () => answer("human"));
 aiButton.addEventListener("click", () => answer("ai"));

@@ -1,0 +1,6 @@
+# AUTH-02: Admin requires a real user JWT; public registration checks code server-side.
+[functions.auth02-admin]
+verify_jwt = true
+
+[functions.auth02-register]
+verify_jwt = false

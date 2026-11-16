@@ -2,19 +2,20 @@
 
 Mobilna gra przeglądarkowa: rozpoznawanie, czy obraz stworzył człowiek, czy AI. GitHub Pages + Supabase.
 
-## Aktualne funkcje (szkoleniowe R3.1, bazujące na V1.7.1B-R2.4)
+## Aktualne funkcje (baseline V1.7.1B-R2.5.1)
 
-- **Klasyczny:** 20, 50 lub 100 niepowtarzających się obrazów w jednej rozgrywce, zależnie od dostępności puli.
+- **Klasyczny:** 20, 50 lub 100 obrazów bez powtórek aż do wyczerpania puli (także między rozgrywkami), zależnie od dostępności puli.
 - **Speed Run:** łatwy 7 s / 3 życia, średni 5 s / 2 życia, trudny 3 s / 1 życie; gra do utraty żyć.
-- **Profile lokalne:** pseudonim bez konta i hasła; odrębne Player ID, Browser ID i Game ID. Identyfikatory nie potwierdzają tożsamości.
+- **Profile lokalne:** login bez spacji, animowane przykłady pseudonimów, bez konta i hasła; odrębne Player ID, Browser ID i Game ID. Identyfikatory nie potwierdzają tożsamości.
 - **Wynik:** liczba trafień, procent i trofeum. Każda ukończona sesja to osobny rekord w Supabase (R1), z lokalnym ponawianiem niepotwierdzonego zapisu.
-- **Seria trafień:** po 3 i 10 kolejnych poprawnych odpowiedziach, po zwykłym „DOBRZE”, krótki złoty napis i świetlne iskry w zwolnionej przestrzeni po karcie. Następna karta i zegar Speed Run zaczynają działać dopiero po tej krótkiej celebracji.
-- **Admin `/admin/`:** Biblioteka obrazów oraz prywatne Wyniki — wyszukiwanie, filtry, paginacja i usuwanie (R2).
-- **Szkolenia R3.1:** administrator generuje 1–200 jednorazowych kodów z kopiowaniem; gracz podaje kod z nazwą profilu, a kolejne rozgrywki potwierdza lokalnym tokenem w Supabase, wyłącznie przez 24 godziny od pierwszego wykorzystania kodu. Po terminie wymagany jest nowy kod.
+- **Seria trafień:** po 3, 10, 20, 30… kolejnych poprawnych odpowiedziach, po zwykłym „DOBRZE”, krótki złoty napis i świetlne iskry w zwolnionej przestrzeni po karcie. Następna karta i zegar Speed Run zaczynają działać dopiero po tej krótkiej celebracji.
+- **Admin `/admin/`:** Biblioteka obrazów, prywatne Wyniki oraz prosta edytowalna lista Gratyfikacji. Komunikaty losowane bez powtórzeń w jednej rozgrywce i zapisywane w Supabase (R2.5).
 
 ## Interfejs
 
-Ekran główny służy wyborowi trybu. Profil wybiera się w osobnym, minimalnym oknie przed startem sesji, jeśli brak aktywnego gracza; ikona profilu jest w prawym górnym rogu, a motyw LIGHT/DARK w lewym. Nie pokazujemy w normalnym UI szczegółów technicznych ani redundantnych instrukcji. Zobacz wiążące zasady w `OUTSIDE_REPO/AGENTS.md` (w paczce projektowej, **nie** na GitHubie).
+Ekran główny służy wyborowi trybu. Profil wybiera się w osobnym oknie z jednym widocznym nagłówkiem „Nazwa gracza”, bez podwójnej etykiety; input korzysta z tego nagłówka jako nazwy dostępnej. Dla aktywnego profilu potwierdzenie brzmi „Gotowe”. ikona profilu jest w prawym górnym rogu, a motyw LIGHT/DARK w lewym. Nie pokazujemy w normalnym UI szczegółów technicznych ani redundantnych instrukcji. Zobacz wiążące zasady w `OUTSIDE_REPO/AGENTS.md` (w paczce projektowej, **nie** na GitHubie).
+
+Historia obrazów jest zapisywana w przeglądarce dla Player ID. Oba tryby korzystają z jednej rotacji, a do historii trafiają tylko obrazy rzeczywiście wyświetlone graczowi. Wyczyszczenie danych strony lub zmiana urządzenia rozpoczyna historię od nowa.
 
 ## Źródło obrazów
 
@@ -31,16 +32,21 @@ Wdrożenie: GitHub **Settings → Pages → Build and deployment → GitHub Acti
 
 ## Migracje i bezpieczeństwo
 
-Pliki SQL **nie są częścią repo GitHub**. **Wdrożenie R3.1 wymaga dodatkowej migracji `SQL/01_TRAINING_ACCESS.sql` z osobnej paczki dokumentacji (PRECHECK → migracja → POSTCHECK) przed wdrożeniem frontendu.** Dla istniejącej instalacji wykonuj R1, następnie R2 (każda: PRECHECK → migracja → POSTCHECK), zanim opublikujesz frontend wymagający nowych uprawnień. `OUTSIDE_REPO/SQL/ALL_IN_ONE.sql` służy do odtworzenia nowego projektu; nie uruchamiaj go na działającej bazie jako migracji.
+Pliki SQL **nie są częścią repo GitHub**. Dla istniejącej instalacji wykonuj R1, następnie R2 i R2.5 (każda: PRECHECK → migracja → POSTCHECK), zanim opublikujesz frontend wymagający nowych uprawnień. `OUTSIDE_REPO/SQL/ALL_IN_ONE.sql` służy do odtworzenia nowego projektu; nie uruchamiaj go na działającej bazie jako migracji.
 
 Gracze mogą anonimowo wysyłać wyniki, ale nie mogą ich czytać ani usuwać. Tabela Admina jest chroniona przez Supabase RLS i operacje administracyjne. Wynik anonimowy i losowe ID nie dowodzą tożsamości ani poprawności odpowiedzi.
 
 ## Status i dokumentacja
 
-**R3.1: LOCAL TEST/BUILD PASS (16.11.2026); SQL R3, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
+**R2.5.1: LOCAL NODE/BUILD/CHROMIUM PASS; produkcyjne SQL R1/R2/R2.5, GitHub Pages i real-phone Safari/Chrome — bez potwierdzonego zakończenia QA.** Oryginalne przejście kołowe LIGHT/DARK wymaga osobnego testu Safari podczas animacji kart wyniku.
 
 Dokumentacja poza repo: `AGENTS.md` (zasady), `ROADMAP.md` (plan), `CHANGELOG.md` (pełna historia), `CONTINUE_IN_NEW_CHAT.md` (kontynuacja), `QA_CURRENT.md` (otwarte testy), `README_FIRST.txt` (wdrożenie). Historycznych opisów wydań nie powielamy w README.
 
-## Granice zabezpieczenia R3.1
 
-Kod powstaje i jest jednorazowo wykorzystywany **po stronie Supabase**; zwykłe konto nie może wywołać generatora. Rozpoczęcie nowej sesji w zwykłym UI wymaga serwerowej walidacji niewygasłego tokenu lub pomyślnego wykorzystania nowego kodu. Także trwającą rundę aplikacja sprawdza co 30 s i po powrocie do karty; bez serwerowego potwierdzenia przerywa rundę. Obrazy nadal znajdują się w publicznym Storage i katalogu; nie są chronione przed osobą modyfikującą aplikację lub pobierającą zasoby bezpośrednio. Pełne ograniczenie dostępu do treści wymaga prywatnego Storage i dodatkowego backendu (poza R3.1).
+## AUTH-02 — server-side backend source (not deployed)
+
+The new `supabase/functions/auth02-admin` and `auth02-register` folders implement the invitation-code backend for the future account system. They are **source files only**; `npm run build` intentionally copies only the existing public game/admin assets into `dist/` and does not deploy Edge Functions or SQL. Production game behavior is unchanged until AUTH-03 through AUTH-07.
+
+The AUTH-02 SQL migration, PRECHECK/POSTCHECK and security/runbook documentation are distributed separately under **OUTSIDE_REPO/SQL/AUTH_02_*.sql**, never committed to the public static website. Server credentials (`SUPABASE_SERVICE_ROLE_KEY`, `AUTH02_HMAC_SECRET`) must stay in Supabase secrets, not in browser/config files. See `OUTSIDE_REPO/AUTH/AUTH_02/README_FIRST.md` before any deployment. AUTH-02 backend has local unit tests but requires real Supabase JWT, RPC and race testing before it can be called complete.
+
+**AUTH-02 release corrective:** original backend SQL rejected the configured global rate limit of 300; this source release requires the corrected migration and standalone contract QA. Never deploy code with the earlier AUTH-02 SQL.

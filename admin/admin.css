@@ -1128,17 +1128,16 @@ h2 {
   .results-pager button { padding-inline: 9px; }
 }
 
-/* R3.0 — admin-only training code generator. */
-.codes-workspace[hidden] { display: none !important; }
-.codes-workspace { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--border); border-radius: 20px; overflow: auto; }
-.codes-topline h2 { margin: 0 0 8px; font-size: 1.3rem; }
-.codes-topline p { margin: 0; color: var(--muted); font-size: .9rem; }
-.codes-field { font-size: .8rem; font-weight: 700; }
-.codes-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.codes-actions input { width: 110px; height: 43px; border-radius: 10px; border: 1px solid var(--border-strong); padding: 0 12px; }
-.codes-actions button { min-height: 43px; padding-inline: 16px; }
-.codes-actions button:disabled { opacity: .55; cursor: default; }
-.codes-statline { color: var(--muted); font-size: .86rem; margin: 0; min-height: 1.4em; }
-#codes-output { min-height: 215px; width: 100%; resize: vertical; background: var(--surface-soft); border: 1px solid var(--border-strong); color: var(--text); border-radius: 13px; padding: 14px; font: 500 .91rem/1.7 ui-monospace, 'SFMono-Regular', Consolas, monospace; }
-#codes-output:focus-visible, .codes-actions input:focus-visible { outline: 3px solid var(--border-strong); outline-offset: 2px; }
-@media (max-width: 500px) { .codes-workspace { padding: 12px; } .codes-actions button { flex: 1; } #codes-output { font-size: .73rem; } .admin-tab-nav { flex-wrap: wrap; } }
+/* R2.5: simple editable copy list, no dashboard widgets or technical captions. */
+.streak-workspace[hidden] { display: none !important; }
+.streak-workspace { padding: 18px; border: 1px solid var(--border); border-radius: 20px; display: grid; gap: 14px; align-content: start; }
+.streak-admin-status { margin: 0; color: var(--muted); font-size: .83rem; min-height: 1em; }
+.streak-admin-status:empty { display: none; }
+.streak-admin-list { display: grid; gap: 8px; }
+.streak-admin-row { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 12px; }
+.streak-admin-message { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .9rem; font-weight: 650; }
+.streak-admin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.streak-admin-form { display: flex; gap: 10px; }
+.streak-admin-form input, .streak-admin-edit { min-width: 0; flex: 1; height: 43px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 12px; background: var(--surface); color: var(--text); font: inherit; }
+.streak-admin-list :is(button,input):focus-visible, .streak-admin-form :is(button,input):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+@media (max-width: 480px) { .admin-tab-nav { gap: 4px; } .admin-tab-nav button { padding-inline: 9px; font-size: .78rem; } .streak-workspace { padding: 12px; } .streak-admin-row { align-items: stretch; flex-direction: column; } .streak-admin-actions { justify-content: flex-end; } }
