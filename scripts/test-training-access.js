@@ -25,6 +25,9 @@ assert.ok(!("Authorization" in calls[0].opts.headers), "anon RPC must not contai
 assert.equal(calls[0].opts.headers.apikey, config.publishableKey);
 assert.deepEqual(JSON.parse(calls[0].opts.body), { p_code: code, p_player_name: "Marek" });
 assert.equal(await validateTrainingToken(token, "Marek", opts), true);
+const expiredFetch = async () => ({ ok: true, status: 200, json: async () => false });
+assert.equal(await validateTrainingToken(token, "Marek", { ...opts, fetchImpl: expiredFetch }), false,
+  "wygasły token musi być odrzucony po serwerowej walidacji");
 assert.equal(await validateTrainingToken("bad", "Marek", opts), false);
 assert.deepEqual(await generateTrainingCodes(1, "jwt.admin", opts), [code]);
 assert.equal(calls.at(-1).opts.headers.Authorization, "Bearer jwt.admin");
@@ -49,6 +52,8 @@ const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const adminHtml = await readFile(new URL("../admin/index.html", import.meta.url), "utf8");
 const game = await readFile(new URL("../js/game.js", import.meta.url), "utf8");
 const admin = await readFile(new URL("../admin/admin.js", import.meta.url), "utf8");
+// SQL is distributed separately from the game. In local workspace a documentation copy exists.
+const gameVersion = await readFile(new URL("../package.json", import.meta.url), "utf8");
 for (const id of ["training-code", "training-code-help"]) assert.ok(html.includes(`id="${id}"`));
 for (const id of ["tab-codes", "codes-workspace", "codes-count", "codes-generate", "codes-copy", "codes-output", "codes-stats"]) assert.ok(adminHtml.includes(`id="${id}"`));
 assert.ok(game.includes("await validateTrainingToken(previousToken, profile.name)"));
@@ -56,5 +61,10 @@ assert.ok(game.includes("await redeemTrainingCode(code, profile.name)"));
 assert.ok(game.includes("await requireTrainingAccess(localPlayers.active, trainingCodeInput.value)"));
 assert.ok(game.includes("void prepareAndStartSession(trigger, \"Rozpocznij\")"));
 assert.ok(admin.includes('import { AdminTrainingCodesPanel }'));
+assert.ok(game.includes('const ACTIVE_ACCESS_CHECK_INTERVAL_MS = 30000'));
+assert.ok(game.includes('void checkActiveTrainingAccess();'));
+assert.ok(game.includes('24-godzinny dostęp do szkolenia wygasł'));
+assert.ok(game.includes('expiredTrainingProfileId = profile.id'));
+assert.ok(gameVersion.includes('1.7.1-b-r3-1'));
 // SQL lives outside repo intentionally. Validate DB permissions through POSTCHECK and live API QA.
-console.log("R3 TRAINING ACCESS TEST PASS — RPC, JWT, gate, errors, local token, DOM");
+console.log("R3.1 TRAINING ACCESS TEST PASS — RPC, JWT, gate, expiry check, errors, local token, DOM");

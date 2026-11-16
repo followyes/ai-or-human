@@ -152,6 +152,9 @@ const localPlayers = createBrowserProfiles();
 const resultsOutbox = createBrowserResultOutbox();
 let creatingNewPlayer = false;
 let trainingAccessPending = false;
+let activeAccessCheckPending = false;
+let expiredTrainingProfileId = null;
+const ACTIVE_ACCESS_CHECK_INTERVAL_MS = 30000; // aktywna sesja nie trwa dowolnie po wygaśnięciu kodu.
 let profileDialogIntent = null; // "start" or "manage"; never owns the gameplay lifecycle.
 let profileDialogTrigger = null;
 let deferredStartButton = null;
@@ -474,8 +477,10 @@ function syncTrainingCodeInput() {
     : "TRN-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX";
   trainingCodeInput.setAttribute("aria-invalid", "false");
   trainingCodeHelp.textContent = existing
-    ? "Profil posiada kod dostępu. Zostanie zweryfikowany przed grą."
-    : "Kod otrzymasz od organizatora szkolenia.";
+    ? "Kod został już aktywowany. Dostęp jest ważny przez 24 godziny od aktywacji; sprawdzimy go przed grą."
+    : expiredTrainingProfileId === localPlayers.active?.id
+      ? "Poprzedni dostęp wygasł. Wpisz nowy kod na kolejne 24 godziny."
+      : "Kod otrzymasz od organizatora. Jeden kod = jeden gracz, 24 godziny od aktywacji.";
 }
 
 function applyActivePlayer() {
@@ -585,12 +590,42 @@ async function requireTrainingAccess(profile, code = "") {
     const valid = await validateTrainingToken(previousToken, profile.name);
     if (valid) return true;
     clearTrainingToken(profile.id);
+    expiredTrainingProfileId = profile.id;
     syncTrainingCodeInput();
   }
   if (!code.trim()) return false;
   const token = await redeemTrainingCode(code, profile.name);
   saveTrainingToken(profile.id, token);
+  expiredTrainingProfileId = null;
   return true;
+}
+
+/** Serwer jest źródłem prawdy także po rozpoczęciu rundy. W tle
+ * rewalidujemy sesję co 30 sekund i po powrocie do karty.
+ * Przy odmowie lub problemie z potwierdzeniem zamykamy rozgrywkę.
+ */
+async function checkActiveTrainingAccess() {
+  if (activeAccessCheckPending || !["playing", "answering", "presenting"].includes(state)) return;
+  const sessionId = activeGameSessionId;
+  const profile = activeSessionProfile;
+  if (!sessionId || !profile) return;
+  const token = getTrainingToken(profile.id);
+  activeAccessCheckPending = true;
+  try {
+    const valid = Boolean(token) && await validateTrainingToken(token, profile.name);
+    if (sessionId !== activeGameSessionId || !["playing", "answering", "presenting"].includes(state)) return;
+    if (!valid) {
+      clearTrainingToken(profile.id);
+      expiredTrainingProfileId = profile.id;
+      showFatalError("24-godzinny dostęp do szkolenia wygasł. Aby zagrać ponownie, podaj nowy kod.");
+    }
+  } catch (error) {
+    if (sessionId === activeGameSessionId && ["playing", "answering", "presenting"].includes(state)) {
+      showFatalError("Nie udało się potwierdzić dostępu do szkolenia. Sprawdź połączenie z internetem i spróbuj ponownie.");
+    }
+  } finally {
+    activeAccessCheckPending = false;
+  }
 }
 
 async function promptStartSession(triggerButton, normalText = "Rozpocznij") {
@@ -1228,7 +1263,13 @@ sessionSizeButtons.forEach((button) => {
 
 speedModeButton.addEventListener("click", () => void openGameMode(speedModeButton.dataset.gameMode));
 speedDifficultyButtons.forEach((button) => button.addEventListener("click", () => chooseSpeedDifficulty(button.dataset.speedDifficulty)));
-document.addEventListener("visibilitychange", () => { if (!document.hidden) speedClock.check(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    speedClock.check();
+    void checkActiveTrainingAccess();
+  }
+});
+window.setInterval(() => { void checkActiveTrainingAccess(); }, ACTIVE_ACCESS_CHECK_INTERVAL_MS);
 classicModeButton.addEventListener("click", () => void openGameMode(classicModeButton.dataset.gameMode));
 modeSetupBackButton.addEventListener("click", () => void returnToModeSelect());
 setupRetryButton.addEventListener("click", () => void ensureClassicManifest({ force: true }));
