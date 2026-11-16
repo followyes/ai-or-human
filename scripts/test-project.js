@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSite } from "./build-site.js";
-import { ImageRotation } from "../js/image-rotation.js";
+import { RoundSelector, recencyWeight } from "../js/round-selector.js";
 import { SwipeController } from "../js/swipe-controller.js";
 import { AnswerFeedbackController } from "../js/answer-feedback.js";
 import { StreakCelebrationController } from "../js/streak-celebration.js";
@@ -619,8 +619,8 @@ async function testSeparateStreakCelebration() {
     const ordinary = new FakeStreakRoot();
     const three = new StreakCelebrationController(ordinary);
     assert.equal(ordinary.children.particles.children.length, 18, "bounded particles built once");
-    const pending = three.play(3, "Brawo!");
-    assert.equal(ordinary.children.heading.textContent, "Brawo!");
+    const pending = three.play(3);
+    assert.equal(ordinary.children.heading.textContent, "Świetna robota!");
     assert.equal(ordinary.children.kicker.textContent, "3 poprawne z rzędu");
     assert.equal(ordinary.dataset.milestone, "3");
     assert.equal(ordinary.animated.length, 1, "only one awaited root animation");
@@ -632,9 +632,9 @@ async function testSeparateStreakCelebration() {
 
     const majorRoot = new FakeStreakRoot();
     const ten = new StreakCelebrationController(majorRoot);
-    const majorPending = ten.play(20, "Jesteś świetny!");
-    assert.equal(majorRoot.children.heading.textContent, "Jesteś świetny!");
-    assert.equal(majorRoot.children.kicker.textContent, "20 poprawnych z rzędu");
+    const majorPending = ten.play(10);
+    assert.equal(majorRoot.children.heading.textContent, "Niesamowita seria!");
+    assert.equal(majorRoot.children.kicker.textContent, "10 poprawnych z rzędu");
     assert.equal(majorRoot.classList.contains("is-major"), true);
     assert.equal(majorRoot.animated[0].options.duration, 1470);
     assert.equal(await majorPending, true);
@@ -642,7 +642,7 @@ async function testSeparateStreakCelebration() {
     globalThis.window.matchMedia = () => ({ matches: true });
     const reducedRoot = new FakeStreakRoot();
     const reduced = new StreakCelebrationController(reducedRoot);
-    const reducedPending = reduced.play(30, "Tak trzymaj!");
+    const reducedPending = reduced.play(10);
     assert.equal(reducedRoot.animated.length, 1);
     assert.equal(reducedRoot.animated[0].options.duration, 570);
     assert.equal(await reducedPending, true);
@@ -862,11 +862,11 @@ async function testDynamicRoundPreloader() {
   globalThis.Image = FakePreloadImage;
 
   try {
-    const rotation = new ImageRotation(makeImages(120, "ai"), { rng: createSeededRng(99) });
-    const preloader = new RoundPreloader(rotation, { concurrency: 4, timeoutMs: 500 });
+    const selector = new RoundSelector(makeImages(120, "ai"), { rng: createSeededRng(99) });
+    const preloader = new RoundPreloader(selector, { concurrency: 4, timeoutMs: 500 });
 
     for (const [roundNumber, roundSize] of [[1, 20], [2, 50], [3, 100]]) {
-      const deck = await preloader.prepare({ roundSize });
+      const deck = await preloader.prepare(roundNumber, { roundSize });
       assert.equal(deck.length, roundSize);
       assert.equal(new Set(deck.map((item) => item.id)).size, roundSize);
     }
@@ -876,19 +876,60 @@ async function testDynamicRoundPreloader() {
   }
 }
 
-async function testImageRotationCatalog() {
-  const images = [...makeImages(30, "ai"), ...Array.from({length: 30}, (_, index) => ({
-    id: `human-${index}`, src: `human-${index}`, type: "human"
-  }))];
-  const rotation = new ImageRotation(images, { rng: createSeededRng(42) });
-  const round = rotation.select(20);
-  assert.equal(round.length, 20);
-  assert.equal(new Set(round.map((item) => item.id)).size, 20);
-  const allAi = new ImageRotation(makeImages(25, "ai"), { rng: createSeededRng(11) });
-  assert.equal(allAi.select(20).filter((item) => item.type === "ai").length, 20,
-    "the existing game must not force a class ratio");
-  assert.throws(() => new ImageRotation([...images, images[0]]), /unique/);
-  assert.throws(() => rotation.select(61), /eligible/);
+async function testRoundSelector() {
+  const mixed = [
+    ...makeImages(30, "ai"),
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: `human-${index}`,
+      src: `./images/HUMAN/${index}.svg`,
+      type: "human"
+    }))
+  ];
+
+  const selector = new RoundSelector(mixed, { rng: createSeededRng(42) });
+  const round = selector.select(20, { roundNumber: 1 });
+  assert.equal(round.length, 20, "round must contain exactly 20 images");
+  assert.equal(new Set(round.map((item) => item.id)).size, 20, "round IDs must be unique");
+
+  const ten = selector.select(10, { roundNumber: 1 });
+  assert.equal(ten.length, 10, "10-image session must contain exactly 10 images");
+  assert.equal(new Set(ten.map((item) => item.id)).size, 10);
+
+  const fifty = selector.select(50, { roundNumber: 1 });
+  assert.equal(fifty.length, 50, "50-image session must contain exactly 50 images");
+  assert.equal(new Set(fifty.map((item) => item.id)).size, 50);
+
+  const allAiSelector = new RoundSelector(makeImages(25, "ai"), { rng: createSeededRng(11) });
+  const allAiRound = allAiSelector.select(20, { roundNumber: 1 });
+  assert.equal(allAiRound.length, 20, "selection must not require a 10/10 class split");
+  assert.ok(allAiRound.every((item) => item.type === "ai"), "class ratio must not be forced");
+
+  assert.equal(recencyWeight(null), 1);
+  assert.equal(recencyWeight(1), 0.15);
+  assert.equal(recencyWeight(2), 0.35);
+  assert.equal(recencyWeight(3), 0.60);
+  assert.equal(recencyWeight(4), 1);
+
+  const repeatSelector = new RoundSelector(makeImages(20, "ai"), { rng: createSeededRng(5) });
+  const first = repeatSelector.select(20, { roundNumber: 1 });
+  first.forEach((item) => repeatSelector.recordExposure(item.id, 1));
+  const second = repeatSelector.select(20, { roundNumber: 2 });
+  assert.equal(second.length, 20, "previous-round images must remain eligible");
+  assert.equal(new Set(second.map((item) => item.id)).size, 20);
+
+  const weightedImages = makeImages(40, "ai");
+  const weightedSelector = new RoundSelector(weightedImages, { rng: createSeededRng(42) });
+  for (let i = 0; i < 20; i += 1) weightedSelector.recordExposure(`img-${i}`, 1);
+  const weightedRound = weightedSelector.select(20, { roundNumber: 2 });
+  const immediateRepeats = weightedRound.filter((item) => Number(item.id.slice(4)) < 20).length;
+  assert.ok(immediateRepeats < 10, "previous-round images should be statistically deprioritized");
+
+  const refreshedSelector = new RoundSelector(weightedImages, { rng: createSeededRng(42) });
+  assert.equal(refreshedSelector.getWeight("img-0", 1), 1, "new page session must start with neutral weights");
+
+  const excluded = new Set(["img-0", "img-1", "img-2"]);
+  const exclusionRound = allAiSelector.select(20, { roundNumber: 1, excludeIds: excluded });
+  assert.ok(exclusionRound.every((item) => !excluded.has(item.id)), "excluded IDs must not be selected");
 }
 
 
@@ -2820,35 +2861,26 @@ async function testSpeedRunContracts() {
   assert.ok(cancelled.length > 0);
 
   const images = Array.from({ length: 10 }, (_, index) => ({ id: `image-${index}`, src: `source-${index}` }));
-  const rotation = new ImageRotation(images, { rng: () => 0.5 });
-  const deck = new SpeedRunDeck(rotation, { preload: async () => {}, ahead: 3 });
+  const deck = new SpeedRunDeck(images, { preload: async () => {}, rng: () => 0.5, ahead: 3 });
   const received = [];
-  for (let index = 0; index < 21; index += 1) {
-    const item = await deck.next();
-    received.push(item.id);
-    rotation.recordExposure(item.id); // the actual game commits after reveal
-  }
+  for (let index = 0; index < 21; index += 1) received.push((await deck.next()).id);
   assert.equal(new Set(received.slice(0, 10)).size, 10, "first cycle has no repeats");
   assert.equal(new Set(received.slice(10, 20)).size, 10, "second cycle has no repeats");
   assert.notEqual(received[9], received[10], "cycle boundaries must not repeat the last image");
   deck.cancel();
   assert.equal(await deck.next(), null);
-  const failedRotation = new ImageRotation(images, { rng: () => 0.5 });
-  const failed = new SpeedRunDeck(failedRotation, {
+  const failed = new SpeedRunDeck(images, {
+    rng: () => 0.5,
     preload: async (src) => { if (src.endsWith("4") || src.endsWith("7")) throw new Error("404"); }
   });
   const valid = [];
-  for (let index = 0; index < 8; index += 1) {
-    const item = await failed.next();
-    valid.push(item.id);
-    failedRotation.recordExposure(item.id);
-  }
+  for (let index = 0; index < 8; index += 1) valid.push((await failed.next()).id);
   assert.equal(new Set(valid).size, 8);
   assert.ok(!valid.includes("image-4") && !valid.includes("image-7"));
-  const exhausted = new SpeedRunDeck(new ImageRotation(images), { preload: async () => { throw new Error("offline"); } });
+  const exhausted = new SpeedRunDeck(images, { preload: async () => { throw new Error("offline"); } });
   await assert.rejects(exhausted.next(), /poprawnego obrazu|dostępnych obrazów/);
   const held = [];
-  const awaiting = new SpeedRunDeck(new ImageRotation(images), { preload: () => new Promise((resolve) => held.push(resolve)) });
+  const awaiting = new SpeedRunDeck(images, { preload: () => new Promise((resolve) => held.push(resolve)) });
   const pending = awaiting.next();
   awaiting.cancel();
   await Promise.resolve();
@@ -3210,14 +3242,14 @@ async function testResultCelebrationLifecycle() {
   for (const id of initialTimerIds) windowRef.run(id);
   assert.equal(cards.every((card) => card.animations.length === 1), true,
     "all five cards must be eligible to rotate independently");
-  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === undefined), true,
-    "turning cards use the live CSS theme instead of pinning an artwork variant");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
+    "every active result turn must snapshot the current card-art theme before rotation starts");
   assert.equal(cards.every((card) => card.dataset.cardTurning === "true"), true,
     "only actively turning cards own temporary 3D faces");
   // A theme change never pauses, cancels or disarms any currently running card.
   for (const card of cards) card.ownerDocument.documentElement.dataset.theme = "dark";
-  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === undefined), true,
-    "theme changes do not interrupt rotation or pin the old artwork during a turn");
+  assert.equal(cards.every((card) => card.dataset.cardTurning === "true" && card.dataset.turnArtwork === "light"), true,
+    "a running turn retains its original artwork while the global theme changes immediately");
 
   for (const card of cards) {
     const endTransform = card.animations[0].keyframes.at(-1).transform;
@@ -3241,7 +3273,7 @@ async function testResultCelebrationLifecycle() {
   await Promise.resolve();
   await Promise.resolve();
   assert.equal(cards.every((card) => card.dataset.cardTurning === undefined && card.dataset.turnArtwork === undefined), true,
-    "a completed full turn must release only its temporary 3D renderer");
+    "a completed full turn must release its pinned artwork so the canonical current theme becomes visible");
   assert.equal(windowRef.timers.size, 0,
     "completed turns must not reschedule after the celebration window has closed");
 
@@ -3423,7 +3455,7 @@ async function testSourceContracts() {
   const swipe = await fs.readFile(path.join(projectRoot, "js", "swipe-controller.js"), "utf8");
   const feedbackSource = await fs.readFile(path.join(projectRoot, "js", "answer-feedback.js"), "utf8");
   const streakSource = await fs.readFile(path.join(projectRoot, "js", "streak-celebration.js"), "utf8");
-  assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone, streakMessageBag\.next\(\)\)/g) || []).length, 2,
+  assert.equal((game.match(/await streakCelebration\.play\(streakResult\.milestone\)/g) || []).length, 2,
     "both modes must finish reward before revealing another card or ending the session");
   assert.doesNotMatch(game, /void streakCelebration\.play\(/, "no obsolete nonblocking global toast path");
   assert.ok(streakSource.includes("normal: 1250") && streakSource.includes("normal: 1470"),
@@ -3600,7 +3632,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('id="profile-button"') && html.includes('id="profile-confirm-button"'),
     "profile must have a dedicated header entry point and confirmation before play");
   assert.ok(game.includes('promptStartSession(startButton)') && game.includes('promptStartSession(resultStartButton)') &&
-    game.includes('if (!localPlayers.active)') && game.includes('openProfileDialog("start", triggerButton)'),
+    game.includes('if (!profile || !getTrainingToken(profile.id))') && game.includes('openProfileDialog("start", triggerButton)') && game.includes('validateTrainingToken(previousToken, profile.name)'),
     "start and replay must require profile selection if local profile is missing");
   assert.ok(game.includes('appShell.inert = true') && game.includes('appShell.inert = false') &&
     game.includes('if (event.key === "Escape")') && game.includes('if (event.key === "Tab")'),
@@ -3614,7 +3646,7 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
   assert.ok(html.includes('id="result-player-name"') && game.includes('resultPlayerName.textContent ='),
     "result displays the player alias as text rather than HTML");
   assert.ok(!game.slice(game.indexOf('async function openGameMode('), game.indexOf('async function returnToModeSelect(')).includes('ensurePlayerName()') &&
-    game.includes('if (!profileDialogIntent || !ensurePlayerName()) return;'),
+    game.includes('const name = ensurePlayerName();') && game.includes('if (!name) return;'),
     "mode selection is unblocked; name validity is enforced by the profile dialog before play");
   assert.ok(game.includes('advanceAnswerStreak(answerStreak, outcome)') &&
     game.includes('advanceAnswerStreak(answerStreak, correct ? "correct" : "incorrect")'),
@@ -3841,14 +3873,15 @@ const workflow = await fs.readFile(path.join(projectRoot, ".github", "workflows"
     !themeControllerSource.includes('runningAnimation') &&
     !themeControllerSource.includes('theme-reveal-backdrop'),
     "original full-page transition must be restored without card-animation wait/lease or shadow reveal");
-  assert.ok(resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
-    !resultCelebrationSource.includes('turnArtwork') &&
-    !resultCelebrationSource.includes('resolveSurfaceTheme') &&
+  assert.ok(resultCelebrationSource.includes('resolveSurfaceTheme') &&
+    resultCelebrationSource.includes('surface.dataset.cardTurning = "true"') &&
+    resultCelebrationSource.includes('surface.dataset.turnArtwork = turnTheme') &&
+    resultCelebrationSource.includes('delete surface.dataset.turnArtwork') &&
     !resultCelebrationSource.includes('this.notifyVisualIdle()'),
-    "card turns must use the live theme without snapshotting the starting artwork");
-  assert.ok(/\.floating-card__surface\[data-card-turning="true"\]::before,[\s\S]*?background-image: var\(--floating-card-image\)/m.test(css) &&
-    !css.includes('data-turn-artwork'),
-    "both 3D faces must follow the shared live --floating-card-image token");
+    "a turn owns a temporary card renderer and its starting artwork through completion");
+  assert.ok(/data-turn-artwork="light"[\s\S]*?var\(--floating-card-image-light-ui\)/m.test(css) &&
+    /data-turn-artwork="dark"[\s\S]*?var\(--floating-card-image-dark-ui\)/m.test(css),
+    "temporary turn artwork must use the same CSS inverse theme authority as flat cards");
   assert.ok(!themeControllerSource.includes('result') &&
     !themeControllerSource.includes('floating-card') &&
     !themeControllerSource.includes('turnArtwork'),
@@ -3949,13 +3982,13 @@ assert.ok(!supabaseConfig.includes('sb_secret_') || supabaseConfig.includes('NEV
   assert.ok(feedbackDuration > throwDuration, "feedback should outlive the outgoing card");
   assert.ok(game.includes("swipe.prepareHidden()"));
   assert.ok(game.includes("await swipe.reveal()"));
-  assert.ok(game.includes("rotation.recordExposure(item.id,"));
+  assert.ok(game.includes("selector.recordExposure(item.id, sessionNumber)"));
   assert.ok(
-    game.indexOf("await swipe.reveal()") < game.indexOf("rotation.recordExposure(item.id,"),
+    game.indexOf("await swipe.reveal()") < game.indexOf("selector.recordExposure(item.id, sessionNumber)"),
     "exposure must be recorded only after reveal"
   );
   assert.ok(
-    game.indexOf("rotation.recordExposure(item.id,") < game.indexOf('setState("playing")', game.indexOf("rotation.recordExposure(item.id,")),
+    game.indexOf("selector.recordExposure(item.id, sessionNumber)") < game.indexOf('setState("playing")', game.indexOf("selector.recordExposure(item.id, sessionNumber)")),
     "input must unlock only after reveal/exposure"
   );
   assert.ok(!contentSource.includes("./data/images.json"));
@@ -4391,7 +4424,7 @@ await testSlidingPillLifecycle();
 testSessionConfig();
 testPlayerNameAndAnswerStreak();
 await testDynamicRoundPreloader();
-await testImageRotationCatalog();
+await testRoundSelector();
 await testExternalContentSource();
 await testAdminAuthContract();
 await testAvifConversionContracts();
@@ -4417,7 +4450,7 @@ await testSourceContracts();
 console.log("TEST PASS");
 console.log("Simple sliding Session-size pill: PASS");
 console.log("Session configuration 20/50/100: PASS");
-console.log("V1.7.1B local display name + 3/10/20+ streak milestones: PASS");
+console.log("V1.7.1B local display name + 3/10 streak milestones: PASS");
 console.log("R2.4 card-local kinetic reward after ordinary feedback + swipe: PASS");
 console.log("Dynamic preloader 20/50/100: PASS");
 console.log("Session selection + 100-image availability: PASS");
@@ -4436,7 +4469,7 @@ console.log("V1.5.7B.1 dual-object upload + rollback contracts: PASS");
 console.log("V1.5.7B.1 inventory preview/delete lifecycle + Phase B cleanup: PASS");
 console.log("V1.5.6 sequential batch continuity + abort contract: PASS");
 console.log("No forced AI/HUMAN ratio: PASS");
-console.log("Shared image rotation without repeats before catalog exhaustion: PASS");
+console.log("Cross-round repeats allowed + recent images deprioritized: PASS");
 console.log("Supabase-only static build + no repository artifact leakage: PASS");
 console.log("Swipe throw/handoff/return lifecycle: PASS");
 console.log("Visible image decode readiness: PASS");

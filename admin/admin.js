@@ -29,15 +29,15 @@ import { DeleteDrainCoordinator } from "../js/delete-queue.js";
 import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-class-move.js";
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { AdminResultsPanel } from "../js/admin-results-ui.js";
-import { AdminStreakPanel } from "../js/admin-streak-ui.js";
+import { AdminTrainingCodesPanel } from "../js/admin-training-codes.js";
 
 const adminCard = document.querySelector("#admin-card");
 const tabLibrary = document.querySelector("#tab-library");
 const tabResults = document.querySelector("#tab-results");
-const tabStreak = document.querySelector("#tab-streak");
+const tabCodes = document.querySelector("#tab-codes");
 const libraryWorkspace = document.querySelector("#admin-workspace");
 const resultsWorkspace = document.querySelector("#results-workspace");
-const streakWorkspace = document.querySelector("#streak-workspace");
+const codesWorkspace = document.querySelector("#codes-workspace");
 const loginView = document.querySelector("#login-view");
 const authorizedView = document.querySelector("#authorized-view");
 const bootView = document.querySelector("#boot-view");
@@ -116,8 +116,8 @@ const resultsPanel = new AdminResultsPanel({
     showLogin("Sesja administratora wygasła lub brak uprawnień.");
   }
 });
-const streakPanel = new AdminStreakPanel({
-  root: streakWorkspace,
+const codesPanel = new AdminTrainingCodesPanel({
+  root: codesWorkspace,
   getSession: async () => await refreshCurrentSessionForMutation(),
   onAuthFailure: () => {
     clearAdminSession();
@@ -125,32 +125,32 @@ const streakPanel = new AdminStreakPanel({
   }
 });
 let activeAdminTab = "library";
-const adminTabs = [
-  { id: "library", button: tabLibrary, workspace: libraryWorkspace },
-  { id: "results", button: tabResults, workspace: resultsWorkspace },
-  { id: "streak", button: tabStreak, workspace: streakWorkspace }
-];
 function applyAdminTab(tab) {
   activeAdminTab = tab;
-  for (const entry of adminTabs) {
-    const selected = entry.id === tab;
-    entry.button.setAttribute("aria-selected", String(selected));
-    entry.button.tabIndex = selected ? 0 : -1;
-    entry.workspace.hidden = !selected;
-    entry.workspace.inert = !selected;
+  for (const [name, button, panel] of [
+    ["library", tabLibrary, libraryWorkspace],
+    ["results", tabResults, resultsWorkspace],
+    ["codes", tabCodes, codesWorkspace]
+  ]) {
+    const active = name === tab;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    panel.hidden = !active;
+    panel.inert = !active;
   }
   resultsPanel.setActive(tab === "results");
-  streakPanel.setActive(tab === "streak");
+  codesPanel.setActive(tab === "codes");
 }
 function switchAdminTab(tab) {
-  if (!currentSession || !adminTabs.some(entry => entry.id === tab)) return;
-  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
-  if (tab !== activeAdminTab) applyAdminTab(tab);
+  if (!currentSession || !["library", "results", "codes"].includes(tab)) return;
+  if (uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || codesPanel.busy) return;
+  if (tab === activeAdminTab) return;
+  applyAdminTab(tab);
 }
 function resetAdminTab() { applyAdminTab("library"); }
 tabLibrary.addEventListener("click", () => switchAdminTab("library"));
 tabResults.addEventListener("click", () => switchAdminTab("results"));
-tabStreak.addEventListener("click", () => switchAdminTab("streak"));
+tabCodes.addEventListener("click", () => switchAdminTab("codes"));
 
 const BOOT_REVEAL_DELAY_MS = 320;
 const VIEW_NODES = Object.freeze({
@@ -240,9 +240,10 @@ function syncBusyControls() {
   fileInput.disabled = contentInteractionBusy || !categorySelected;
   for (const input of classInputs) input.disabled = contentInteractionBusy;
 
-  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
-  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
-  tabResults.disabled = contentInteractionBusy || resultsPanel.busy || streakPanel.busy;
+  logoutButton.disabled = authBusy || contentInteractionBusy || resultsPanel.busy || codesPanel.busy;
+  tabLibrary.disabled = contentInteractionBusy || resultsPanel.busy;
+  tabResults.disabled = contentInteractionBusy || resultsPanel.busy || codesPanel.busy;
+  tabCodes.disabled = contentInteractionBusy || resultsPanel.busy || codesPanel.busy;
   const noVisibleRows = filteredInventoryRows().length === 0;
   inventoryMoveButton.disabled = contentInteractionBusy || noVisibleRows;
   inventoryDeleteManyButton.disabled = contentInteractionBusy || noVisibleRows;
@@ -996,7 +997,6 @@ async function handleBulkMove(targetClass) {
 
 function showLogin(message = "", { morph = true, focus = true } = {}) {
   resultsPanel.clear();
-  streakPanel.clear();
   resetAdminTab();
   currentSession = null;
   inventoryRows = [];
@@ -1335,7 +1335,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 logoutButton.addEventListener("click", async () => {
-  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy || streakPanel.busy) return;
+  if (authBusy || uploadBusy || deleteBusy || moveBusy || inventoryBusy || resultsPanel.busy) return;
 
   const session = currentSession;
   setAuthBusy(true);
