@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <title>AI or Human — Admin</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./admin.css?v=1.7.1b-r2-5">
+  <link rel="stylesheet" href="./admin.css?v=auth03-1">
 </head>
 <body>
   <main class="admin-shell">
@@ -42,6 +42,7 @@
           <button type="button" id="tab-library" role="tab" aria-controls="admin-workspace" aria-selected="true">Biblioteka</button>
           <button type="button" id="tab-results" role="tab" aria-controls="results-workspace" aria-selected="false" tabindex="-1">Wyniki</button>
           <button type="button" id="tab-streak" role="tab" aria-controls="streak-workspace" aria-selected="false" tabindex="-1">Gratyfikacje</button>
+          <button type="button" id="tab-users" role="tab" aria-controls="users-workspace" aria-selected="false" tabindex="-1">Użytkownicy</button>
         </nav>
 
         <div class="admin-workspace" id="admin-workspace" role="tabpanel" aria-labelledby="tab-library">
@@ -156,6 +157,67 @@
           </form>
         </section>
 
+        <section class="users-workspace" id="users-workspace" role="tabpanel" aria-labelledby="tab-users" hidden inert>
+          <p id="users-status" class="users-status" role="status" aria-live="polite"></p>
+          <div class="users-layout">
+            <section class="users-section" aria-labelledby="users-generator-heading">
+              <h2 id="users-generator-heading">Kody aktywacyjne</h2>
+              <form id="users-generate-form" class="users-generator" autocomplete="off">
+                <label>Liczba kodów
+                  <select id="users-code-count">
+                    <option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="25">25</option>
+                  </select>
+                </label>
+                <label>Ważność
+                  <select id="users-code-days">
+                    <option value="1">1 dzień</option><option value="7" selected>7 dni</option>
+                    <option value="14">14 dni</option><option value="30">30 dni</option><option value="90">90 dni</option>
+                  </select>
+                </label>
+                <button class="admin-primary-button compact-button" id="users-generate-button" type="submit">Generuj kody</button>
+              </form>
+              <div id="users-issued" class="users-issued" hidden aria-live="polite">
+                <div class="users-section-head">
+                  <strong>Nowe kody — skopiuj teraz</strong>
+                  <div class="users-tools">
+                    <button type="button" id="users-copy-all" class="admin-secondary-button compact-button">Kopiuj wszystkie</button>
+                    <button type="button" id="users-hide-issued" class="admin-secondary-button compact-button">Ukryj</button>
+                  </div>
+                </div>
+                <div class="users-issued-list" id="users-issued-list"></div>
+              </div>
+              <div class="users-section-head">
+                <h3>Wydane kody</h3>
+                <div class="users-tools">
+                  <label class="users-filter-label" for="users-code-filter">Status</label>
+                  <select id="users-code-filter" aria-label="Filtr statusu kodów">
+                    <option value="">Wszystkie</option>
+                    <option value="available">Aktywne</option><option value="reserved">Zarezerwowane</option>
+                    <option value="consumed">Wykorzystane</option><option value="expired">Wygasłe</option>
+                    <option value="revoked">Unieważnione</option>
+                  </select>
+                  <button type="button" class="admin-secondary-button compact-button" id="users-codes-refresh">Odśwież</button>
+                </div>
+              </div>
+              <div id="users-codes-list" class="users-list" aria-label="Lista kodów"></div>
+            </section>
+            <section class="users-section" aria-labelledby="users-accounts-heading">
+              <div class="users-section-head">
+                <h2 id="users-accounts-heading">Konta graczy</h2>
+                <div class="users-tools">
+                  <input type="search" id="users-account-search" placeholder="Szukaj loginu lub ID" aria-label="Szukaj konta" maxlength="80">
+                  <select id="users-account-filter" aria-label="Filtr statusu kont">
+                    <option value="">Wszystkie</option><option value="active">Aktywne</option><option value="blocked">Zablokowane</option>
+                  </select>
+                </div>
+              </div>
+              <div class="users-list" id="users-accounts-list" aria-label="Lista kont"></div>
+              <button type="button" class="admin-secondary-button compact-button users-more" id="users-accounts-more" hidden>Wczytaj więcej</button>
+              <p class="users-account-note">Blokada rozgrywki będzie egzekwowana od AUTH-05.</p>
+            </section>
+          </div>
+        </section>
+
         <section class="results-workspace" id="results-workspace" role="tabpanel" aria-labelledby="tab-results" hidden inert>
           <div class="results-topline">
             <h2>Wyniki rozgrywek</h2>
@@ -201,6 +263,6 @@
     </section>
   </main>
 
-  <script type="module" src="./admin.js?v=1.7.1b-r2-5"></script>
+  <script type="module" src="./admin.js?v=auth03-1"></script>
 </body>
 </html>

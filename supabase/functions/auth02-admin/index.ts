@@ -5,7 +5,7 @@ import {
 } from '../_shared/auth02-core.mjs';
 
 // All actions require a real Admin JWT + a positive is_current_user_admin() RPC.
-// The UI for these APIs belongs to AUTH-03, not this stage.
+// AUTH-03 extends AUTH-02 admin operations; all requests verify Admin JWT and role.
 Deno.serve(async (req:Request): Promise<Response> => {
   const origin=req.headers.get('origin');
   const rejected=methodAndOrigin(req);
@@ -49,6 +49,34 @@ Deno.serve(async (req:Request): Promise<Response> => {
         const released=await rpc(admin,'auth02_release_unstarted',{p_attempt_id:attemptId});
         if (!released) throw new DomainError('ATTEMPT_NOT_RELEASABLE',409);
         return respond(origin,200,{released:true});
+      }
+      case 'users': {
+        const limit = body.limit === undefined ? 50 : body.limit;
+        const offset = body.offset === undefined ? 0 : body.offset;
+        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+            !Number.isSafeInteger(offset) || offset < 0 || offset > 100000)
+          throw new DomainError('INVALID_PAGINATION');
+        const search = body.search === undefined ? '' : body.search;
+        const status = body.status === undefined ? '' : body.status;
+        if (typeof search !== 'string' || search.length > 80 ||
+            (status !== '' && status !== 'active' && status !== 'blocked'))
+          throw new DomainError('INVALID_ACCOUNT_FILTER');
+        const result = await rpc(admin, 'auth03_list_players', {
+          p_actor: actor, p_limit: limit, p_offset: offset,
+          p_query: search, p_status: status
+        });
+        return respond(origin, 200, result);
+      }
+      case 'set_user_status': {
+        const userId = validateUuid(body.user_id);
+        if (body.status !== 'active' && body.status !== 'blocked')
+          throw new DomainError('INVALID_ACCOUNT_STATUS');
+        if (userId === actor) throw new DomainError('ADMIN_ACCOUNT_PROTECTED', 403);
+        const result = await rpc(admin, 'auth03_set_player_status', {
+          p_actor: actor, p_user_id: userId, p_status: body.status
+        });
+        if (!result?.user_id) throw new DomainError('ACCOUNT_NOT_FOUND', 404);
+        return respond(origin, 200, { account: result });
       }
       case 'attempts': {
         const limit=Number.isSafeInteger(body.limit)?Number(body.limit):100;

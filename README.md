@@ -43,10 +43,14 @@ Gracze mogą anonimowo wysyłać wyniki, ale nie mogą ich czytać ani usuwać. 
 Dokumentacja poza repo: `AGENTS.md` (zasady), `ROADMAP.md` (plan), `CHANGELOG.md` (pełna historia), `CONTINUE_IN_NEW_CHAT.md` (kontynuacja), `QA_CURRENT.md` (otwarte testy), `README_FIRST.txt` (wdrożenie). Historycznych opisów wydań nie powielamy w README.
 
 
-## AUTH-02 — server-side backend source (not deployed)
+## AUTH-02 — backend wdrożony przez właściciela (SQL + 2 Edge Functions)
 
 The new `supabase/functions/auth02-admin` and `auth02-register` folders implement the invitation-code backend for the future account system. They are **source files only**; `npm run build` intentionally copies only the existing public game/admin assets into `dist/` and does not deploy Edge Functions or SQL. Production game behavior is unchanged until AUTH-03 through AUTH-07.
 
-The AUTH-02 SQL migration, PRECHECK/POSTCHECK and security/runbook documentation are distributed separately under **OUTSIDE_REPO/SQL/AUTH_02_*.sql**, never committed to the public static website. Server credentials (`SUPABASE_SERVICE_ROLE_KEY`, `AUTH02_HMAC_SECRET`) must stay in Supabase secrets, not in browser/config files. See `OUTSIDE_REPO/AUTH/AUTH_02/README_FIRST.md` before any deployment. AUTH-02 backend has local unit tests but requires real Supabase JWT, RPC and race testing before it can be called complete.
+The AUTH-02 SQL migration, PRECHECK/POSTCHECK and security/runbook documentation are distributed separately under **OUTSIDE_REPO/SQL/AUTH_02_*.sql**, never committed to the public static website. Server credentials (`SUPABASE_SERVICE_ROLE_KEY`, `AUTH02_HMAC_SECRET`) must stay in Supabase secrets, not in browser/config files. See `OUTSIDE_REPO/AUTH/AUTH_02/README_FIRST.md` before any deployment. AUTH-02 SQL POSTCHECK 13/13 i obie Edge Functions potwierdzone przez właściciela; 401 ADMIN_LOGIN_REQUIRED i 400 INVALID_CODE PASS. Pełne testy generatora i race nadal otwarte; patrz AUTH-03 README.
 
 **AUTH-02 release corrective:** original backend SQL rejected the configured global rate limit of 300; this source release requires the corrected migration and standalone contract QA. Never deploy code with the earlier AUTH-02 SQL.
+
+## AUTH-03 — panel Użytkownicy (źródła gotowe; deploy oczekuje)
+
+W panelu administratora nowa zakładka z generowaniem i unieważnianiem kodów oraz listą/zarządzaniem kontami. Wymaga `OUTSIDE_REPO/SQL/AUTH_03_ADMIN_ACCOUNTS.sql` i aktualizacji istniejącej Edge Function `auth02-admin` przez Supabase Dashboard. Zmiana statusu `blocked` jest zapisywana w profilu, a realne egzekwowanie przed grą należy do AUTH-05. Pełna instrukcja bez terminala: `OUTSIDE_REPO/AUTH03_README_FIRST.md` w archiwum wydania.

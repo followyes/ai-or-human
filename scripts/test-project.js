@@ -4038,7 +4038,7 @@ assert.ok(/\.inventory-status\s*\{[\s\S]*?height:\s*1\.25em;[\s\S]*?min-height:\
   "Library status must reserve a fixed one-line slot so transient messages cannot shift the grid");
 assert.ok(!adminCss.includes('.inventory-status:empty'),
   "empty Library status must not collapse its reserved layout slot");
-assert.ok(!adminHtml.includes('id="inventory-refresh"') && !adminHtml.includes('>Odśwież</button>'),
+assert.ok(!adminHtml.includes('id="inventory-refresh"') && !/id="inventory-refresh"[^>]*>Odśwież<\/button>/.test(adminHtml),
   "manual Library refresh control must be removed from the Admin UI");
 assert.ok(adminHtml.includes('id="inventory-move"') && adminHtml.includes('>Przenieś</button>') &&
   adminHtml.includes('id="inventory-delete-many"') && adminHtml.includes('>Usuń wiele</button>'),
