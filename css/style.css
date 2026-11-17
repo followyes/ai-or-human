@@ -2561,6 +2561,128 @@ body.is-profile-dialog-open { overflow: hidden; }
   .profile-dialog { gap: 9px; padding: 18px; max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px); }
 }
 @media (prefers-reduced-motion: reduce) { .profile-dialog { animation: none; } }
+
+/* AUTH-04 — a distinct, temporary account entry while the legacy player
+   chooser stays intact until the AUTH-05–07 identity cutover. */
+.account-entry {
+  position: fixed;
+  z-index: 50;
+  top: max(16px, env(safe-area-inset-top));
+  right: calc(max(14px, env(safe-area-inset-right)) + 55px);
+  min-height: 46px;
+  min-width: 65px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-switch-border);
+  border-radius: 999px;
+  background: var(--theme-switch-bg);
+  box-shadow: var(--theme-switch-shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--landing-title);
+  font: 700 .8rem/1 "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+.account-entry.is-signed-in::after {
+  content: "";
+  position: absolute;
+  top: 7px; right: 6px;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--correct);
+}
+.account-entry:hover { transform: translateY(-1px); }
+.account-entry:active { transform: scale(.97); }
+.account-entry:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+body[data-public-view="gameplay"] .account-entry { display: none; }
+body.is-account-dialog-open { overflow: hidden; }
+.account-dialog-backdrop {
+  position: fixed; z-index: 120; inset: 0;
+  display: grid; place-items: center;
+  padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow: auto; overscroll-behavior: contain;
+  background: rgba(9,18,27,.64);
+  backdrop-filter: blur(11px);
+  -webkit-backdrop-filter: blur(11px);
+}
+.account-dialog-backdrop[hidden], .account-form[hidden], .account-message[hidden] { display: none !important; }
+.account-dialog {
+  position: relative; width: min(100%, 430px); max-height: calc(100dvh - 32px);
+  overflow: auto; display: grid; gap: 16px;
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid var(--landing-panel-border);
+  border-radius: 27px;
+  background: var(--surface); color: var(--landing-title);
+  box-shadow: 0 30px 84px rgba(0,0,0,.32);
+  animation: profile-dialog-enter 220ms cubic-bezier(.18,.80,.22,1) both;
+}
+.account-dialog:focus { outline: none; }
+.account-close {
+  position: absolute; top: 11px; right: 11px;
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 0; border-radius: 50%;
+  background: var(--accent-gold-soft); color: var(--landing-title);
+  cursor: pointer;
+}
+.account-close svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.account-eyebrow { margin-top: 5px; font-size: .66rem; font-weight: 850; letter-spacing: .17em; color: var(--muted); }
+.account-title {
+  margin: 0; padding-right: 32px;
+  font: 700 clamp(1.8rem, 7vw, 2.25rem)/1.06 Georgia, "Times New Roman", serif;
+  letter-spacing: -.035em;
+}
+.account-message {
+  margin: 0; padding: 11px 13px; border-radius: 12px;
+  font-size: .82rem; line-height: 1.5; color: var(--landing-title);
+  background: var(--accent-gold-soft);
+}
+.account-message[data-tone="error"] { color: #9e3442; background: #fae9ea; }
+.account-message[data-tone="success"] { color: #176544; background: #e0f1e7; }
+.account-form { display: grid; gap: 13px; min-width: 0; }
+.account-form label { display: grid; gap: 6px; font-size: .8rem; font-weight: 650; }
+.account-form input {
+  width: 100%; height: 48px; min-width: 0; padding: 0 14px;
+  border: 1px solid var(--landing-panel-border); border-radius: 12px;
+  background: var(--landing-panel); color: var(--landing-title);
+  font: 550 .94rem/1 "Segoe UI", sans-serif;
+  user-select: text; -webkit-user-select: text;
+}
+.account-form input:disabled { opacity: .75; }
+.account-form input[name="code"] { font: 550 .8rem/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.account-primary {
+  min-height: 49px; padding: 10px 16px;
+  border: 1px solid var(--pregame-cta-border); border-radius: 13px;
+  background: var(--pregame-cta-bg); color: var(--pregame-cta-text);
+  font: 750 .92rem/1.2 "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.account-primary:disabled { opacity: .6; cursor: wait; }
+.account-links { display: flex; flex-wrap: wrap; gap: 6px 17px; align-items: center; justify-content: center; }
+.account-links button {
+  min-height: 44px; padding: 6px 2px; border: 0;
+  background: transparent; color: var(--landing-title);
+  font: 650 .78rem/1.4 "Segoe UI", sans-serif;
+  text-decoration: underline; text-decoration-color: var(--accent-gold);
+  text-underline-offset: 4px; cursor: pointer;
+}
+.account-confirm p { margin: 0; font-size: .9rem; line-height: 1.55; }
+.account-summary { gap: 9px; }
+.account-summary strong { font-size: 1.18rem; overflow-wrap: anywhere; }
+.account-summary span { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+.account-summary .account-primary { margin-top: 10px; }
+.account-dialog :is(button,input):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 360px) {
+  .account-dialog { padding: 20px; gap: 12px; }
+  .account-entry { min-width: 60px; padding-inline: 11px; font-size: .75rem; }
+}
+@media (max-height: 650px) {
+  .account-dialog-backdrop { place-items: start center; }
+  .account-dialog { max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-dialog { animation: none; }
+}
 /* R2.4B — result identity is the hero; the game's brand is already known.
    Avoid a framed nickname chip, technical captions and repeated labels. */
 .result-brand { gap: 10px; }

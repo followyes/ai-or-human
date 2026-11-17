@@ -43,6 +43,9 @@ export class AdminUsersPanel {
     if (Object.values(this.els).some(value => !value)) throw new Error('Incomplete Admin Users markup');
     this.active = false; this.busy = false; this.revision = 0;
     this.codes = []; this.accounts = []; this.total = 0; this.issuedCodes = [];
+    this.toast = root.querySelector('#users-toast');
+    this.toastTimer = null;
+    this.copyButtonTimers = new WeakMap();
     this.bind();
   }
   get(id) { return this.els[`users-${id}`]; }
@@ -63,8 +66,8 @@ export class AdminUsersPanel {
       const target = event.target.closest('[data-users-action]');
       if (!target || this.busy) return;
       const match = this.issuedCodes.find(row => row.id === target.dataset.id);
-      if (match && target.dataset.usersAction === 'copy-code') void this.copy(match.code, 'Kod skopiowany.');
-      if (match && target.dataset.usersAction === 'copy-link') void this.copy(match.link, 'Link skopiowany.');
+      if (match && target.dataset.usersAction === 'copy-code') void this.copy(match.code, 'Kod skopiowany!', target);
+      if (match && target.dataset.usersAction === 'copy-link') void this.copy(match.link, 'Link skopiowany!', target);
     });
     this.get('codes-list').addEventListener('click', event => {
       const target = event.target.closest('[data-users-action]');
@@ -76,6 +79,13 @@ export class AdminUsersPanel {
     });
   }
   status(text) { this.get('status').textContent = text; }
+  notify(text) {
+    if (!this.toast) { this.status(text); return; }
+    clearTimeout(this.toastTimer);
+    this.toast.textContent = text;
+    this.toast.hidden = false;
+    this.toastTimer = setTimeout(() => { this.toast.hidden = true; this.toast.textContent = ''; }, 2400);
+  }
   setActive(active) {
     this.active = Boolean(active); ++this.revision;
     if (this.active) void this.load();
@@ -89,6 +99,8 @@ export class AdminUsersPanel {
   clear() {
     this.active = false; ++this.revision;
     clearTimeout(this.searchTimer);
+    clearTimeout(this.toastTimer);
+    if (this.toast) { this.toast.hidden = true; this.toast.textContent = ''; }
     this.lock(false);
     this.clearIssued();
     this.codes = []; this.accounts = []; this.total = 0;
@@ -97,6 +109,8 @@ export class AdminUsersPanel {
     this.get('account-search').value = '';
     this.get('account-filter').value = '';
     this.get('code-filter').value = '';
+    this.get('account-filter')._usersChoice?.sync();
+    this.get('code-filter')._usersChoice?.sync();
     this.get('accounts-more').hidden = true;
     this.status('');
   }
@@ -176,24 +190,41 @@ export class AdminUsersPanel {
       const field = node(doc,'input','users-issued-code');
       field.readOnly = true; field.autocomplete = 'off'; field.spellcheck = false; field.value = item.code; field.setAttribute('aria-label','Wygenerowany kod');
       field.addEventListener('focus', () => field.select());
+      field.addEventListener('click', () => field.select());
       row.append(field, button(doc,'Kopiuj kod','copy-code',item.id), button(doc,'Kopiuj link','copy-link',item.id));
       frag.append(row);
     }
     this.get('issued-list').replaceChildren(frag);
     this.get('issued').hidden = false;
   }
-  async copy(text, success) {
-    try { await this.copyText(text); this.status(success); }
-    catch { this.status('Nie udało się skopiować. Zaznacz kod w polu i skopiuj ręcznie.'); }
+  async copy(text, success, target = null) {
+    try {
+      await this.copyText(text);
+      this.notify(success);
+      if (target?.isConnected) {
+        clearTimeout(this.copyButtonTimers.get(target));
+        const originalLabel = target.dataset.originalCopyLabel || target.textContent;
+        target.dataset.originalCopyLabel = originalLabel;
+        target.textContent = 'Skopiowano ✓';
+        const timer = setTimeout(() => {
+          if (target.isConnected) target.textContent = originalLabel;
+          delete target.dataset.originalCopyLabel;
+        }, 1800);
+        this.copyButtonTimers.set(target, timer);
+      }
+    }
+    catch { this.notify('Nie udało się skopiować. Zaznacz kod w polu i skopiuj ręcznie.'); }
   }
   async copyAll() {
     if (!this.issuedCodes.length) return;
-    await this.copy(this.issuedCodes.map(row => `${row.code}  ${row.link}`).join('\n'), 'Kody i linki skopiowane.');
+    await this.copy(this.issuedCodes.map(row => `${row.code}  ${row.link}`).join('\n'), 'Kody i linki skopiowane!', this.get('copy-all'));
   }
   renderCodes() {
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
     const filter = this.get('code-filter').value;
-    const rows = this.codes.filter(row => !filter || row.status === filter);
+    // Revoked codes disappear from the operator's list immediately. The server
+    // keeps their non-secret audit metadata so they cannot be reused.
+    const rows = this.codes.filter(row => row.status !== 'revoked' && (!filter || row.status === filter));
     if (!rows.length) frag.append(node(doc,'p','users-empty','Brak kodów.'));
     for (const item of rows) {
       const row = node(doc,'div','users-row');
@@ -214,8 +245,16 @@ export class AdminUsersPanel {
     if (!this.confirmAction('Unieważnić ten kod? Nie będzie można go już wykorzystać.')) return;
     await this.run(async (options, revision) => {
       await revokeIssuedCode(id, options);
-      const codes = await listIssuedCodes(options);
-      if (revision === this.revision) { this.codes = codes; this.renderCodes(); }
+      if (revision === this.revision) {
+        // The successful API response is authoritative. A failed follow-up
+        // listing must not leave a server-revoked code visible/copyable.
+        this.codes = this.codes.map(item => item.id === id ? {...item,status:'revoked'} : item);
+        this.issuedCodes = this.issuedCodes.filter(item => item.id !== id);
+        if (this.issuedCodes.length) this.renderIssued();
+        else this.clearIssued();
+        this.renderCodes();
+        this.notify('Kod unieważniony.');
+      }
     }, {loading:'Unieważnianie kodu…', complete:'Kod unieważniony.'});
   }
   renderAccounts() {

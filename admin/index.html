@@ -159,17 +159,18 @@
 
         <section class="users-workspace" id="users-workspace" role="tabpanel" aria-labelledby="tab-users" hidden inert>
           <p id="users-status" class="users-status" role="status" aria-live="polite"></p>
+          <p id="users-toast" class="users-toast" role="status" aria-live="polite" hidden></p>
           <div class="users-layout">
             <section class="users-section" aria-labelledby="users-generator-heading">
               <h2 id="users-generator-heading">Kody aktywacyjne</h2>
               <form id="users-generate-form" class="users-generator" autocomplete="off">
                 <label>Liczba kodów
-                  <select id="users-code-count">
+                  <select id="users-code-count" data-users-choice>
                     <option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="25">25</option>
                   </select>
                 </label>
                 <label>Ważność
-                  <select id="users-code-days">
+                  <select id="users-code-days" data-users-choice>
                     <option value="1">1 dzień</option><option value="7" selected>7 dni</option>
                     <option value="14">14 dni</option><option value="30">30 dni</option><option value="90">90 dni</option>
                   </select>
@@ -190,11 +191,10 @@
                 <h3>Wydane kody</h3>
                 <div class="users-tools">
                   <label class="users-filter-label" for="users-code-filter">Status</label>
-                  <select id="users-code-filter" aria-label="Filtr statusu kodów">
+                  <select id="users-code-filter" data-users-choice aria-label="Filtr statusu kodów">
                     <option value="">Wszystkie</option>
                     <option value="available">Aktywne</option><option value="reserved">Zarezerwowane</option>
                     <option value="consumed">Wykorzystane</option><option value="expired">Wygasłe</option>
-                    <option value="revoked">Unieważnione</option>
                   </select>
                   <button type="button" class="admin-secondary-button compact-button" id="users-codes-refresh">Odśwież</button>
                 </div>
@@ -206,7 +206,7 @@
                 <h2 id="users-accounts-heading">Konta graczy</h2>
                 <div class="users-tools">
                   <input type="search" id="users-account-search" placeholder="Szukaj loginu lub ID" aria-label="Szukaj konta" maxlength="80">
-                  <select id="users-account-filter" aria-label="Filtr statusu kont">
+                  <select id="users-account-filter" data-users-choice aria-label="Filtr statusu kont">
                     <option value="">Wszystkie</option><option value="active">Aktywne</option><option value="blocked">Zablokowane</option>
                   </select>
                 </div>

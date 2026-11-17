@@ -141,6 +141,11 @@
     <span class="profile-entry__dot" aria-hidden="true"></span>
   </button>
 
+  <!-- AUTH-04 is an additive account flow. The legacy local profile remains
+       unchanged until the AUTH-05–07 account-identity cutover. -->
+  <button class="account-entry" id="account-entry" type="button" aria-haspopup="dialog"
+          aria-controls="account-dialog" aria-label="Otwórz konto" title="Konto">Konto</button>
+
   <main class="app-shell">
     <section class="screen screen-pre-game" id="pre-game-screen" aria-label="Ustawienia przed grą">
       <div class="pre-game-stage">
@@ -366,6 +371,70 @@
     </section>
   </div>
 
+  <div class="account-dialog-backdrop" id="account-dialog-backdrop" hidden>
+    <section class="account-dialog" id="account-dialog" role="dialog" aria-modal="true"
+             aria-labelledby="account-title" tabindex="-1">
+      <button class="account-close" id="account-close" type="button" aria-label="Zamknij okno konta">
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"></path></svg>
+      </button>
+      <span class="account-eyebrow">AI OR HUMAN</span>
+      <h2 class="account-title" id="account-title">Logowanie</h2>
+      <p id="account-message" class="account-message" role="status" aria-live="polite" hidden></p>
+
+      <form id="account-login-form" class="account-form" data-account-panel="login" autocomplete="on">
+        <label>E-mail <input name="email" type="email" autocomplete="email" required maxlength="254"></label>
+        <label>Hasło <input name="password" type="password" autocomplete="current-password" required></label>
+        <button class="account-primary" type="submit">Zaloguj się</button>
+        <div class="account-links">
+          <button type="button" data-account-view="register">Zarejestruj się</button>
+          <button type="button" data-account-view="forgot">Nie pamiętasz hasła?</button>
+          <button type="button" data-account-view="resend">Potwierdź e-mail</button>
+        </div>
+      </form>
+
+      <form id="account-register-form" class="account-form" data-account-panel="register" autocomplete="on" hidden inert>
+        <label>Kod aktywacyjny <input name="code" type="text" autocomplete="off" required spellcheck="false" autocapitalize="characters"></label>
+        <label>Nazwa gracza <input name="playerName" type="text" autocomplete="nickname" maxlength="20" required spellcheck="false"></label>
+        <label>E-mail <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+        <label>Hasło <input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <label>Powtórz hasło <input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></label>
+        <button class="account-primary" type="submit">Utwórz konto</button>
+        <div class="account-links"><button type="button" data-account-view="login">Mam już konto</button></div>
+      </form>
+
+      <form id="account-forgot-form" class="account-form" data-account-panel="forgot" hidden inert>
+        <label>E-mail <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+        <button class="account-primary" type="submit">Wyślij link do zmiany hasła</button>
+        <div class="account-links"><button type="button" data-account-view="login">Wróć do logowania</button></div>
+      </form>
+
+      <form id="account-resend-form" class="account-form" data-account-panel="resend" hidden inert>
+        <label>E-mail <input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+        <button class="account-primary" type="submit">Wyślij potwierdzenie</button>
+        <div class="account-links"><button type="button" data-account-view="login">Wróć do logowania</button></div>
+      </form>
+
+      <div class="account-form account-confirm" data-account-panel="confirm" hidden inert>
+        <p>Konto zostało utworzone. Potwierdź adres e-mail, aby się zalogować.</p>
+        <button class="account-primary" id="account-send-confirm" type="button">Wyślij e-mail potwierdzający</button>
+        <div class="account-links"><button type="button" data-account-view="login">Przejdź do logowania</button></div>
+      </div>
+
+      <form id="account-update-form" class="account-form" data-account-panel="update" hidden inert>
+        <label>Nowe hasło <input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+        <label>Powtórz hasło <input name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></label>
+        <button class="account-primary" type="submit">Ustaw nowe hasło</button>
+      </form>
+
+      <div class="account-form account-summary" data-account-panel="account" hidden inert>
+        <strong id="account-profile-name"></strong>
+        <span id="account-profile-email"></span>
+        <button class="account-primary" type="button" id="account-signout">Wyloguj się</button>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./js/player-auth-ui.js?v=auth-04"></script>
   <script type="module" src="./js/game.js?v=1.7.1b-r2-5-1"></script>
 </body>
 </html>

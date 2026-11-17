@@ -31,6 +31,7 @@ import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { AdminResultsPanel } from "../js/admin-results-ui.js";
 import { AdminStreakPanel } from "../js/admin-streak-ui.js";
 import { AdminUsersPanel } from "../js/admin-users-ui.js";
+import { enhanceAdminChoiceSelects } from "../js/admin-choice-select.js";
 
 const adminCard = document.querySelector("#admin-card");
 const tabLibrary = document.querySelector("#tab-library");
@@ -135,6 +136,7 @@ const usersPanel = new AdminUsersPanel({
     showLogin("Sesja administratora wygasła lub brak uprawnień.");
   }
 });
+enhanceAdminChoiceSelects(usersWorkspace);
 let activeAdminTab = "library";
 const adminTabs = [
   { id: "library", button: tabLibrary, workspace: libraryWorkspace },
