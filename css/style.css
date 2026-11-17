@@ -2666,7 +2666,7 @@ body.is-account-dialog-open { overflow: hidden; }
   text-decoration: underline; text-decoration-color: var(--accent-gold);
   text-underline-offset: 4px; cursor: pointer;
 }
-.account-confirm p { margin: 0; font-size: .9rem; line-height: 1.55; }
+.account-password-notice { margin: 0; color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .account-summary { gap: 9px; }
 .account-summary strong { font-size: 1.18rem; overflow-wrap: anywhere; }
 .account-summary span { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }

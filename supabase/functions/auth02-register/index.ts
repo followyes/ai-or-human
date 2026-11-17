@@ -41,8 +41,13 @@ Deno.serve(async (req:Request): Promise<Response> => {
       begin:(id:string) => rpc(admin,'auth02_begin_creation',{p_attempt_id:id}),
       createAuthUser:async ({email,password,playerName,attemptId,codeId}:{email:string,password:string,playerName:string,attemptId:string,codeId:string})=>{
         const {data,error}=await admin.auth.admin.createUser({
-          email:normalizeEmail(email),password,email_confirm:false,
-          app_metadata:{auth02_attempt_id:attemptId,auth02_code_id:codeId,auth02_player_name:playerName}
+          // AUTH-04A: the one-time registration code is the admission check.
+          // No SMTP confirmation is sent. Email ownership is NOT verified.
+          email:normalizeEmail(email),password,email_confirm:true,
+          app_metadata:{
+            auth02_attempt_id:attemptId,auth02_code_id:codeId,
+            auth02_player_name:playerName,auth02_email_ownership_unverified:true
+          }
         });
         if (error || !data?.user?.id) throw new Error('AUTH_CREATE_FAILED');
         return data.user.id;

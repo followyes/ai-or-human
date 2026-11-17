@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {
   PlayerAuthService, PlayerAuthError, normalizeActivationCode,
   validatePlayerName, validatePlayerPassword, parsePlayerAuthHash,
-  PLAYER_AUTH_STORAGE_KEY, REGISTRATION_RETRY_STORAGE_KEY, PUBLIC_AUTH_REDIRECT
+  PLAYER_AUTH_STORAGE_KEY, REGISTRATION_RETRY_STORAGE_KEY
 } from '../js/player-auth.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)),'..');
@@ -55,7 +55,7 @@ test('AUTH-04 registration retries same UUID after lost response; never stores r
     assert.equal(req.headers.Authorization,undefined);
     bodies.push(JSON.parse(req.body));
     if (++attempts === 1) throw new TypeError('connection lost');
-    return json({status:'registered_email_verification_required'},201);
+    return json({status:'registered_active'},201);
   },stored,retry);
   const input={code,email:'SOMEONE@example.com',password:'good-password-for-test',playerName:'Pixel_Fox'};
   await assert.rejects(api.register(input),e=>e instanceof PlayerAuthError && e.code==='NETWORK');
@@ -66,7 +66,7 @@ test('AUTH-04 registration retries same UUID after lost response; never stores r
   assert.ok(!pending.includes(input.password));
   assert.match(JSON.parse(pending).digest,/^[0-9a-f]{64}$/);
   const finished=await api.register(input);
-  assert.equal(finished.status,'registered_email_verification_required');
+  assert.equal(finished.status,'registered_active');
   assert.equal(bodies[0].request_key,bodies[1].request_key);
   assert.equal(bodies[0].player_name,input.playerName);
   assert.equal(bodies[0].email,'someone@example.com');
@@ -133,60 +133,17 @@ test('AUTH-04 concurrent account reads share one refresh operation',async()=>{
   assert.equal(result[0].user.id,result[1].user.id);
 });
 
-test('AUTH-04 recovery callback is verified and its bearer token is never persisted',async()=>{
-  const stored=memory();
-  const requests=[];
-  const api=service(async(url,req)=>{
-    const path=new URL(url).pathname;
-    requests.push({path,body:req.body && JSON.parse(req.body)});
-    if (path.endsWith('/user') && req.method==='GET') return json(account);
-    if (path.endsWith('/user') && req.method==='PUT') return json({id:userId});
-    if (path.endsWith('/logout')) return new Response(null,{status:204});
-    throw new Error(path);
-  },stored);
-  const callback=parsePlayerAuthHash('#access_token=recovery-access&refresh_token=recovery-refresh&type=recovery&expires_in=3600');
-  assert.equal(callback.kind,'recovery');
-  await api.acceptCallback(callback);
-  assert.equal(stored.getItem(PLAYER_AUTH_STORAGE_KEY),null);
-  await api.updateRecoveredPassword('new-strong-password-456');
-  assert.equal(stored.getItem(PLAYER_AUTH_STORAGE_KEY),null);
-  assert.ok(requests.some(r=>r.path.endsWith('/user') && r.body?.password==='new-strong-password-456'));
-  await assert.rejects(api.updateRecoveredPassword('new-strong-password-456'),e=>e.code==='RECOVERY_MISSING');
-});
-
-test('AUTH-04 signed confirmation callback uses verified user identity, not URL claims',async()=>{
-  const stored=memory();
-  const api=service(async(url,req)=>{
-    assert.equal(new URL(url).pathname,'/auth/v1/user');
-    assert.equal(req.headers.Authorization,'Bearer callback-access');
-    return json(account);
-  },stored);
-  const data=parsePlayerAuthHash('#access_token=callback-access&refresh_token=callback-refresh&type=signup');
-  await api.acceptCallback(data);
-  const saved=JSON.parse(stored.getItem(PLAYER_AUTH_STORAGE_KEY));
-  assert.equal(saved.user.id,account.id);
-  assert.equal(saved.user.email,account.email);
-});
-
-test('AUTH-04 recovery and confirmation use Auth mail endpoints and safe redirect URL',async()=>{
-  const requests=[];
-  const api=service(async(url,req)=>{
-    requests.push({url:String(url),body:JSON.parse(req.body)});
-    return json({});
-  });
-  await api.requestPasswordReset('SOMEONE@example.com');
-  await api.resendSignupConfirmation('SOMEONE@example.com');
-  assert.match(requests[0].url,/\/auth\/v1\/recover\?redirect_to=/);
-  assert.equal(new URL(requests[0].url).searchParams.get('redirect_to'),PUBLIC_AUTH_REDIRECT);
-  assert.deepEqual(requests[0].body,{email:'someone@example.com'});
-  assert.equal(new URL(requests[1].url).searchParams.get('redirect_to'),PUBLIC_AUTH_REDIRECT);
-  assert.deepEqual(requests[1].body,{type:'signup',email:'someone@example.com'});
-});
-
-test('AUTH-04 displays Supabase email-not-confirmed error rather than leaking raw errors',async()=>{
-  const api=service(async()=>json({error:'invalid_grant',error_code:'email_not_confirmed'},400));
-  await assert.rejects(api.signIn({email:'someone@example.com',password:'password'}),
-    e=>e.code==='email_not_confirmed' && /Potwierdź/.test(e.message));
+test('AUTH-04A code-only flow never triggers SMTP/recovery endpoints or accepts URL tokens',()=>{
+  assert.equal(parsePlayerAuthHash('#access_token=x&refresh_token=y&type=recovery').kind,'unsupported');
+  assert.equal(parsePlayerAuthHash('#access_token=x&refresh_token=y&type=signup').kind,'unsupported');
+  const source=readFileSync(join(root,'js/player-auth.js'),'utf8');
+  const ui=readFileSync(join(root,'js/player-auth-ui.js'),'utf8');
+  const register=readFileSync(join(root,'supabase/functions/auth02-register/index.ts'),'utf8');
+  assert.doesNotMatch(source,/\/auth\/v1\/(recover|resend)/);
+  assert.doesNotMatch(ui,/requestPasswordReset|resendSignupConfirmation|acceptCallback/);
+  assert.match(register,/email_confirm:true/);
+  assert.match(register,/auth02_email_ownership_unverified:true/);
+  assert.doesNotMatch(register,/auth\.admin\.inviteUserByEmail/);
 });
 
 test('AUTH-04 public UI is additive, linked, accessible, and Admin revoked-code list hides revoked codes',()=>{
@@ -195,9 +152,11 @@ test('AUTH-04 public UI is additive, linked, accessible, and Admin revoked-code 
   const admin=readFileSync(join(root,'js/admin-users-ui.js'),'utf8');
   const adminHtml=readFileSync(join(root,'admin/index.html'),'utf8');
   assert.match(html,/id="account-dialog"[^>]+role="dialog"[^>]+aria-modal="true"/);
-  assert.match(html,/player-auth-ui\.js\?v=auth-04/);
+  assert.match(html,/player-auth-ui\.js\?v=auth-04a/);
   assert.match(html,/data-account-panel="register"/);
-  assert.match(html,/data-account-panel="update"/);
+  assert.doesNotMatch(html,/data-account-panel="(update|forgot|resend|confirm)"/);
+  assert.match(html,/Na razie nie ma odzyskiwania hasła/);
+  assert.doesNotMatch(html,/Wyślij e-mail potwierdzający|Nie pamiętasz hasła/);
   assert.match(css,/\.account-dialog-backdrop\[hidden\]/);
   assert.match(admin, /row\.status !== 'revoked'/);
   assert.match(admin,/Kod skopiowany!/);

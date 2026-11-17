@@ -75,7 +75,7 @@ test('Deterministic HMAC is keyed, same message same digest',async()=>{
 });
 test('Registration consumes exactly one code and creates one auth user',async()=>{
   const {entry,adapter}=fakeStore();
-  assert.deepEqual(await registerWithCode(VALID_USER,adapter),{status:'registered_email_verification_required'});
+  assert.deepEqual(await registerWithCode(VALID_USER,adapter),{status:'registered_active'});
   assert.equal(entry.createdCount,1);assert.equal(entry.finalized,1);assert.equal(entry.status,'consumed');
   assert.deepEqual(await registerWithCode(VALID_USER,adapter),{status:'already_completed'});
   assert.equal(entry.createdCount,1);
@@ -106,7 +106,7 @@ test('Retry after durable auth_created can finalize without second user creation
   entry.status='reserved';entry.attempt={state:'auth_created',requestKey:VALID_USER.request_key,
     emailDigest:'hash-email:person@example.com',playerName:'PixelFox',userId:entry.userId};
   const r=await registerWithCode(VALID_USER,adapter);
-  assert.equal(r.status,'registered_email_verification_required');
+  assert.equal(r.status,'registered_active');
   assert.equal(entry.createdCount,0);assert.equal(entry.finalized,1);
 });
 test('SQL exposes only service_role RPC and keeps old game intact',(t)=>{
@@ -132,7 +132,7 @@ test('No secret keys inside GitHub Pages source and no UI introduced',()=>{
   const build=readFileSync(new URL('build-site.js',import.meta.url),'utf8');
   assert.ok(!build.includes('supabase/functions'));
   const fn=readFileSync(new URL('../supabase/functions/auth02-register/index.ts',import.meta.url),'utf8');
-  assert.ok(fn.includes('email_confirm:false'));
+  assert.ok(fn.includes('email_confirm:true'));
   assert.ok(fn.includes('auth02_reserve_code'));
   assert.ok(fn.includes('AUTH_CREATE_UNCERTAIN')===false); // shared module owns this error state
 });

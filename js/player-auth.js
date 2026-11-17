@@ -8,7 +8,6 @@ import { resolveSupabasePublicConfig } from './content-source.js';
 
 export const PLAYER_AUTH_STORAGE_KEY = 'ai-or-human:player-auth:v1';
 export const REGISTRATION_RETRY_STORAGE_KEY = 'ai-or-human:registration-attempt:v1';
-export const PUBLIC_AUTH_REDIRECT = 'https://followyes.github.io/ai-or-human/';
 const CODE_ALPHABET = '[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]';
 const CODE_FORMAT = new RegExp('^AOH(?:-' + CODE_ALPHABET + '{8}){4}$');
 const UUID_FORMAT = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -24,10 +23,7 @@ const AUTH_MESSAGES = Object.freeze({
   INVALID_REQUEST_KEY: 'Odśwież formularz i spróbuj ponownie.',
   TOO_MANY_REQUESTS: 'Za dużo prób. Odczekaj chwilę.',
   REGISTRATION_REVIEW_REQUIRED: 'Rejestracja wymaga sprawdzenia. Nie używaj nowego kodu — skontaktuj się z administratorem.',
-  email_not_confirmed: 'Potwierdź adres e-mail, zanim się zalogujesz.',
   invalid_credentials: 'Nieprawidłowy e-mail lub hasło.',
-  email_address_not_authorized: 'Wysyłanie wiadomości na ten adres jest zablokowane w konfiguracji poczty.',
-  over_email_send_rate_limit: 'Limit wiadomości został osiągnięty. Spróbuj później.',
   over_request_rate_limit: 'Za dużo prób. Odczekaj chwilę.',
   same_password: 'Nowe hasło musi być inne niż dotychczasowe.'
 });
@@ -69,15 +65,9 @@ export function parsePlayerAuthHash(value) {
   const params = new URLSearchParams(hash);
   if (params.has('register')) return {kind: 'register', code: params.get('register') || ''};
   if (params.has('error') || params.has('error_code')) return {kind: 'error'};
-  const type = params.get('type');
-  const accessToken = params.get('access_token'), refreshToken = params.get('refresh_token');
-  if (accessToken && refreshToken && ['signup', 'recovery'].includes(type)) {
-    return {
-      kind: type, access_token: accessToken, refresh_token: refreshToken,
-      token_type: params.get('token_type') || 'bearer',
-      expires_in: Number(params.get('expires_in')) || 3600
-    };
-  }
+  if (params.has('access_token') || params.has('refresh_token')) return {kind: 'unsupported'};
+  // This release has no email link flow and never accepts Auth bearer tokens
+  // from a URL fragment. Legacy recovery/confirmation tokens are invalid here.
   return {kind: 'none'};
 }
 
@@ -118,7 +108,6 @@ export class PlayerAuthService {
     this.webCrypto = webCrypto;
     this.now = now;
     this.session = null;
-    this.recoverySession = null;
     this.refreshPromise = null;
     try {
       const raw = storage?.getItem(PLAYER_AUTH_STORAGE_KEY);
@@ -183,7 +172,7 @@ export class PlayerAuthService {
   }
 
   clear() {
-    this.session = null; this.recoverySession = null;
+    this.session = null;
     try { this.storage?.removeItem(PLAYER_AUTH_STORAGE_KEY); } catch {}
   }
 
@@ -210,7 +199,7 @@ export class PlayerAuthService {
       method: 'POST', timeoutMs: 30000,
       body: {...validated, request_key: requestKey}
     });
-    if (!['registered_email_verification_required', 'already_completed'].includes(result?.status)) {
+    if (!['registered_active', 'already_completed'].includes(result?.status)) {
       throw new PlayerAuthError('RESPONSE', 'Rejestracja wymaga sprawdzenia. Skontaktuj się z administratorem.');
     }
     try { this.retryStorage?.removeItem(REGISTRATION_RETRY_STORAGE_KEY); } catch {}
@@ -278,44 +267,4 @@ export class PlayerAuthService {
     catch { /* The browser has signed out locally even if the network was lost. */ }
   }
 
-  async requestPasswordReset(email) {
-    // Supabase generates the recovery link and sends it through its configured
-    // mail provider. We never generate or expose a privileged reset token.
-    await this.request(`/auth/v1/recover?redirect_to=${encodeURIComponent(PUBLIC_AUTH_REDIRECT)}`, {
-      method: 'POST', body: {email:validatePlayerEmail(email)}
-    });
-  }
-
-  async resendSignupConfirmation(email) {
-    // Explicit allowlisted redirect: the confirmation token must return to
-    // this GitHub Pages app, not to a stale/default project Site URL.
-    await this.request(`/auth/v1/resend?redirect_to=${encodeURIComponent(PUBLIC_AUTH_REDIRECT)}`, {
-      method: 'POST', body: {type:'signup',email:validatePlayerEmail(email)}
-    });
-  }
-
-  async acceptCallback(callback) {
-    if (!['signup', 'recovery'].includes(callback?.kind)) throw new PlayerAuthError('INVALID_CALLBACK');
-    const session = normalizeAuthSession({
-      ...callback, user: {id:'00000000-0000-4000-8000-000000000000',email:''}
-    });
-    const user = await this.getUser(session);
-    if (callback.kind === 'recovery') {
-      this.recoverySession = {...session,user};
-      return {kind:'recovery',user};
-    }
-    await this.persist({...session,user});
-    return {kind:'signup',user};
-  }
-
-  async updateRecoveredPassword(password) {
-    const value = validatePlayerPassword(password);
-    if (!this.recoverySession) throw new PlayerAuthError('RECOVERY_MISSING', 'Otwórz prawidłowy link odzyskiwania hasła.');
-    const authSession = this.recoverySession;
-    await this.request('/auth/v1/user', {method:'PUT',accessToken:authSession.access_token,body:{password:value}});
-    this.recoverySession = null;
-    this.clear();
-    try { await this.request('/auth/v1/logout?scope=local', {method:'POST',accessToken:authSession.access_token}); }
-    catch {}
-  }
 }

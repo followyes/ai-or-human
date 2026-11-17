@@ -107,7 +107,7 @@ export async function registerWithCode(input, adapter) {
   if (reserved.state === 'auth_created' && reserved.auth_user_id) {
     const final = await adapter.commit(attemptId,reserved.auth_user_id);
     if (!final?.ok) throw new DomainError('REGISTRATION_REVIEW_REQUIRED', 409);
-    return {status:'registered_email_verification_required'};
+    return {status:'registered_active'};
   }
   if (reserved.state !== 'reserved') throw new DomainError('REGISTRATION_REVIEW_REQUIRED', 409);
   const started = await adapter.begin(attemptId);
@@ -133,5 +133,5 @@ export async function registerWithCode(input, adapter) {
     await adapter.flagReview(attemptId,'PROFILE_COMMIT_UNCERTAIN').catch(()=>{});
     throw new DomainError('REGISTRATION_REVIEW_REQUIRED', 409);
   }
-  return {status:'registered_email_verification_required'};
+  return {status:'registered_active'};
 }

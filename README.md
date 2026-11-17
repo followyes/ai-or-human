@@ -55,10 +55,12 @@ The AUTH-02 SQL migration, PRECHECK/POSTCHECK and security/runbook documentation
 
 W panelu administratora nowa zakładka z generowaniem i unieważnianiem kodów oraz listą/zarządzaniem kontami. Właściciel potwierdził GitHub deploy, AUTH-03 SQL 2/2 service-only RPC i aktualizację Edge `auth02-admin` przez Supabase Dashboard. Zmiana statusu `blocked` jest zapisywana w profilu, ale realne egzekwowanie przed grą należy do AUTH-05.
 
-## AUTH-04 — konta graczy (źródła gotowe do GitHub deploy)
+## AUTH-04A — kod zamiast potwierdzenia e-mail (poprawka po deploy AUTH-04)
 
-Nowy przycisk `Konto` otwiera rejestrację wyłącznie jednorazowym kodem/linkiem wydanym przez Admina, e-mail i hasło (min. 12 znaków), logowanie, wylogowanie, potwierdzenie e-mail, reset hasła i podgląd własnego profilu. Zaproszenie w URL fragment `#register=…` jedynie wypełnia formularz: **nie zużywa kodu po wejściu**. Rejestrację wykonuje istniejący bezpieczny `auth02-register` (nie publiczny Supabase signup). Potwierdzenie po rejestracji należy wywołać przyciskiem e-mail; Supabase Auth wymaga skonfigurowanej poczty wychodzącej, aby odbiorcą mógł być każdy gracz.
+Nowy przycisk `Konto` otwiera rejestrację wyłącznie jednorazowym kodem/linkiem wydanym przez Admina, e-mail (identyfikator logowania) i hasło (min. 12 znaków), logowanie, wylogowanie i podgląd konta. Link `#register=…` jedynie wypełnia formularz, nie zużywa kodu po wejściu. **Nie ma weryfikacji e-mail ani SMTP:** serwerowy `auth02-register` zakłada już aktywne konto po bezpiecznym zarezerwowaniu i zużyciu kodu. `email_confirm:true` jest świadomą techniczną autoaktywacją; **nie oznacza, że udowodniono posiadanie tego adresu**. Użytkownik podaje prawdziwy, unikalny e-mail na potrzeby logowania.
 
 Admin `Użytkownicy`: widoczna informacja o skopiowaniu, możliwe ponowne kliknięcie `Kopiuj kod/link`, usunięcie unieważnionych kodów z listy bieżącej, nowe wizualne dropdowny z obsługą klawiatury. Kod nadal widoczny tylko do zamknięcia jednorazowego panelu.
 
-Ważne: **gra nadal używa starego profilu i nie wymaga jeszcze nowego konta**. AUTH-05 zmieni dostęp do gry, wyniki i prywatność obrazów; AUTH-07 wyłączy Browser ID. AUTH-04 nie modyfikuje bazy ani Edge Functions — tylko frontend i read-only SQL w dokumentacji. Przewodnik bez terminala: `OUTSIDE_REPO/AUTH04_DEPLOY_NO_TERMINAL.md`, QA: `OUTSIDE_REPO/AUTH04_QA_REPORT.md`.
+Bez SMTP nie działa samodzielny reset hasła. Aby nie obiecywać nieistniejącej funkcji, formularze mailowego potwierdzenia i recovery są ukryte/usunięte; przy rejestracji widnieje ostrzeżenie, by zachować hasło w menedżerze. W przyszłości możemy dodać bezpieczny reset administrowany albo przywrócić SMTP osobnym etapem.
+
+**Deployment korekty AUTH-04A obejmuje aktualizację istniejącej Edge Function `auth02-register` i frontend GitHub.** Nie wymaga SQL ani zmiany `auth02-admin`. Gra wciąż używa starego profilu i nie wymaga konta do AUTH-05/07; Browser ID pozostaje. Dokładny przewodnik bez terminala: `OUTSIDE_REPO/AUTH04_DEPLOY_NO_TERMINAL.md`, QA: `OUTSIDE_REPO/AUTH04_QA_REPORT.md`.

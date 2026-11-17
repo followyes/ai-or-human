@@ -2,12 +2,10 @@
  * AUTH-04 — account UI only. Until AUTH-05 this does not gate public gameplay,
  * change browser-local profiles, migrate historical results or alter Storage.
  */
-import { PlayerAuthService, PlayerAuthError, parsePlayerAuthHash } from './player-auth.js';
+import { PlayerAuthService, PlayerAuthError, parsePlayerAuthHash } from './player-auth.js?v=auth-04a';
 
 const TITLES = Object.freeze({
-  login: 'Logowanie', register: 'Rejestracja', forgot: 'Odzyskaj hasło',
-  resend: 'Potwierdź e-mail', confirm: 'Sprawdź e-mail',
-  update: 'Nowe hasło', account: 'Twoje konto'
+  login: 'Logowanie', register: 'Rejestracja', account: 'Twoje konto'
 });
 
 export class PlayerAuthUI {
@@ -21,7 +19,6 @@ export class PlayerAuthUI {
     this.closeButton = doc.getElementById('account-close');
     this.panels = [...this.dialog.querySelectorAll('[data-account-panel]')];
     this.view = 'login'; this.opened = false; this.busy = false; this.previousFocus = null;
-    this.confirmEmail = null;
     this.bind();
   }
 
@@ -50,10 +47,7 @@ export class PlayerAuthUI {
     });
     const forms = [
       ['account-login-form', data => this.login(data)],
-      ['account-register-form', data => this.register(data)],
-      ['account-forgot-form', data => this.forgot(data)],
-      ['account-resend-form', data => this.resend(data)],
-      ['account-update-form', data => this.update(data)]
+      ['account-register-form', data => this.register(data)]
     ];
     for (const [id, run] of forms) {
       this.doc.getElementById(id).addEventListener('submit', event => {
@@ -63,13 +57,6 @@ export class PlayerAuthUI {
         void this.act(() => run(payload));
       });
     }
-    this.doc.getElementById('account-send-confirm').addEventListener('click', () => {
-      if (this.busy || !this.confirmEmail) return;
-      void this.act(async () => {
-        await this.service.resendSignupConfirmation(this.confirmEmail);
-        this.notice('Jeśli adres wymaga potwierdzenia, wyślemy na niego wiadomość.', 'success');
-      });
-    });
     this.doc.getElementById('account-signout').addEventListener('click', () => {
       if (this.busy) return;
       void this.act(async () => {
@@ -149,9 +136,12 @@ export class PlayerAuthUI {
     await this.service.register({
       code:data.code, email:data.email, password:data.password, playerName:data.playerName
     });
-    this.confirmEmail = data.email;
     this.doc.getElementById('account-register-form').reset();
-    this.show('confirm');
+    // Registration is server-confirmed, no mailbox step and no SMTP required.
+    // Keep the sign-in explicit, so the user controls when to create a session.
+    this.doc.querySelector('#account-login-form [name="email"]').value = data.email.trim();
+    this.show('login');
+    this.notice('Konto zostało utworzone. Możesz się teraz zalogować.', 'success');
   }
 
   async login(data) {
@@ -172,25 +162,6 @@ export class PlayerAuthUI {
     if (info.profile?.status === 'blocked') this.notice('Konto jest zablokowane.', 'error');
   }
 
-  async forgot(data) {
-    await this.service.requestPasswordReset(data.email);
-    this.notice('Jeśli konto istnieje, na podany adres zostanie wysłany link do zmiany hasła.', 'success');
-  }
-
-  async resend(data) {
-    await this.service.resendSignupConfirmation(data.email);
-    this.notice('Jeśli adres wymaga potwierdzenia, wyślemy na niego wiadomość.', 'success');
-  }
-
-  async update(data) {
-    if (data.password !== data.confirmPassword) throw new PlayerAuthError('PASSWORD_MISMATCH', 'Hasła muszą być jednakowe.');
-    await this.service.updateRecoveredPassword(data.password);
-    this.doc.getElementById('account-update-form').reset();
-    this.entry.classList.remove('is-signed-in');
-    this.show('login');
-    this.notice('Hasło zostało zmienione. Zaloguj się nowym hasłem.', 'success');
-  }
-
   async handleRedirect() {
     const callback = parsePlayerAuthHash(this.win.location.hash);
     if (callback.kind === 'none') return;
@@ -202,21 +173,9 @@ export class PlayerAuthUI {
       if (this.service.session) this.notice('Jesteś zalogowany. Wyloguj się przed tworzeniem kolejnego konta.', 'error');
       return;
     }
-    if (callback.kind === 'error') {
+    if (callback.kind === 'error' || callback.kind === 'unsupported') {
       await this.open('login'); this.notice('Link jest nieprawidłowy lub wygasł.', 'error');
-      return;
     }
-    await this.open('login');
-    await this.act(async () => {
-      const result = await this.service.acceptCallback(callback);
-      if (result.kind === 'recovery') {
-        this.show('update');
-      } else {
-        this.show('account');
-        await this.loadAccount();
-        this.notice('Adres e-mail został potwierdzony.', 'success');
-      }
-    });
   }
 }
 
