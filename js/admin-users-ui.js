@@ -1,19 +1,19 @@
-/** Admin Users: plaintext codes exist only in this authenticated page's memory. */
+/** AUTH-04C: one persistent metadata list; plaintext exists only while this tab is active. */
 import {
-  AdminUsersError, listIssuedCodes, issueCodes, revokeIssuedCode,
+  AdminUsersError, listIssuedCodes, revealIssuedCode, issueCodes, revokeIssuedCode,
   listPlayerAccounts, changePlayerStatus
-} from './admin-users.js?v=auth04b';
+} from './admin-users.js?v=auth04c';
 
+const labels = Object.freeze({
+  available: 'Aktywny', reserved: 'Zarezerwowany', consumed: 'Wykorzystany',
+  expired: 'Wygasł', active: 'Aktywne', blocked: 'Zablokowane'
+});
 const shortDate = value => {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pl-PL', {
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
   }).format(date) : '—';
 };
-const labels = Object.freeze({
-  available: 'Aktywny', reserved: 'Zarezerwowany', consumed: 'Wykorzystany',
-  expired: 'Wygasł', revoked: 'Unieważniony', active: 'Aktywne', blocked: 'Zablokowane'
-});
 const node = (doc, tag, className, text) => {
   const element = doc.createElement(tag);
   if (className) element.className = className;
@@ -26,54 +26,51 @@ const button = (doc, label, action, id, danger = false) => {
   if (id) element.dataset.id = id;
   return element;
 };
-const displayStatus = status => labels[status] || 'Nieznany';
 
 export class AdminUsersPanel {
-  constructor({root, getSession, onAuthFailure, fetchImpl, confirmAction = message => window.confirm(message), copyText = text => navigator.clipboard.writeText(text)} = {}) {
+  constructor({root, getSession, onAuthFailure, fetchImpl, confirmAction = message => window.confirm(message),
+    copyText = text => navigator.clipboard.writeText(text)} = {}) {
     if (!root) throw new Error('Missing Users workspace');
     this.root = root; this.getSession = getSession; this.onAuthFailure = onAuthFailure;
     this.fetchImpl = fetchImpl; this.confirmAction = confirmAction; this.copyText = copyText;
     this.els = Object.fromEntries([
       'users-generate-form','users-code-count','users-code-days','users-generate-button',
-      'users-issued','users-issued-list','users-hide-issued','users-show-issued','users-copy-all',
       'users-code-filter','users-codes-list','users-codes-refresh',
       'users-account-search','users-account-filter','users-accounts-list','users-accounts-more',
       'users-status'
     ].map(id => [id, root.querySelector(`#${id}`)]));
     if (Object.values(this.els).some(value => !value)) throw new Error('Incomplete Admin Users markup');
     this.active = false; this.busy = false; this.revision = 0;
-    this.codes = []; this.accounts = []; this.total = 0; this.issuedCodes = [];
-    this.issuedOpen = false;
+    this.codes = []; this.accounts = []; this.total = 0;
+    this.codesLoaded = false;
+    this.revealed = new Map();
     this.toast = root.querySelector('#users-toast');
-    this.toastTimer = null;
-    this.copyButtonTimers = new WeakMap();
+    this.toastTimer = null; this.searchTimer = null;
     this.bind();
   }
   get(id) { return this.els[`users-${id}`]; }
   bind() {
     this.get('generate-form').addEventListener('submit', event => { event.preventDefault(); void this.generate(); });
-    this.get('hide-issued').addEventListener('click', () => this.hideIssued());
-    this.get('show-issued').addEventListener('click', () => this.renderIssued());
-    this.get('copy-all').addEventListener('click', () => void this.copyAll());
     this.get('codes-refresh').addEventListener('click', () => void this.refreshCodes());
     this.get('code-filter').addEventListener('change', () => this.renderCodes());
-    this.searchTimer = null;
     this.get('account-search').addEventListener('input', () => {
       clearTimeout(this.searchTimer);
       this.searchTimer = setTimeout(() => void this.refreshAccounts(), 300);
     });
     this.get('account-filter').addEventListener('change', () => void this.refreshAccounts());
     this.get('accounts-more').addEventListener('click', () => void this.loadMore());
-    this.get('issued-list').addEventListener('click', event => {
-      const target = event.target.closest('[data-users-action]');
-      if (!target || this.busy) return;
-      const match = this.issuedCodes.find(row => row.id === target.dataset.id);
-      if (match && target.dataset.usersAction === 'copy-code') void this.copy(match.code, 'Kod skopiowany!', target);
-      if (match && target.dataset.usersAction === 'copy-link') void this.copy(match.link, 'Link skopiowany!', target);
-    });
     this.get('codes-list').addEventListener('click', event => {
       const target = event.target.closest('[data-users-action]');
-      if (target?.dataset.usersAction === 'revoke') void this.revoke(target.dataset.id);
+      if (!target || this.busy) return;
+      const id = target.dataset.id;
+      switch (target.dataset.usersAction) {
+        case 'reveal': void this.reveal(id); break;
+        case 'hide': this.hide(id); break;
+        case 'copy-code': void this.copy(id, 'code'); break;
+        case 'copy-link': void this.copy(id, 'link'); break;
+        case 'revoke': void this.revoke(id); break;
+        default: break;
+      }
     });
     this.get('accounts-list').addEventListener('click', event => {
       const target = event.target.closest('[data-users-action]');
@@ -84,49 +81,30 @@ export class AdminUsersPanel {
   notify(text) {
     if (!this.toast) { this.status(text); return; }
     clearTimeout(this.toastTimer);
-    this.toast.textContent = text;
-    this.toast.hidden = false;
-    this.toastTimer = setTimeout(() => { this.toast.hidden = true; this.toast.textContent = ''; }, 2400);
+    this.toast.textContent = text; this.toast.hidden = false;
+    this.toastTimer = setTimeout(() => {
+      this.toast.hidden = true; this.toast.textContent = '';
+    }, 2400);
   }
   setActive(active) {
-    this.active = Boolean(active); ++this.revision;
-    if (this.active) {
-      if (this.issuedOpen && this.issuedCodes.length) this.renderIssued();
-      else this.get('show-issued').hidden = !this.issuedCodes.length;
-      void this.load();
-    } else this.clear({preserveIssued: true});
+    if (!active) { this.clear(); return; }
+    if (this.active) return;
+    this.active = true;
+    void this.load();
   }
-  hideIssued() {
-    this.issuedOpen = false;
-    this.get('issued-list').replaceChildren();
-    this.get('issued').hidden = true;
-    this.get('show-issued').hidden = !this.issuedCodes.length;
-  }
-  clearIssued() {
-    this.issuedCodes = [];
-    this.hideIssued();
-  }
-  clear({preserveIssued = false} = {}) {
+  clear() {
     this.active = false; ++this.revision;
-    clearTimeout(this.searchTimer);
-    clearTimeout(this.toastTimer);
+    clearTimeout(this.searchTimer); clearTimeout(this.toastTimer);
     if (this.toast) { this.toast.hidden = true; this.toast.textContent = ''; }
-    this.lock(false);
-    if (preserveIssued) {
-      this.get('issued-list').replaceChildren();
-      this.get('issued').hidden = true;
-      this.get('show-issued').hidden = true;
-    } else this.clearIssued();
+    this.revealed.clear(); this.codesLoaded = false;
     this.codes = []; this.accounts = []; this.total = 0;
-    this.get('codes-list').replaceChildren();
-    this.get('accounts-list').replaceChildren();
-    this.get('account-search').value = '';
-    this.get('account-filter').value = '';
+    this.get('codes-list').replaceChildren(); this.get('accounts-list').replaceChildren();
+    this.get('account-search').value = ''; this.get('account-filter').value = '';
     this.get('code-filter').value = '';
     this.get('account-filter')._usersChoice?.sync();
     this.get('code-filter')._usersChoice?.sync();
     this.get('accounts-more').hidden = true;
-    this.status('');
+    this.lock(false); this.status('');
   }
   lock(locked) {
     this.busy = Boolean(locked);
@@ -135,7 +113,7 @@ export class AdminUsersPanel {
     }
     for (const child of this.root.querySelectorAll('[data-users-action]')) child.disabled = this.busy;
   }
-  options(session) { return { session, fetchImpl: this.fetchImpl }; }
+  options(session) { return {session, fetchImpl: this.fetchImpl}; }
   async run(work, {loading = 'Ładowanie…', complete = ''} = {}) {
     if (!this.active || this.busy) return;
     const revision = ++this.revision;
@@ -147,146 +125,159 @@ export class AdminUsersPanel {
     } catch (error) {
       if (!this.active || this.revision !== revision) return;
       if ((error instanceof AdminUsersError && error.code === 'SESSION') || error?.status === 401 ||
-          (error?.status === 403 && error?.code !== 'ADMIN_ACCOUNT_PROTECTED')) {
+        (error?.status === 403 && error?.code !== 'ADMIN_ACCOUNT_PROTECTED')) {
         this.clear(); this.onAuthFailure();
       } else this.status(error?.message || 'Operacja nie powiodła się.');
     } finally {
       if (this.revision === revision) this.lock(false);
     }
   }
+  filters() { return {search: this.get('account-search').value, status: this.get('account-filter').value}; }
   async load() {
     await this.run(async (options, revision) => {
       const [codes, users] = await Promise.all([listIssuedCodes(options), listPlayerAccounts(0, this.filters(), options)]);
       if (revision !== this.revision || !this.active) return;
-      this.codes = codes; this.accounts = users.accounts; this.total = users.total;
+      this.codes = codes; this.codesLoaded = true;
+      this.accounts = users.accounts; this.total = users.total;
       this.renderCodes(); this.renderAccounts();
-    }, {complete: ''});
-  }
-  filters() {
-    return {search: this.get('account-search').value, status: this.get('account-filter').value};
-  }
-  async refreshAccounts() {
-    await this.run(async (options, revision) => {
-      const users = await listPlayerAccounts(0, this.filters(), options);
-      if (revision === this.revision) { this.accounts = users.accounts; this.total = users.total; this.renderAccounts(); }
-    }, {loading:'Szukanie kont…'});
+    });
   }
   async refreshCodes() {
     await this.run(async (options, revision) => {
       const codes = await listIssuedCodes(options);
-      if (revision === this.revision) {this.codes = codes; this.renderCodes();}
-    }, {loading: 'Odświeżanie kodów…'});
+      if (revision !== this.revision || !this.active) return;
+      this.codes = codes; this.codesLoaded = true;
+      for (const id of this.revealed.keys()) {
+        if (!codes.some(row => row.id === id && row.can_reveal)) this.revealed.delete(id);
+      }
+      this.renderCodes();
+    }, {loading:'Odświeżanie kodów…'});
+  }
+  async refreshAccounts() {
+    await this.run(async (options, revision) => {
+      const users = await listPlayerAccounts(0, this.filters(), options);
+      if (revision === this.revision) {
+        this.accounts = users.accounts; this.total = users.total; this.renderAccounts();
+      }
+    }, {loading:'Szukanie kont…'});
   }
   async generate() {
+    if (!this.active || this.busy) return;
+    if (!this.codesLoaded) {
+      this.status('Najpierw wczytaj historię kodów. Nie generuj kolejnych w ciemno.');
+      return;
+    }
+    if (this.codes.some(row => row.status === 'available') &&
+      !this.confirmAction('Masz już aktywne kody. Możesz je otworzyć przyciskiem „Pokaż”. Czy na pewno wygenerować kolejne?')) return;
     const count = Number(this.get('code-count').value), days = Number(this.get('code-days').value);
     await this.run(async (options, revision) => {
       const result = await issueCodes(count, days, options);
       if (revision !== this.revision || !this.active) return;
-      // Keep all codes generated in this authenticated page until logout/reload,
-      // even after copying, collapsing the panel, or switching Admin tabs.
-      this.issuedCodes = [...result.codes, ...this.issuedCodes].slice(0, 250);
-      this.renderIssued();
-      // The successful issue response is server-confirmed: avoid a second request
-      // that could fail and obscure newly issued, non-recoverable raw codes.
-      this.codes = [
-        ...result.codes.map(item => ({
-          id:item.id, code_hint:item.code.slice(-4),
-          expires_at:result.expires_at, status:'available'
-        })), ...this.codes
-      ].slice(0,250);
+      const rows = result.codes.map(item => ({
+        id:item.id, code_hint:item.code.slice(-4), expires_at:result.expires_at,
+        status:'available', can_reveal:true, can_delete:true
+      }));
+      this.codes = [...rows, ...this.codes].slice(0,250);
+      for (const item of result.codes) this.revealed.set(item.id, {code:item.code, link:item.link});
+      this.renderCodes(); this.notify('Nowe kody są gotowe. Możesz je skopiować z listy.');
+    }, {loading:'Generowanie kodów…'});
+  }
+  async reveal(id) {
+    if (!this.active || this.busy || !this.codes.some(row => row.id === id && row.can_reveal)) return;
+    if (this.revealed.has(id)) { this.renderCodes(); return; }
+    await this.run(async (options, revision) => {
+      const result = await revealIssuedCode(id, options);
+      if (revision !== this.revision || !this.active) return;
+      this.revealed.set(id, {code:result.code, link:result.link});
       this.renderCodes();
-    }, {loading: 'Generowanie kodów…', complete: ''});
+    }, {loading:'Otwieranie kodu…'});
   }
-  renderIssued() {
-    if (!this.active || !this.issuedCodes.length) { this.hideIssued(); return; }
-    const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
-    for (const item of this.issuedCodes) {
-      const row = node(doc,'div','users-issued-row');
-      const field = node(doc,'input','users-issued-code');
-      field.readOnly = true; field.autocomplete = 'off'; field.spellcheck = false; field.value = item.code; field.setAttribute('aria-label','Wygenerowany kod');
-      field.addEventListener('focus', () => field.select());
-      field.addEventListener('click', () => field.select());
-      row.append(field, button(doc,'Kopiuj kod','copy-code',item.id), button(doc,'Kopiuj link','copy-link',item.id));
-      frag.append(row);
-    }
-    this.get('issued-list').replaceChildren(frag);
-    this.get('issued').hidden = false;
-    this.get('show-issued').hidden = true;
-    this.issuedOpen = true;
+  hide(id) {
+    if (!this.active || this.busy) return;
+    this.revealed.delete(id); this.renderCodes();
   }
-  async copy(text, success, target = null) {
+  async copy(id, kind) {
+    const secret = this.revealed.get(id);
+    if (!this.active || this.busy || !secret || !['code','link'].includes(kind)) return;
     try {
-      await this.copyText(text);
-      this.notify(success);
-      if (target?.isConnected) {
-        clearTimeout(this.copyButtonTimers.get(target));
-        const originalLabel = target.dataset.originalCopyLabel || target.textContent;
-        target.dataset.originalCopyLabel = originalLabel;
-        target.textContent = 'Skopiowano ✓';
-        const timer = setTimeout(() => {
-          if (target.isConnected) target.textContent = originalLabel;
-          delete target.dataset.originalCopyLabel;
-        }, 1800);
-        this.copyButtonTimers.set(target, timer);
-      }
+      await this.copyText(secret[kind]);
+      if (this.active && this.revealed.get(id) === secret)
+        this.notify(kind === 'code' ? 'Kod skopiowany!' : 'Link skopiowany!');
+    } catch {
+      if (!this.active || this.revealed.get(id) !== secret) return;
+      const input = [...this.get('codes-list').querySelectorAll('input[data-code-field]')]
+        .find(field => field.dataset.id === id && field.dataset.codeField === kind);
+      input?.focus(); input?.select();
+      this.notify('Zaznaczony tekst skopiuj ręcznie (Ctrl+C).');
     }
-    catch { this.notify('Nie udało się skopiować. Zaznacz kod w polu i skopiuj ręcznie.'); }
-  }
-  async copyAll() {
-    if (!this.issuedCodes.length) return;
-    await this.copy(this.issuedCodes.map(row => `${row.code}  ${row.link}`).join('\n'), 'Kody i linki skopiowane!', this.get('copy-all'));
   }
   renderCodes() {
+    if (!this.active) return;
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
     const filter = this.get('code-filter').value;
-    // Old revoked rows (from before the server-side cleanup) are hidden too.
-    const rows = this.codes.filter(row => row.status !== 'revoked' && (!filter || row.status === filter));
+    const rows = this.codes.filter(row => !filter || row.status === filter);
     if (!rows.length) frag.append(node(doc,'p','users-empty','Brak kodów.'));
     for (const item of rows) {
-      const row = node(doc,'div','users-row');
-      const meta = node(doc,'div','users-row-main');
+      const wrapper = node(doc, 'div', 'users-code-entry');
+      const row = node(doc, 'div', 'users-row');
+      const meta = node(doc, 'div', 'users-row-main');
       meta.append(node(doc,'strong','',`Kod ····${item.code_hint || '—'}`));
-      const hint = node(doc,'span','users-meta',`Ważny do ${shortDate(item.expires_at)}`);
-      meta.append(hint);
-      const right = node(doc,'div','users-row-actions');
-      const state = node(doc,'span',`users-state users-state-${item.status}`, displayStatus(item.status));
-      right.append(state);
-      if (item.status === 'available') right.append(button(doc,'Usuń','revoke',item.id,true));
-      row.append(meta,right); frag.append(row);
+      meta.append(node(doc,'span','users-meta',`Ważny do ${shortDate(item.expires_at)}`));
+      const actions = node(doc, 'div', 'users-row-actions');
+      actions.append(node(doc,'span',`users-state users-state-${item.status}`,labels[item.status] || 'Nieznany'));
+      if (item.can_reveal) actions.append(button(doc,this.revealed.has(item.id) ? 'Ukryj' : 'Pokaż',
+        this.revealed.has(item.id) ? 'hide' : 'reveal',item.id));
+      if (item.can_delete) actions.append(button(doc,'Usuń','revoke',item.id,true));
+      row.append(meta,actions); wrapper.append(row);
+      const secret = this.revealed.get(item.id);
+      if (item.can_reveal && secret) {
+        const panel = node(doc,'div','users-secret-panel');
+        for (const [kind,description] of [['code','Kod aktywacyjny'],['link','Link do rejestracji']]) {
+          const fieldRow = node(doc,'div','users-secret-row');
+          const label = node(doc,'label','users-secret-label',description);
+          const input = node(doc,'input','users-secret-input');
+          input.type = 'text'; input.readOnly = true; input.value = secret[kind];
+          input.autocomplete = 'off'; input.spellcheck = false;
+          input.dataset.codeField = kind; input.dataset.id = item.id;
+          input.id = `users-${kind}-${item.id}`; label.htmlFor = input.id;
+          input.addEventListener('focus', () => input.select());
+          input.addEventListener('click', () => input.select());
+          fieldRow.append(label,input,button(doc,kind === 'code' ? 'Kopiuj kod' : 'Kopiuj link',
+            kind === 'code' ? 'copy-code' : 'copy-link',item.id));
+          panel.append(fieldRow);
+        }
+        wrapper.append(panel);
+      } else if (item.status === 'available' && !item.can_reveal) {
+        wrapper.append(node(doc,'p','users-legacy-note','Starszy kod bez możliwości odczytu. Usuń go, jeśli nie został przekazany.'));
+      }
+      frag.append(wrapper);
     }
     this.get('codes-list').replaceChildren(frag);
   }
   async revoke(id) {
-    if (!this.active || this.busy || !this.codes.some(item => item.id === id && item.status === 'available')) return;
-    if (!this.confirmAction('Usunąć niewykorzystany kod? Nie będzie można go już wykorzystać.')) return;
+    if (!this.active || this.busy || !this.codes.some(item => item.id === id && item.can_delete)) return;
+    if (!this.confirmAction('Usunąć ten niewykorzystany kod? Nie będzie można go już wykorzystać.')) return;
     await this.run(async (options, revision) => {
       await revokeIssuedCode(id, options);
-      if (revision === this.revision) {
-        // The server deletes only an unused, unreferenced code atomically.
-        // Removing it here mirrors the confirmed result without a follow-up race.
-        this.codes = this.codes.filter(item => item.id !== id);
-        this.issuedCodes = this.issuedCodes.filter(item => item.id !== id);
-        if (this.issuedCodes.length && this.issuedOpen) this.renderIssued();
-        else if (this.issuedCodes.length) this.hideIssued();
-        else this.clearIssued();
-        this.renderCodes();
-        this.notify('Kod usunięty.');
-      }
-    }, {loading:'Usuwanie kodu…', complete:''});
+      if (revision !== this.revision) return;
+      this.revealed.delete(id);
+      this.codes = this.codes.filter(item => item.id !== id);
+      this.renderCodes(); this.notify('Kod usunięty.');
+    }, {loading:'Usuwanie kodu…'});
   }
   renderAccounts() {
+    if (!this.active) return;
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
-    const rows = this.accounts;
-    if (!rows.length) frag.append(node(doc,'p','users-empty',this.accounts.length ? 'Brak pasujących kont.' : 'Brak zarejestrowanych graczy.'));
-    for (const item of rows) {
-      const row = node(doc,'div','users-row');
-      const meta = node(doc,'div','users-row-main');
+    if (!this.accounts.length) frag.append(node(doc,'p','users-empty','Brak zarejestrowanych graczy.'));
+    for (const item of this.accounts) {
+      const row = node(doc,'div','users-row'), meta = node(doc,'div','users-row-main');
       meta.append(node(doc,'strong','',item.player_name));
       meta.append(node(doc,'span','users-meta',`Od ${shortDate(item.created_at)} · ${item.user_id.slice(0,8)}…`));
-      const right = node(doc,'div','users-row-actions');
-      right.append(node(doc,'span',`users-state users-state-${item.status}`,displayStatus(item.status)));
-      right.append(button(doc,item.status === 'blocked' ? 'Odblokuj' : 'Zablokuj', 'change-status',item.user_id,item.status !== 'blocked'));
-      row.append(meta,right); frag.append(row);
+      const actions = node(doc,'div','users-row-actions');
+      actions.append(node(doc,'span',`users-state users-state-${item.status}`,labels[item.status] || 'Nieznany'));
+      actions.append(button(doc,item.status === 'blocked' ? 'Odblokuj' : 'Zablokuj',
+        'change-status',item.user_id,item.status !== 'blocked'));
+      row.append(meta,actions); frag.append(row);
     }
     this.get('accounts-list').replaceChildren(frag);
     this.get('accounts-more').hidden = this.accounts.length >= this.total;
@@ -296,7 +287,7 @@ export class AdminUsersPanel {
     await this.run(async (options, revision) => {
       const result = await listPlayerAccounts(this.accounts.length, this.filters(), options);
       if (revision !== this.revision) return;
-      this.accounts = [...this.accounts, ...result.accounts]; this.total = result.total;
+      this.accounts = [...this.accounts,...result.accounts]; this.total = result.total;
       this.renderAccounts();
     }, {loading:'Ładowanie kont…'});
   }
@@ -304,15 +295,15 @@ export class AdminUsersPanel {
     const account = this.accounts.find(item => item.user_id === id);
     if (!this.active || this.busy || !account) return;
     const next = account.status === 'blocked' ? 'active' : 'blocked';
-    if (!this.confirmAction(next === 'blocked' ? `Zablokować konto ${account.player_name}?` : `Odblokować konto ${account.player_name}?`)) return;
+    if (!this.confirmAction(next === 'blocked' ? `Zablokować konto ${account.player_name}?` :
+      `Odblokować konto ${account.player_name}?`)) return;
     await this.run(async (options, revision) => {
       await changePlayerStatus(id, next, options);
-      // Server remains authoritative; do not assume the mutation succeeded locally.
-      const users = await listPlayerAccounts(0, this.filters(), options);
-      if (revision === this.revision) {
-        this.accounts = users.accounts; this.total = users.total;
-        this.renderAccounts();
-      }
-    }, {loading:'Zmiana statusu…',complete:next === 'blocked' ? 'Konto oznaczone jako zablokowane.' : 'Konto odblokowane.'});
+      const users = await listPlayerAccounts(0,this.filters(),options);
+      if (revision !== this.revision) return;
+      this.accounts = users.accounts; this.total = users.total;
+      this.renderAccounts();
+    }, {loading:'Zmiana statusu…',complete:next === 'blocked' ?
+      'Konto oznaczone jako zablokowane.' : 'Konto odblokowane.'});
   }
 }

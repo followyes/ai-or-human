@@ -146,7 +146,7 @@ test('AUTH-04A code-only flow never triggers SMTP/recovery endpoints or accepts 
   assert.doesNotMatch(register,/auth\.admin\.inviteUserByEmail/);
 });
 
-test('AUTH-04 public UI is additive, linked, accessible, and Admin revoked-code list hides revoked codes',()=>{
+test('AUTH-04 public UI is additive, linked, accessible, and Admin codes reveal only on demand',()=>{
   const html=readFileSync(join(root,'index.html'),'utf8');
   const css=readFileSync(join(root,'css/style.css'),'utf8');
   const admin=readFileSync(join(root,'js/admin-users-ui.js'),'utf8');
@@ -158,7 +158,8 @@ test('AUTH-04 public UI is additive, linked, accessible, and Admin revoked-code 
   assert.match(html,/Na razie nie ma odzyskiwania hasła/);
   assert.doesNotMatch(html,/Wyślij e-mail potwierdzający|Nie pamiętasz hasła/);
   assert.match(css,/\.account-dialog-backdrop\[hidden\]/);
-  assert.match(admin, /row\.status !== 'revoked'/);
+  assert.match(admin, /item\.can_reveal/);
+  assert.doesNotMatch(admin,/issuedCodes|renderIssued|copyAll/);
   assert.match(admin,/Kod skopiowany!/);
   assert.match(adminHtml,/id="users-toast"[^>]+aria-live="polite"/);
   assert.doesNotMatch(adminHtml,/value="revoked">Unieważnione/);

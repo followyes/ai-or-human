@@ -59,14 +59,22 @@ W panelu administratora nowa zakładka z generowaniem i unieważnianiem kodów o
 
 Nowy przycisk `Konto` otwiera rejestrację wyłącznie jednorazowym kodem/linkiem wydanym przez Admina, e-mail (identyfikator logowania) i hasło (min. 12 znaków), logowanie, wylogowanie i podgląd konta. Link `#register=…` jedynie wypełnia formularz, nie zużywa kodu po wejściu. **Nie ma weryfikacji e-mail ani SMTP:** serwerowy `auth02-register` zakłada już aktywne konto po bezpiecznym zarezerwowaniu i zużyciu kodu. `email_confirm:true` jest świadomą techniczną autoaktywacją; **nie oznacza, że udowodniono posiadanie tego adresu**. Użytkownik podaje prawdziwy, unikalny e-mail na potrzeby logowania.
 
-Admin `Użytkownicy`: widoczna informacja o skopiowaniu, możliwe ponowne kliknięcie `Kopiuj kod/link`, nowe wizualne dropdowny z obsługą klawiatury. AUTH-04B pozwala ponownie otworzyć panel kodów po zwinięciu lub przełączeniu zakładki, ale usuwa pełną wartość z pamięci po odświeżeniu strony/wylogowaniu.
+Admin `Użytkownicy`: widoczna informacja o skopiowaniu, nowe wizualne dropdowny z obsługą klawiatury. Historyczny mechanizm AUTH-04B przechowywał pełne kody tylko do odświeżenia; **zastąpiła go korekta AUTH-04C**, opisana poniżej.
 
 Bez SMTP nie działa samodzielny reset hasła. Aby nie obiecywać nieistniejącej funkcji, formularze mailowego potwierdzenia i recovery są ukryte/usunięte; przy rejestracji widnieje ostrzeżenie, by zachować hasło w menedżerze. W przyszłości możemy dodać bezpieczny reset administrowany albo przywrócić SMTP osobnym etapem.
 
-**Deployment korekty AUTH-04A obejmuje aktualizację istniejącej Edge Function `auth02-register` i frontend GitHub.** Nie wymaga SQL ani zmiany `auth02-admin`. Gra wciąż używa starego profilu i nie wymaga konta do AUTH-05/07; Browser ID pozostaje. Dokładny przewodnik bez terminala: `OUTSIDE_REPO/AUTH04_DEPLOY_NO_TERMINAL.md`, QA: `OUTSIDE_REPO/AUTH04_QA_REPORT.md`.
+**AUTH-04A zostało potwierdzone jako wdrożone przez właściciela.** Nie aktualizujemy ponownie `auth02-register` bez niezależnego powodu. Gra wciąż używa starego profilu i nie wymaga konta do AUTH-05/07; Browser ID pozostaje.
 
 ## AUTH-04B — trwała poprawka Admina i czyszczenie kodów
 
 Wydawane pełne kody można wielokrotnie zaznaczać i kopiować w ramach tej samej otwartej strony Admina, również po zwinięciu panelu, przełączeniu zakładek i wydaniu kolejnej partii. Po logout/reload pełny kod nie zostaje zachowany w przeglądarce. Wybór `Usuń` uruchamia serwerowo **fizyczny DELETE** tylko niewykorzystanego, niepowiązanego kodu. Kody `reserved`/`consumed` i związane próby/konta pozostają na potrzeby bezpieczeństwa i kluczy obcych.
 
-**AUTH-04B WYMAGA SQL** `OUTSIDE_REPO/SQL/AUTH_04B_CODE_DELETION_PRECHECK_READONLY.sql` → `AUTH_04B_DELETE_UNUSED_CODES.sql` → `AUTH_04B_CODE_DELETION_POSTCHECK_READONLY.sql` **przed** aktualizacją GitHub. Nowego `auth02-admin` Edge nie trzeba deployować. Pełna instrukcja w `OUTSIDE_REPO/AUTH04B_DEPLOY_NO_TERMINAL.md`. Brak automatycznego backupu i brak potwierdzenia live wykonania.
+**AUTH-04B SQL POSTCHECK i Deploy potwierdzone przez właściciela (PASS).** Nie uruchamiamy tej migracji ponownie. Jedna testowa baza nie ma zweryfikowanej kopii.
+
+## AUTH-04C — pełna przebudowa ponownego odczytu kodów (paczka do wdrożenia)
+
+Przyczyna błędu po opuszczeniu strony: stare kody były przechowywane w bazie wyłącznie jako HMAC i czteroznakowy hint. Rozdzielone listy Admina („wygenerowane w sesji” i „wydane”) zostały zastąpione **jedną listą**. Aktywny nowy kod można otworzyć przyciskiem `Pokaż`, zaznaczyć jako zwykły tekst, wielokrotnie skopiować wraz z linkiem i `Ukryj`. Po reload lub ponownym zalogowaniu pełny kod jest dostępny poprzez nowy **serwerowo szyfrowany** zapis AES-256-GCM, a nie z pamięci przeglądarki.
+
+Szyfrogram znajduje się w prywatnej tabeli, odczyt następuje wyłącznie przez Edge `auth02-admin` po walidacji JWT i aktywnej roli Admina; używa odrębnego sekretu `AUTH04_CODE_ENCRYPTION_KEY` w Supabase. Szyfrogram jest usuwany po wykorzystaniu lub fizycznym usunięciu kodu. Przed wydaniem nowego panel musi wczytać historię i ostrzega o istniejącym aktywnym kodzie. **Starych kodów HMAC-only nie można odzyskać**, nawet po nowej migracji — w UI widać tę informację.
+
+AUTH-04C wymaga odrębnej migracji SQL, aktualizacji **tylko** `auth02-admin` w Supabase Dashboard oraz nowego frontend GitHub. Nie dotyka `auth02-register` (AUTH-04A PASS), 11 wyników legacy ani bieżących zasad gry. Pełne instrukcje bez terminala, SQL i QA są w aktualnej paczce `OUTSIDE_REPO/AUTH04C_DEPLOY_NO_TERMINAL.md`. **Korekta ma LOCAL QA PASS, ale nie jest jeszcze wdrożona — AUTH-04 pozostaje OPEN do testu rejestracji i ponownego odczytu.**

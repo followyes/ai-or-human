@@ -41,7 +41,7 @@ test('No raw codes in static HTML or browser persisted storage',()=> {
  assert.doesNotMatch(readFileSync(join(root,'js/admin-users-ui.js'),'utf8'),/localStorage|sessionStorage/);
  assert.match(html,/Kody aktywacyjne/);
 });
-test('Admin Users keeps generated codes recopiable across tab switches and collapse, but clears on logout',async()=> {
+test('Admin Users renders one canonical list, clears sensitive data on tab change and logout',async()=> {
   class FakeNode {
     constructor(tagName = 'DIV') {
       this.tagName = tagName.toUpperCase(); this.listeners = new Map(); this.children = [];
@@ -56,9 +56,9 @@ test('Admin Users keeps generated codes recopiable across tab switches and colla
     closest(selector) { return selector === '[data-users-action]' && this.dataset.usersAction ? this : null; }
   }
   const ids = [
-    'generate-form','code-count','code-days','generate-button','issued','issued-list',
-    'hide-issued','show-issued','copy-all','code-filter','codes-list','codes-refresh',
-    'account-search','account-filter','accounts-list','accounts-more','status','toast'
+    'generate-form','code-count','code-days','generate-button',
+    'code-filter','codes-list','codes-refresh','account-search','account-filter',
+    'accounts-list','accounts-more','status','toast'
   ];
   const elements = Object.fromEntries(ids.map(id=>[`users-${id}`,new FakeNode()]));
   const doc = {createElement: tag=>new FakeNode(tag),createDocumentFragment:()=>new FakeNode('fragment')};
@@ -67,44 +67,24 @@ test('Admin Users keeps generated codes recopiable across tab switches and colla
     querySelector: selector => elements[selector.slice(1)] || null,
     querySelectorAll:()=>[]
   };
-  const copied = [];
-  const panel = new AdminUsersPanel({root,getSession: async()=>session, copyText:async text=>{copied.push(text);}});
+  const panel = new AdminUsersPanel({root,getSession: async()=>session});
   panel.load = async()=>{};
   panel.setActive(true);
-  panel.issuedCodes = [{id:uuid,code:'AOH-ABCDEFGH-JKLMNPQR',link:'https://example.com/#register=test'}];
-  panel.renderIssued();
-  assert.equal(elements['users-issued'].hidden,false);
-  const issuedRow=elements['users-issued-list'].children[0].children[0];
-  const codeField=issuedRow.children[0];
-  assert.equal(codeField.value,'AOH-ABCDEFGH-JKLMNPQR');
-  codeField.listeners.get('focus')();
-  assert.equal(codeField.selected,true,'focus must select the entire readonly activation code');
-  codeField.selected=false;
-  codeField.listeners.get('click')();
-  assert.equal(codeField.selected,true,'click must select the entire readonly activation code');
-  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[1]});
-  await new Promise(resolve=>setImmediate(resolve));
-  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[1]});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.deepEqual(copied,['AOH-ABCDEFGH-JKLMNPQR','AOH-ABCDEFGH-JKLMNPQR']);
-  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[2]});
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(copied[2],'https://example.com/#register=test');
-  elements['users-hide-issued'].listeners.get('click')();
-  assert.equal(elements['users-issued'].hidden,true);
-  assert.equal(elements['users-show-issued'].hidden,false);
-  elements['users-show-issued'].listeners.get('click')();
-  assert.equal(elements['users-issued'].hidden,false);
+  panel.codesLoaded=true;
+  panel.codes=[{id:uuid,code_hint:'6789',status:'available',expires_at:'2026-12-01T00:00:00Z',can_reveal:true,can_delete:true}];
+  panel.revealed.set(uuid,{code:'AOH-ABCDEFGH-JKLMNPQR-STUVWXYZ-23456789',link:'https://followyes.github.io/ai-or-human/#register=example'});
+  panel.renderCodes();
+  assert.equal(elements['users-codes-list'].children.length,1);
+  assert.equal(panel.revealed.size,1);
   panel.setActive(false);
-  assert.equal(elements['users-issued-list'].children.length,0);
-  assert.equal(panel.issuedCodes.length,1);
+  assert.equal(elements['users-codes-list'].children.length,0);
+  assert.equal(panel.revealed.size,0);
+  assert.equal(panel.codesLoaded,false);
   panel.setActive(true);
-  assert.equal(elements['users-issued'].hidden,false);
-  assert.equal(elements['users-issued-list'].children[0].children[0].children[0].value,'AOH-ABCDEFGH-JKLMNPQR');
+  assert.equal(panel.revealed.size,0,'returning to tab never reopens plaintext without a request');
   panel.clear();
-  assert.equal(panel.issuedCodes.length,0);
-  assert.equal(elements['users-issued'].hidden,true);
-  assert.equal(elements['users-show-issued'].hidden,true);
+  assert.equal(panel.revealed.size,0);
+  assert.equal(panel.active,false);
 });
 test('Issue form validates both bounds before any request',async()=> {
  for (const [c,d] of [[0,7],[26,7],[1,0],[1,91],[1.5,7]]) {

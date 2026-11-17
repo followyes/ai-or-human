@@ -3,6 +3,7 @@ import { methodAndOrigin, readJson, respond, handleError } from '../_shared/http
 import {
   createCode, hmacHex, validateBatch, buildInvitationLink, DomainError, validateUuid
 } from '../_shared/auth02-core.mjs';
+import { encryptIssuedCode, decryptIssuedCode } from '../_shared/auth04-code-crypto.mjs';
 
 // All actions require a real Admin JWT + a positive is_current_user_admin() RPC.
 // AUTH-03 extends AUTH-02 admin operations; all requests verify Admin JWT and role.
@@ -21,22 +22,39 @@ Deno.serve(async (req:Request): Promise<Response> => {
         const {count,days}=validateBatch(body);
         const batchId=crypto.randomUUID();
         const plainCodes=Array.from({length:count},()=>createCode());
-        const digests=await Promise.all(plainCodes.map(async code=>({
+        // ALL envelopes are encrypted before the SQL batch transaction.
+        // An old Edge issuer without envelopes fails closed after AUTH-04C SQL.
+        const ids=plainCodes.map(()=>crypto.randomUUID());
+        const keyHex=Deno.env.get('AUTH04_CODE_ENCRYPTION_KEY');
+        const digests=await Promise.all(plainCodes.map(async (code,i)=>({
+          ...(await encryptIssuedCode(code,ids[i],keyHex)),
           digest:await hmacHex(c.hmacSecret,`code:${code}`),hint:code.slice(-4)
         })));
         const created=await rpc(admin,'auth02_issue_batch',{
           p_admin_id:actor,p_batch_id:batchId,p_days:days,p_codes:digests
         });
-        if (created?.count!==count) throw new DomainError('ISSUE_INTEGRITY_FAILED',503);
-        // Raw codes appear exactly once in this response; never persisted or logged.
+        if (created?.count!==count ||
+          !plainCodes.every((_,i)=>created.codes?.[i]?.id===ids[i])) {
+          throw new DomainError('ISSUE_INTEGRITY_FAILED',503);
+        }
+        // A lost HTTP response is now recoverable through Admin-only reveal.
         return respond(origin,201,{
           batch_id:batchId,expires_at:created.expires_at,
-          codes:plainCodes.map((code,i)=>({id:created.codes[i]?.id,code,link:buildInvitationLink(code)}))
+          codes:plainCodes.map((code,i)=>({id:ids[i],code,link:buildInvitationLink(code)}))
         });
       }
       case 'list': {
         const limit=Number.isSafeInteger(body.limit)?Number(body.limit):100;
         return respond(origin,200,{codes:await rpc(admin,'auth02_list_codes',{p_limit:limit})});
+      }
+      case 'reveal': {
+        const codeId=validateUuid(body.code_id);
+        const envelope=await rpc(admin,'auth04_reveal_available_code',{p_code_id:codeId});
+        if (!envelope) throw new DomainError('CODE_NOT_REVEALABLE',409);
+        const decrypted=await decryptIssuedCode(
+          envelope,Deno.env.get('AUTH04_CODE_ENCRYPTION_KEY'),c.hmacSecret
+        );
+        return respond(origin,200,{id:codeId,...decrypted});
       }
       case 'revoke': {
         const codeId=validateUuid(body.code_id);

@@ -16,6 +16,9 @@ const messages = Object.freeze({
   ADMIN_FORBIDDEN: 'Konto nie ma uprawnień administratora.',
   INVALID_BATCH: 'Podaj liczbę kodów od 1 do 25 i ważność od 1 do 90 dni.',
   CODE_NOT_REVOCABLE: 'Nie można usunąć tego kodu. Może być już używany lub wykorzystany.',
+  CODE_NOT_REVEALABLE: 'Tego kodu nie można już otworzyć. Odśwież listę.',
+  CODE_INTEGRITY_FAILED: 'Bezpieczny odczyt kodu nie powiódł się. Nie używaj tej wartości.',
+  CODE_ENCRYPTION_NOT_CONFIGURED: 'Brak klucza szyfrowania kodów w konfiguracji serwera.',
   ADMIN_ACCOUNT_PROTECTED: 'Konta administratora nie można zablokować.',
   ACCOUNT_NOT_FOUND: 'Nie znaleziono konta.',
   DATABASE_OPERATION_FAILED: 'Baza nie potwierdziła operacji. Sprawdź stan przed ponowieniem.',
@@ -77,6 +80,24 @@ export async function listIssuedCodes(options) {
   const result = await adminUsersRequest('list', {limit: 250}, options);
   if (!Array.isArray(result?.codes)) throw new AdminUsersError('RESPONSE', 'Nieprawidłowa lista kodów.');
   return result.codes;
+}
+export async function revealIssuedCode(id,options) {
+  const codeId=assertUuid(id);
+  const result=await adminUsersRequest('reveal',{code_id:codeId},options);
+  if (result?.id!==codeId ||
+    !/^AOH(?:-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}){4}$/.test(result.code||'') ||
+    typeof result.link!=='string') {
+    throw new AdminUsersError('RESPONSE','Serwer zwrócił nieprawidłowy kod.');
+  }
+  let url;
+  try { url=new URL(result.link); }
+  catch {throw new AdminUsersError('RESPONSE','Serwer zwrócił nieprawidłowy link.');}
+  if (url.origin!=='https://followyes.github.io' ||
+    url.pathname!=='/ai-or-human/' ||
+    url.search!=='' || url.hash!==`#register=${encodeURIComponent(result.code)}`) {
+    throw new AdminUsersError('RESPONSE','Serwer zwrócił nieprawidłowy link.');
+  }
+  return {id:codeId,code:result.code,link:result.link};
 }
 export async function issueCodes(count, days, options) {
   const result = await adminUsersRequest('generate', validateIssueForm(count, days), options);
