@@ -15,7 +15,7 @@ const messages = Object.freeze({
   ADMIN_LOGIN_REQUIRED: 'Sesja administratora wygasła. Zaloguj się ponownie.',
   ADMIN_FORBIDDEN: 'Konto nie ma uprawnień administratora.',
   INVALID_BATCH: 'Podaj liczbę kodów od 1 do 25 i ważność od 1 do 90 dni.',
-  CODE_NOT_REVOCABLE: 'Tego kodu nie można już unieważnić.',
+  CODE_NOT_REVOCABLE: 'Nie można usunąć tego kodu. Może być już używany lub wykorzystany.',
   ADMIN_ACCOUNT_PROTECTED: 'Konta administratora nie można zablokować.',
   ACCOUNT_NOT_FOUND: 'Nie znaleziono konta.',
   DATABASE_OPERATION_FAILED: 'Baza nie potwierdziła operacji. Sprawdź stan przed ponowieniem.',
@@ -88,7 +88,7 @@ export async function issueCodes(count, days, options) {
 }
 export async function revokeIssuedCode(id, options) {
   const result = await adminUsersRequest('revoke', {code_id: assertUuid(id)}, options);
-  if (result?.revoked !== true) throw new AdminUsersError('RESPONSE', 'Nie potwierdzono unieważnienia kodu.');
+  if (result?.revoked !== true) throw new AdminUsersError('RESPONSE', 'Nie potwierdzono usunięcia kodu.');
   return true;
 }
 export async function listPlayerAccounts(offset = 0, filter = {}, options) {

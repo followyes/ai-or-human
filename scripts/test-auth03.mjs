@@ -7,12 +7,15 @@ import {
   adminUsersRequest, listIssuedCodes, issueCodes, revokeIssuedCode,
   listPlayerAccounts, changePlayerStatus, AdminUsersError
 } from '../js/admin-users.js';
+import {AdminUsersPanel} from '../js/admin-users-ui.js';
 const root=join(dirname(fileURLToPath(import.meta.url)),'..');
 const html=readFileSync(join(root,'admin/index.html'),'utf8');
 const adminJs=readFileSync(join(root,'admin/admin.js'),'utf8');
 const edge=readFileSync(join(root,'supabase/functions/auth02-admin/index.ts'),'utf8');
 const migrationFile=join(root,'..','OUTSIDE_REPO','SQL','AUTH_03_ADMIN_ACCOUNTS.sql');
 const migration=existsSync(migrationFile) ? readFileSync(migrationFile,'utf8') : null;
+const deletionMigrationFile=join(root,'..','OUTSIDE_REPO','SQL','AUTH_04B_DELETE_UNUSED_CODES.sql');
+const deletionMigration=existsSync(deletionMigrationFile) ? readFileSync(deletionMigrationFile,'utf8') : null;
 const cfg={projectUrl:'https://test-project.supabase.co',publishableKey:'sb_publishable_ABCDEFGHIJKLMNOP'};
 const session={access_token:'fake-user-jwt'};
 const uuid='11111111-1111-4111-8111-111111111111';
@@ -37,6 +40,58 @@ test('No raw codes in static HTML or browser persisted storage',()=> {
  assert.doesNotMatch(html,/AOH-[A-Z23456789]{8}-/);
  assert.doesNotMatch(readFileSync(join(root,'js/admin-users-ui.js'),'utf8'),/localStorage|sessionStorage/);
  assert.match(html,/Kody aktywacyjne/);
+});
+test('Admin Users keeps generated codes recopiable across tab switches and collapse, but clears on logout',async()=> {
+  class FakeNode {
+    constructor(tagName = 'DIV') {
+      this.tagName = tagName.toUpperCase(); this.listeners = new Map(); this.children = [];
+      this.dataset = {}; this.hidden = true; this.textContent = ''; this.value = '';
+      this.disabled = false; this.isConnected = true;
+    }
+    addEventListener(name, fn) { this.listeners.set(name, fn); }
+    setAttribute() {}
+    append(...children) { this.children.push(...children); }
+    replaceChildren(...children) { this.children = children; }
+    select() { this.selected = true; }
+  }
+  const ids = [
+    'generate-form','code-count','code-days','generate-button','issued','issued-list',
+    'hide-issued','show-issued','copy-all','code-filter','codes-list','codes-refresh',
+    'account-search','account-filter','accounts-list','accounts-more','status','toast'
+  ];
+  const elements = Object.fromEntries(ids.map(id=>[`users-${id}`,new FakeNode()]));
+  const doc = {createElement: tag=>new FakeNode(tag),createDocumentFragment:()=>new FakeNode('fragment')};
+  const root = {
+    ownerDocument: doc,
+    querySelector: selector => elements[selector.slice(1)] || null,
+    querySelectorAll:()=>[]
+  };
+  const copied = [];
+  const panel = new AdminUsersPanel({root,getSession: async()=>session, copyText:async text=>{copied.push(text);}});
+  panel.load = async()=>{};
+  panel.setActive(true);
+  panel.issuedCodes = [{id:uuid,code:'AOH-ABCDEFGH-JKLMNPQR',link:'https://example.com/#register=test'}];
+  panel.renderIssued();
+  assert.equal(elements['users-issued'].hidden,false);
+  assert.equal(elements['users-issued-list'].children[0].children[0].children[0].value,'AOH-ABCDEFGH-JKLMNPQR');
+  await panel.copy(panel.issuedCodes[0].code,'Kod skopiowany!');
+  await panel.copy(panel.issuedCodes[0].code,'Kod skopiowany!');
+  assert.deepEqual(copied,['AOH-ABCDEFGH-JKLMNPQR','AOH-ABCDEFGH-JKLMNPQR']);
+  elements['users-hide-issued'].listeners.get('click')();
+  assert.equal(elements['users-issued'].hidden,true);
+  assert.equal(elements['users-show-issued'].hidden,false);
+  elements['users-show-issued'].listeners.get('click')();
+  assert.equal(elements['users-issued'].hidden,false);
+  panel.setActive(false);
+  assert.equal(elements['users-issued-list'].children.length,0);
+  assert.equal(panel.issuedCodes.length,1);
+  panel.setActive(true);
+  assert.equal(elements['users-issued'].hidden,false);
+  assert.equal(elements['users-issued-list'].children[0].children[0].children[0].value,'AOH-ABCDEFGH-JKLMNPQR');
+  panel.clear();
+  assert.equal(panel.issuedCodes.length,0);
+  assert.equal(elements['users-issued'].hidden,true);
+  assert.equal(elements['users-show-issued'].hidden,true);
 });
 test('Issue form validates both bounds before any request',async()=> {
  for (const [c,d] of [[0,7],[26,7],[1,0],[1,91],[1.5,7]]) {
@@ -91,4 +146,16 @@ test('AUTH-03 Edge: JWT/admin check and no supplied actor ID',()=> {
  assert.match(edge,/p_actor: actor/);
  assert.match(edge,/userId === actor/);
  assert.doesNotMatch(edge,/p_actor:\s*body\./);
+});
+test('AUTH-04B SQL deletes only available unused codes and cleans unreferenced revoked codes',
+ {skip: deletionMigration === null ? 'SQL resides outside GitHub REPO' : false},()=> {
+  assert.match(deletionMigration,/CREATE OR REPLACE FUNCTION public\.auth02_revoke_code\(p_code_id uuid\)/);
+  assert.match(deletionMigration,/DELETE FROM private\.registration_codes c/);
+  assert.match(deletionMigration,/c\.status = 'available'/);
+  assert.match(deletionMigration,/NOT EXISTS \(SELECT 1 FROM private\.registration_attempts a WHERE a\.code_id = c\.id\)/);
+  assert.match(deletionMigration,/NOT EXISTS \(SELECT 1 FROM public\.player_accounts p WHERE p\.registered_via_code_id = c\.id\)/);
+  assert.match(deletionMigration,/c\.status = 'revoked'/);
+  assert.match(deletionMigration,/REVOKE ALL ON FUNCTION public\.auth02_revoke_code\(uuid\) FROM PUBLIC, anon, authenticated/);
+  assert.match(deletionMigration,/GRANT EXECUTE ON FUNCTION public\.auth02_revoke_code\(uuid\) TO service_role/);
+  assert.doesNotMatch(deletionMigration,/DELETE FROM private\.registration_attempts|DELETE FROM public\.player_accounts|ON DELETE CASCADE/);
 });

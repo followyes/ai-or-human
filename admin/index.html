@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <title>AI or Human — Admin</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%2320272d%27/%3E%3Ctext x=%2732%27 y=%2741%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2730%27 font-weight=%27700%27 fill=%27white%27%3EAI%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./admin.css?v=auth03-1">
+  <link rel="stylesheet" href="./admin.css?v=auth04b">
 </head>
 <body>
   <main class="admin-shell">
@@ -179,14 +179,16 @@
               </form>
               <div id="users-issued" class="users-issued" hidden aria-live="polite">
                 <div class="users-section-head">
-                  <strong>Nowe kody — skopiuj teraz</strong>
+                  <strong>Kody wygenerowane w tej sesji</strong>
                   <div class="users-tools">
                     <button type="button" id="users-copy-all" class="admin-secondary-button compact-button">Kopiuj wszystkie</button>
-                    <button type="button" id="users-hide-issued" class="admin-secondary-button compact-button">Ukryj</button>
+                    <button type="button" id="users-hide-issued" class="admin-secondary-button compact-button">Zwiń</button>
                   </div>
                 </div>
                 <div class="users-issued-list" id="users-issued-list"></div>
+                <p class="users-ephemeral-note">Pełne kody znikną po odświeżeniu strony lub wylogowaniu.</p>
               </div>
+              <button type="button" id="users-show-issued" class="admin-secondary-button compact-button users-show-issued" hidden>Pokaż wygenerowane kody</button>
               <div class="users-section-head">
                 <h3>Wydane kody</h3>
                 <div class="users-tools">
@@ -263,6 +265,6 @@
     </section>
   </main>
 
-  <script type="module" src="./admin.js?v=auth03-1"></script>
+  <script type="module" src="./admin.js?v=auth04b"></script>
 </body>
 </html>

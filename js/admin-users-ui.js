@@ -1,8 +1,8 @@
-/** AUTH-03 minimal Admin UI. Raw activation codes live in memory only until hidden/tab leave. */
+/** Admin Users: plaintext codes exist only in this authenticated page's memory. */
 import {
   AdminUsersError, listIssuedCodes, issueCodes, revokeIssuedCode,
   listPlayerAccounts, changePlayerStatus
-} from './admin-users.js';
+} from './admin-users.js?v=auth04b';
 
 const shortDate = value => {
   const date = new Date(value);
@@ -35,7 +35,7 @@ export class AdminUsersPanel {
     this.fetchImpl = fetchImpl; this.confirmAction = confirmAction; this.copyText = copyText;
     this.els = Object.fromEntries([
       'users-generate-form','users-code-count','users-code-days','users-generate-button',
-      'users-issued','users-issued-list','users-hide-issued','users-copy-all',
+      'users-issued','users-issued-list','users-hide-issued','users-show-issued','users-copy-all',
       'users-code-filter','users-codes-list','users-codes-refresh',
       'users-account-search','users-account-filter','users-accounts-list','users-accounts-more',
       'users-status'
@@ -43,6 +43,7 @@ export class AdminUsersPanel {
     if (Object.values(this.els).some(value => !value)) throw new Error('Incomplete Admin Users markup');
     this.active = false; this.busy = false; this.revision = 0;
     this.codes = []; this.accounts = []; this.total = 0; this.issuedCodes = [];
+    this.issuedOpen = false;
     this.toast = root.querySelector('#users-toast');
     this.toastTimer = null;
     this.copyButtonTimers = new WeakMap();
@@ -51,7 +52,8 @@ export class AdminUsersPanel {
   get(id) { return this.els[`users-${id}`]; }
   bind() {
     this.get('generate-form').addEventListener('submit', event => { event.preventDefault(); void this.generate(); });
-    this.get('hide-issued').addEventListener('click', () => this.clearIssued());
+    this.get('hide-issued').addEventListener('click', () => this.hideIssued());
+    this.get('show-issued').addEventListener('click', () => this.renderIssued());
     this.get('copy-all').addEventListener('click', () => void this.copyAll());
     this.get('codes-refresh').addEventListener('click', () => void this.refreshCodes());
     this.get('code-filter').addEventListener('change', () => this.renderCodes());
@@ -88,21 +90,33 @@ export class AdminUsersPanel {
   }
   setActive(active) {
     this.active = Boolean(active); ++this.revision;
-    if (this.active) void this.load();
-    else this.clear();
+    if (this.active) {
+      if (this.issuedOpen && this.issuedCodes.length) this.renderIssued();
+      else this.get('show-issued').hidden = !this.issuedCodes.length;
+      void this.load();
+    } else this.clear({preserveIssued: true});
+  }
+  hideIssued() {
+    this.issuedOpen = false;
+    this.get('issued-list').replaceChildren();
+    this.get('issued').hidden = true;
+    this.get('show-issued').hidden = !this.issuedCodes.length;
   }
   clearIssued() {
     this.issuedCodes = [];
-    this.get('issued-list').replaceChildren();
-    this.get('issued').hidden = true;
+    this.hideIssued();
   }
-  clear() {
+  clear({preserveIssued = false} = {}) {
     this.active = false; ++this.revision;
     clearTimeout(this.searchTimer);
     clearTimeout(this.toastTimer);
     if (this.toast) { this.toast.hidden = true; this.toast.textContent = ''; }
     this.lock(false);
-    this.clearIssued();
+    if (preserveIssued) {
+      this.get('issued-list').replaceChildren();
+      this.get('issued').hidden = true;
+      this.get('show-issued').hidden = true;
+    } else this.clearIssued();
     this.codes = []; this.accounts = []; this.total = 0;
     this.get('codes-list').replaceChildren();
     this.get('accounts-list').replaceChildren();
@@ -166,11 +180,11 @@ export class AdminUsersPanel {
   async generate() {
     const count = Number(this.get('code-count').value), days = Number(this.get('code-days').value);
     await this.run(async (options, revision) => {
-      // Do not leave a previous one-time batch visible after issuing another batch.
       const result = await issueCodes(count, days, options);
       if (revision !== this.revision || !this.active) return;
-      this.clearIssued();
-      this.issuedCodes = result.codes;
+      // Keep all codes generated in this authenticated page until logout/reload,
+      // even after copying, collapsing the panel, or switching Admin tabs.
+      this.issuedCodes = [...result.codes, ...this.issuedCodes].slice(0, 250);
       this.renderIssued();
       // The successful issue response is server-confirmed: avoid a second request
       // that could fail and obscure newly issued, non-recoverable raw codes.
@@ -184,6 +198,7 @@ export class AdminUsersPanel {
     }, {loading: 'Generowanie kodów…', complete: ''});
   }
   renderIssued() {
+    if (!this.active || !this.issuedCodes.length) { this.hideIssued(); return; }
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
     for (const item of this.issuedCodes) {
       const row = node(doc,'div','users-issued-row');
@@ -196,6 +211,8 @@ export class AdminUsersPanel {
     }
     this.get('issued-list').replaceChildren(frag);
     this.get('issued').hidden = false;
+    this.get('show-issued').hidden = true;
+    this.issuedOpen = true;
   }
   async copy(text, success, target = null) {
     try {
@@ -222,8 +239,7 @@ export class AdminUsersPanel {
   renderCodes() {
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();
     const filter = this.get('code-filter').value;
-    // Revoked codes disappear from the operator's list immediately. The server
-    // keeps their non-secret audit metadata so they cannot be reused.
+    // Old revoked rows (from before the server-side cleanup) are hidden too.
     const rows = this.codes.filter(row => row.status !== 'revoked' && (!filter || row.status === filter));
     if (!rows.length) frag.append(node(doc,'p','users-empty','Brak kodów.'));
     for (const item of rows) {
@@ -235,27 +251,28 @@ export class AdminUsersPanel {
       const right = node(doc,'div','users-row-actions');
       const state = node(doc,'span',`users-state users-state-${item.status}`, displayStatus(item.status));
       right.append(state);
-      if (item.status === 'available') right.append(button(doc,'Unieważnij','revoke',item.id,true));
+      if (item.status === 'available') right.append(button(doc,'Usuń','revoke',item.id,true));
       row.append(meta,right); frag.append(row);
     }
     this.get('codes-list').replaceChildren(frag);
   }
   async revoke(id) {
     if (!this.active || this.busy || !this.codes.some(item => item.id === id && item.status === 'available')) return;
-    if (!this.confirmAction('Unieważnić ten kod? Nie będzie można go już wykorzystać.')) return;
+    if (!this.confirmAction('Usunąć niewykorzystany kod? Nie będzie można go już wykorzystać.')) return;
     await this.run(async (options, revision) => {
       await revokeIssuedCode(id, options);
       if (revision === this.revision) {
-        // The successful API response is authoritative. A failed follow-up
-        // listing must not leave a server-revoked code visible/copyable.
-        this.codes = this.codes.map(item => item.id === id ? {...item,status:'revoked'} : item);
+        // The server deletes only an unused, unreferenced code atomically.
+        // Removing it here mirrors the confirmed result without a follow-up race.
+        this.codes = this.codes.filter(item => item.id !== id);
         this.issuedCodes = this.issuedCodes.filter(item => item.id !== id);
-        if (this.issuedCodes.length) this.renderIssued();
+        if (this.issuedCodes.length && this.issuedOpen) this.renderIssued();
+        else if (this.issuedCodes.length) this.hideIssued();
         else this.clearIssued();
         this.renderCodes();
-        this.notify('Kod unieważniony.');
+        this.notify('Kod usunięty.');
       }
-    }, {loading:'Unieważnianie kodu…', complete:'Kod unieważniony.'});
+    }, {loading:'Usuwanie kodu…', complete:''});
   }
   renderAccounts() {
     const doc = this.root.ownerDocument, frag = doc.createDocumentFragment();

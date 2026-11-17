@@ -30,7 +30,7 @@ import { moveGameImageToClass, runSequentialMoveBatch } from "../js/content-clas
 import { UploadPreparationWorkerClient } from "../js/upload-worker-client.js";
 import { AdminResultsPanel } from "../js/admin-results-ui.js";
 import { AdminStreakPanel } from "../js/admin-streak-ui.js";
-import { AdminUsersPanel } from "../js/admin-users-ui.js";
+import { AdminUsersPanel } from "../js/admin-users-ui.js?v=auth04b";
 import { enhanceAdminChoiceSelects } from "../js/admin-choice-select.js";
 
 const adminCard = document.querySelector("#admin-card");

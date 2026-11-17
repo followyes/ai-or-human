@@ -1,5 +1,5 @@
 {
-  "release": "AI OR HUMAN / AUTH-04A / 2026-11-17",
+  "release": "AI OR HUMAN / AUTH-04B / 2026-11-17",
   "files": [
     "index.html",
     "css/style.css",
@@ -10,6 +10,12 @@
     "scripts/test-auth02.mjs",
     "scripts/test-auth04.mjs",
     "package.json",
-    "README.md"
+    "README.md",
+    "admin/index.html",
+    "admin/admin.css",
+    "admin/admin.js",
+    "js/admin-users.js",
+    "js/admin-users-ui.js",
+    "scripts/test-auth03.mjs"
   ]
 }

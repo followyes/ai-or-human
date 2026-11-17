@@ -59,8 +59,14 @@ W panelu administratora nowa zakładka z generowaniem i unieważnianiem kodów o
 
 Nowy przycisk `Konto` otwiera rejestrację wyłącznie jednorazowym kodem/linkiem wydanym przez Admina, e-mail (identyfikator logowania) i hasło (min. 12 znaków), logowanie, wylogowanie i podgląd konta. Link `#register=…` jedynie wypełnia formularz, nie zużywa kodu po wejściu. **Nie ma weryfikacji e-mail ani SMTP:** serwerowy `auth02-register` zakłada już aktywne konto po bezpiecznym zarezerwowaniu i zużyciu kodu. `email_confirm:true` jest świadomą techniczną autoaktywacją; **nie oznacza, że udowodniono posiadanie tego adresu**. Użytkownik podaje prawdziwy, unikalny e-mail na potrzeby logowania.
 
-Admin `Użytkownicy`: widoczna informacja o skopiowaniu, możliwe ponowne kliknięcie `Kopiuj kod/link`, usunięcie unieważnionych kodów z listy bieżącej, nowe wizualne dropdowny z obsługą klawiatury. Kod nadal widoczny tylko do zamknięcia jednorazowego panelu.
+Admin `Użytkownicy`: widoczna informacja o skopiowaniu, możliwe ponowne kliknięcie `Kopiuj kod/link`, nowe wizualne dropdowny z obsługą klawiatury. AUTH-04B pozwala ponownie otworzyć panel kodów po zwinięciu lub przełączeniu zakładki, ale usuwa pełną wartość z pamięci po odświeżeniu strony/wylogowaniu.
 
 Bez SMTP nie działa samodzielny reset hasła. Aby nie obiecywać nieistniejącej funkcji, formularze mailowego potwierdzenia i recovery są ukryte/usunięte; przy rejestracji widnieje ostrzeżenie, by zachować hasło w menedżerze. W przyszłości możemy dodać bezpieczny reset administrowany albo przywrócić SMTP osobnym etapem.
 
 **Deployment korekty AUTH-04A obejmuje aktualizację istniejącej Edge Function `auth02-register` i frontend GitHub.** Nie wymaga SQL ani zmiany `auth02-admin`. Gra wciąż używa starego profilu i nie wymaga konta do AUTH-05/07; Browser ID pozostaje. Dokładny przewodnik bez terminala: `OUTSIDE_REPO/AUTH04_DEPLOY_NO_TERMINAL.md`, QA: `OUTSIDE_REPO/AUTH04_QA_REPORT.md`.
+
+## AUTH-04B — trwała poprawka Admina i czyszczenie kodów
+
+Wydawane pełne kody można wielokrotnie zaznaczać i kopiować w ramach tej samej otwartej strony Admina, również po zwinięciu panelu, przełączeniu zakładek i wydaniu kolejnej partii. Po logout/reload pełny kod nie zostaje zachowany w przeglądarce. Wybór `Usuń` uruchamia serwerowo **fizyczny DELETE** tylko niewykorzystanego, niepowiązanego kodu. Kody `reserved`/`consumed` i związane próby/konta pozostają na potrzeby bezpieczeństwa i kluczy obcych.
+
+**AUTH-04B WYMAGA SQL** `OUTSIDE_REPO/SQL/AUTH_04B_CODE_DELETION_PRECHECK_READONLY.sql` → `AUTH_04B_DELETE_UNUSED_CODES.sql` → `AUTH_04B_CODE_DELETION_POSTCHECK_READONLY.sql` **przed** aktualizacją GitHub. Nowego `auth02-admin` Edge nie trzeba deployować. Pełna instrukcja w `OUTSIDE_REPO/AUTH04B_DEPLOY_NO_TERMINAL.md`. Brak automatycznego backupu i brak potwierdzenia live wykonania.
