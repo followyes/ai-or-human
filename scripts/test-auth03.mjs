@@ -53,6 +53,7 @@ test('Admin Users keeps generated codes recopiable across tab switches and colla
     append(...children) { this.children.push(...children); }
     replaceChildren(...children) { this.children = children; }
     select() { this.selected = true; }
+    closest(selector) { return selector === '[data-users-action]' && this.dataset.usersAction ? this : null; }
   }
   const ids = [
     'generate-form','code-count','code-days','generate-button','issued','issued-list',
@@ -73,10 +74,22 @@ test('Admin Users keeps generated codes recopiable across tab switches and colla
   panel.issuedCodes = [{id:uuid,code:'AOH-ABCDEFGH-JKLMNPQR',link:'https://example.com/#register=test'}];
   panel.renderIssued();
   assert.equal(elements['users-issued'].hidden,false);
-  assert.equal(elements['users-issued-list'].children[0].children[0].children[0].value,'AOH-ABCDEFGH-JKLMNPQR');
-  await panel.copy(panel.issuedCodes[0].code,'Kod skopiowany!');
-  await panel.copy(panel.issuedCodes[0].code,'Kod skopiowany!');
+  const issuedRow=elements['users-issued-list'].children[0].children[0];
+  const codeField=issuedRow.children[0];
+  assert.equal(codeField.value,'AOH-ABCDEFGH-JKLMNPQR');
+  codeField.listeners.get('focus')();
+  assert.equal(codeField.selected,true,'focus must select the entire readonly activation code');
+  codeField.selected=false;
+  codeField.listeners.get('click')();
+  assert.equal(codeField.selected,true,'click must select the entire readonly activation code');
+  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[1]});
+  await new Promise(resolve=>setImmediate(resolve));
+  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[1]});
+  await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(copied,['AOH-ABCDEFGH-JKLMNPQR','AOH-ABCDEFGH-JKLMNPQR']);
+  elements['users-issued-list'].listeners.get('click')({target:issuedRow.children[2]});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(copied[2],'https://example.com/#register=test');
   elements['users-hide-issued'].listeners.get('click')();
   assert.equal(elements['users-issued'].hidden,true);
   assert.equal(elements['users-show-issued'].hidden,false);
