@@ -4,3 +4,8 @@ verify_jwt = true
 
 [functions.auth02-register]
 verify_jwt = false
+
+# AUTH-05B: bearer user JWT is validated again against Auth inside the handler.
+# The legacy public game remains active until the coordinated AUTH-07 cutover.
+[functions.auth05-game]
+verify_jwt = true
